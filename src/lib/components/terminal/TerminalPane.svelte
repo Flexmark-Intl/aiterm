@@ -121,6 +121,20 @@
 
     terminal.open(containerRef);
 
+    // OSC 7: shells report cwd via \e]7;file://host/path\e\\
+    terminal.parser.registerOscHandler(7, (data) => {
+      try {
+        const url = new URL(data);
+        if (url.protocol === 'file:') {
+          const cwd = decodeURIComponent(url.pathname);
+          if (cwd) terminalsStore.setOsc7Cwd(tabId, cwd);
+        }
+      } catch {
+        // not a valid URL — ignore
+      }
+      return true;
+    });
+
     // Portal into the slot rendered by SplitPane
     attachToSlot();
 

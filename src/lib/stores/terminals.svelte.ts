@@ -11,6 +11,7 @@ interface TerminalInstance {
   workspaceId: string;
   paneId: string;
   tabId: string;
+  lastOsc7Cwd: string | null;
 }
 
 export interface SplitContext {
@@ -50,7 +51,7 @@ function createTerminalsStore() {
       paneId: string
     ) {
       instances = new Map(instances);
-      instances.set(tabId, { terminal, ptyId, serializeAddon, searchAddon, workspaceId, paneId, tabId });
+      instances.set(tabId, { terminal, ptyId, serializeAddon, searchAddon, workspaceId, paneId, tabId, lastOsc7Cwd: null });
     },
 
     unregister(tabId: string) {
@@ -60,6 +61,15 @@ function createTerminalsStore() {
 
     get(tabId: string): TerminalInstance | undefined {
       return instances.get(tabId);
+    },
+
+    setOsc7Cwd(tabId: string, cwd: string) {
+      const instance = instances.get(tabId);
+      if (instance) instance.lastOsc7Cwd = cwd;
+    },
+
+    getOsc7Cwd(tabId: string): string | null {
+      return instances.get(tabId)?.lastOsc7Cwd ?? null;
     },
 
     focusTerminal(tabId: string) {

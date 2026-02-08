@@ -174,10 +174,16 @@ function createWorkspacesStore() {
         }
 
         // 4. Store split context for the new TerminalPane to consume on mount
-        // For SSH sessions, try to detect the remote cwd from the prompt
+        // OSC 7 gives the most accurate cwd (works for both local and remote shells)
+        const osc7Cwd = terminalsStore.getOsc7Cwd(sourceTabId);
+
         let remoteCwd: string | null = null;
-        if (sshCommand && instance) {
-          remoteCwd = extractRemoteCwd(instance.terminal);
+        if (sshCommand) {
+          // SSH active: OSC 7 reports the *remote* cwd, lsof reports the *local* cwd
+          remoteCwd = osc7Cwd ?? (instance ? extractRemoteCwd(instance.terminal) : null);
+        } else {
+          // No SSH: OSC 7 reports local cwd, can supplement lsof
+          cwd = cwd ?? osc7Cwd;
         }
 
         if (cwd || sshCommand) {
