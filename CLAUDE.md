@@ -118,7 +118,7 @@ Workspace
 ├── id, name
 ├── panes: Pane[]
 ├── active_pane_id
-└── pane_sizes (per-layout)
+└── split_root: SplitNode (binary tree of pane layout)
 
 Pane
 ├── id, name
@@ -126,15 +126,79 @@ Pane
 └── active_tab_id
 
 Tab
-├── id, name
+├── id, name, custom_name (bool — true if user explicitly renamed)
 ├── pty_id (links to running terminal)
 └── scrollback (serialized terminal state)
+
+SplitNode = SplitLeaf { pane_id } | SplitBranch { id, direction, ratio, children }
 
 Preferences
 ├── font_size, font_family
 ├── cursor_style, cursor_blink
 ├── auto_save_interval, scrollback_limit
+├── prompt_patterns (PS1-like patterns for remote cwd detection)
+├── clone_cwd, clone_scrollback, clone_ssh, clone_history
 ```
+
+## Portal Pattern (Terminal Persistence)
+
+When the split tree changes (leaf → split node), Svelte destroys and recreates the entire subtree. To prevent terminals from being killed and recreated:
+
+- **TerminalPanes render flat** at the `+page.svelte` level in a keyed `{#each}` block over all tabs
+- **SplitPane renders empty slot divs** with `data-terminal-slot={tab.id}`
+- **TerminalPane portals** its `containerRef` into the matching slot via `attachToSlot()`
+- **SplitPane dispatches** `terminal-slot-ready` CustomEvents on mount so TerminalPanes can re-attach after splits
+- Guard `fitWithPadding` with `containerRef.isConnected` to skip when detached between portal moves
+
+**Do not** move TerminalPane rendering into SplitPane — this breaks terminal persistence on split.
+
+## Split Cloning (Pane Duplication)
+
+`splitPaneWithContext()` in `workspaces.svelte.ts` handles pane duplication:
+
+1. Serializes scrollback from source terminal
+2. Gets PTY info via `getPtyInfo()` — returns local cwd (via lsof) and foreground SSH command (via process tree)
+3. Creates new pane with scrollback pre-populated
+4. Copies shell history (`copyTabHistory`)
+5. Stores split context for the new TerminalPane to consume on mount
+
+### SSH Session Cloning
+
+When source has active SSH, `buildSshCommand()` in TerminalPane.svelte constructs:
+```
+ssh -t user@host 'cd ~/path && exec $SHELL -l'
+```
+- Atomic: cd + shell exec happen before prompt appears
+- Works with interactive password prompts (auth is during SSH handshake)
+
+### Remote CWD Detection
+
+Priority: OSC 7 (if not stale) → prompt pattern heuristic.
+
+**Stale OSC 7 detection**: Compare OSC 7 cwd with lsof-reported local cwd. If equal, OSC 7 is stale (set by local shell before SSH started).
+
+**Prompt patterns**: User-configurable in Preferences > Shell. PS1-like format compiled to RegExp at runtime. See `src/lib/utils/promptPattern.ts`.
+
+| Placeholder | Meaning | Compiles to |
+|-------------|---------|-------------|
+| `\h` | hostname | `\S+` |
+| `\u` | username | `\S+` |
+| `\d` | directory (capture group) | `(.+?)` |
+| `\p` | prompt char ($#%>) | `[$#%>]` |
+
+### Shell Escaping
+
+`shellEscapePath()` handles quoting for remote shells:
+- `~` left unquoted for expansion, rest single-quoted: `~/path` → `~/'path'`
+- Single quotes in paths escaped as `'\''`
+
+## OSC State
+
+`terminals.svelte.ts` manages per-terminal OSC state (title, cwd, cwdHost):
+
+- **OSC 0/2** (title): Updates tab display name unless `tab.custom_name` is true
+- **OSC 7** (cwd): Parses `file://hostname/path` URL, stores both cwd and cwdHost
+- **Listener API**: `onOscChange(fn)` for reactive subscriptions (used by TerminalTabs)
 
 ## Important Conventions
 
@@ -208,3 +272,7 @@ Preferences
 - **Map reactivity**: When mutating Maps in stores, create new Map: `instances = new Map(instances)`
 - **Terminal options**: Can update `terminal.options.*` at runtime, call `fitAddon.fit()` after font changes
 - **PTY lifecycle**: Kill PTY in onDestroy, save scrollback before disposal
+- **Single quotes prevent ~ expansion**: `cd '~/path'` fails on remote. Use `cd ~/'path'` instead
+- **`\u` in Svelte templates**: Interpreted as unicode escape. Use expression syntax: `{'\\u'}`
+- **Stale OSC 7 on SSH**: Local shell sets OSC 7 cwd before SSH starts. If remote doesn't emit OSC 7, the local value persists — compare with lsof cwd to detect
+- **Shell escaping layers**: JS → local shell → SSH → remote shell. `$SHELL` must not be escaped (remote needs to expand it). Single quotes protect from local expansion but prevent ~ expansion
