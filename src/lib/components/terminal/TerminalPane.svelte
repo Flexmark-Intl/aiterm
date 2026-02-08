@@ -13,6 +13,7 @@
   import { workspacesStore } from '$lib/stores/workspaces.svelte';
   import { preferencesStore } from '$lib/stores/preferences.svelte';
   import { activityStore } from '$lib/stores/activity.svelte';
+  import ContextMenu from '$lib/components/ContextMenu.svelte';
 
   interface Props {
     workspaceId: string;
@@ -34,6 +35,7 @@
   let unlistenClose: UnlistenFn;
   let resizeObserver: ResizeObserver;
   let initialized = $state(false);
+  let contextMenu = $state<{ x: number; y: number } | null>(null);
 
   // Tokyo Night theme
   const theme = {
@@ -142,6 +144,35 @@
     // Register terminal instance with serialize addon for scrollback saving
     terminalsStore.register(tabId, terminal, ptyId, serializeAddon, searchAddon, workspaceId, paneId);
 
+    // Cmd+C: copy if selection, SIGINT if not. Cmd+V: paste into PTY.
+    terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+      if (e.type !== 'keydown') return true;
+
+      if (e.metaKey && e.key === 'c') {
+        e.preventDefault();
+        if (terminal.hasSelection()) {
+          navigator.clipboard.writeText(terminal.getSelection());
+          terminal.clearSelection();
+        } else {
+          writeTerminal(ptyId, [0x03]).catch(console.error);
+        }
+        return false;
+      }
+
+      if (e.metaKey && e.key === 'v') {
+        e.preventDefault();
+        navigator.clipboard.readText().then((text) => {
+          if (text) {
+            const bytes = Array.from(new TextEncoder().encode(text));
+            writeTerminal(ptyId, bytes).catch(console.error);
+          }
+        });
+        return false;
+      }
+
+      return true;
+    });
+
     // Handle keyboard input
     terminal.onData(async (data) => {
       const bytes = Array.from(new TextEncoder().encode(data));
@@ -244,13 +275,70 @@
       }
     };
   });
+
+  function handleContextMenu(e: MouseEvent) {
+    e.preventDefault();
+    contextMenu = { x: e.clientX, y: e.clientY };
+  }
+
+  function getContextMenuItems() {
+    const hasSelection = terminal?.hasSelection();
+    return [
+      {
+        label: 'Copy',
+        shortcut: '⌘C',
+        disabled: !hasSelection,
+        action: async () => {
+          const text = terminal.getSelection();
+          if (text) await navigator.clipboard.writeText(text);
+        },
+      },
+      {
+        label: 'Paste',
+        shortcut: '⌘V',
+        action: async () => {
+          const text = await navigator.clipboard.readText();
+          if (text) {
+            const bytes = Array.from(new TextEncoder().encode(text));
+            await writeTerminal(ptyId, bytes);
+          }
+        },
+      },
+      {
+        label: 'Select All',
+        shortcut: '⌘A',
+        action: () => {
+          terminal.selectAll();
+        },
+      },
+      { label: '', separator: true, action: () => {} },
+      {
+        label: 'Clear',
+        shortcut: '⌘K',
+        action: () => {
+          terminalsStore.clearTerminal(tabId);
+        },
+      },
+    ];
+  }
 </script>
 
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="terminal-container"
   class:hidden={!visible}
   bind:this={containerRef}
+  oncontextmenu={handleContextMenu}
 ></div>
+
+{#if contextMenu}
+  <ContextMenu
+    items={getContextMenuItems()}
+    x={contextMenu.x}
+    y={contextMenu.y}
+    onclose={() => { contextMenu = null; terminal?.focus(); }}
+  />
+{/if}
 
 <style>
   .terminal-container {
