@@ -45,6 +45,7 @@ pub fn run() {
             commands::workspace::set_active_tab,
             commands::workspace::set_tab_pty_id,
             commands::workspace::set_sidebar_width,
+            commands::workspace::set_sidebar_collapsed,
             commands::workspace::set_split_ratio,
             commands::workspace::set_tab_scrollback,
             commands::workspace::debug_log,

@@ -52,11 +52,13 @@ export interface Preferences {
   clone_scrollback: boolean;
   clone_ssh: boolean;
   clone_history: boolean;
+  theme: string;
 }
 
 export interface AppData {
   workspaces: Workspace[];
   active_workspace_id: string | null;
   sidebar_width: number;
+  sidebar_collapsed: boolean;
   preferences: Preferences;
 }

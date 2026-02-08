@@ -8,6 +8,7 @@
   import HelpModal from '$lib/components/HelpModal.svelte';
   import PreferencesModal from '$lib/components/PreferencesModal.svelte';
   import { preferencesStore } from '$lib/stores/preferences.svelte';
+  import { getTheme, applyUiTheme } from '$lib/themes';
 
   interface Props {
     children: import('svelte').Snippet;
@@ -16,6 +17,12 @@
   let { children }: Props = $props();
   let showHelp = $state(false);
   let showPreferences = $state(false);
+
+  // Apply UI theme reactively (runs outside onMount so it reacts to changes)
+  $effect(() => {
+    const t = getTheme(preferencesStore.theme);
+    applyUiTheme(t.ui);
+  });
 
   onMount(() => {
     // Load preferences
@@ -203,6 +210,14 @@
         e.preventDefault();
         e.stopPropagation();
         showHelp = !showHelp;
+        return;
+      }
+
+      // Cmd+B - Toggle sidebar
+      if (isMeta && !e.shiftKey && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        e.stopPropagation();
+        workspacesStore.toggleSidebar();
         return;
       }
 

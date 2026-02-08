@@ -200,6 +200,8 @@ pub struct AppData {
     #[serde(default = "default_sidebar_width")]
     pub sidebar_width: u32,
     #[serde(default)]
+    pub sidebar_collapsed: bool,
+    #[serde(default)]
     pub preferences: Preferences,
 }
 
@@ -239,6 +241,10 @@ fn default_prompt_patterns() -> Vec<String> {
     ]
 }
 
+fn default_theme() -> String {
+    "tokyo-night".to_string()
+}
+
 fn default_true() -> bool {
     true
 }
@@ -276,6 +282,8 @@ pub struct Preferences {
     pub clone_ssh: bool,
     #[serde(default = "default_true")]
     pub clone_history: bool,
+    #[serde(default = "default_theme")]
+    pub theme: String,
 }
 
 impl Default for Preferences {
@@ -292,6 +300,7 @@ impl Default for Preferences {
             clone_scrollback: true,
             clone_ssh: true,
             clone_history: true,
+            theme: default_theme(),
         }
     }
 }

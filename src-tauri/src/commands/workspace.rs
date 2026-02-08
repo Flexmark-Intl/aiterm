@@ -303,6 +303,16 @@ pub fn set_sidebar_width(state: State<'_, Arc<AppState>>, width: u32) -> Result<
 }
 
 #[tauri::command]
+pub fn set_sidebar_collapsed(state: State<'_, Arc<AppState>>, collapsed: bool) -> Result<(), String> {
+    let data_clone = {
+        let mut app_data = state.app_data.write();
+        app_data.sidebar_collapsed = collapsed;
+        app_data.clone()
+    };
+    save_state(&data_clone)
+}
+
+#[tauri::command]
 pub fn set_split_ratio(
     state: State<'_, Arc<AppState>>,
     workspace_id: String,

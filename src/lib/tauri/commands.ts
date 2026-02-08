@@ -88,6 +88,10 @@ export async function setSidebarWidth(width: number): Promise<void> {
   return invoke('set_sidebar_width', { width });
 }
 
+export async function setSidebarCollapsed(collapsed: boolean): Promise<void> {
+  return invoke('set_sidebar_collapsed', { collapsed });
+}
+
 export async function setSplitRatio(workspaceId: string, splitId: string, ratio: number): Promise<void> {
   return invoke('set_split_ratio', { workspaceId, splitId, ratio });
 }

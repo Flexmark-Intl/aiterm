@@ -52,6 +52,9 @@
 <aside class="sidebar" style="width: {width}px">
   <div class="sidebar-header">
     <span class="title">WORKSPACES</span>
+    <button class="collapse-btn" onclick={() => workspacesStore.toggleSidebar()} title="Collapse sidebar (⌘B)">
+      &#x2039;
+    </button>
   </div>
 
   <div class="workspace-list">
@@ -109,6 +112,9 @@
   .sidebar-header {
     padding: 12px 16px;
     border-bottom: 1px solid var(--bg-light);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
   }
 
   .title {
@@ -116,6 +122,25 @@
     font-weight: 600;
     letter-spacing: 0.5px;
     color: var(--fg-dim);
+  }
+
+  .collapse-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border-radius: 4px;
+    color: var(--fg-dim);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .collapse-btn:hover {
+    background: var(--bg-light);
+    color: var(--fg);
   }
 
   .workspace-list {

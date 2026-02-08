@@ -1,6 +1,7 @@
 <script lang="ts">
   import { preferencesStore } from '$lib/stores/preferences.svelte';
   import type { CursorStyle } from '$lib/tauri/types';
+  import { themes } from '$lib/themes';
 
   interface Props {
     open: boolean;
@@ -9,9 +10,10 @@
 
   let { open, onclose }: Props = $props();
 
-  let activeSection = $state<'terminal' | 'ui' | 'panels'>('terminal');
+  let activeSection = $state<'appearance' | 'terminal' | 'ui' | 'panels'>('appearance');
 
   const sections = [
+    { id: 'appearance' as const, label: 'Appearance' },
     { id: 'terminal' as const, label: 'Terminal' },
     { id: 'ui' as const, label: 'Scrollback' },
     { id: 'panels' as const, label: 'Panels' },
@@ -88,7 +90,30 @@
         </nav>
 
         <div class="section-content">
-          {#if activeSection === 'terminal'}
+          {#if activeSection === 'appearance'}
+            <h3 class="section-heading">Theme</h3>
+            <div class="theme-grid">
+              {#each themes as t}
+                <button
+                  class="theme-swatch"
+                  class:active={preferencesStore.theme === t.id}
+                  onclick={() => preferencesStore.setTheme(t.id)}
+                  title={t.name}
+                >
+                  <div class="swatch-colors">
+                    <span class="swatch-bar" style:background={t.terminal.background}></span>
+                    <span class="swatch-bar" style:background={t.terminal.red}></span>
+                    <span class="swatch-bar" style:background={t.terminal.green}></span>
+                    <span class="swatch-bar" style:background={t.terminal.yellow}></span>
+                    <span class="swatch-bar" style:background={t.terminal.blue}></span>
+                    <span class="swatch-bar" style:background={t.terminal.magenta}></span>
+                    <span class="swatch-bar" style:background={t.terminal.cyan}></span>
+                  </div>
+                  <span class="swatch-label">{t.name}</span>
+                </button>
+              {/each}
+            </div>
+          {:else if activeSection === 'terminal'}
             <div class="setting">
               <label for="font-size">Font Size</label>
               <div class="range-wrapper">
@@ -567,6 +592,54 @@
 
   .add-pattern-btn:hover {
     background: var(--bg-light);
+    color: var(--fg);
+  }
+
+  .theme-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .theme-swatch {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px;
+    border-radius: 6px;
+    border: 2px solid transparent;
+    background: var(--bg-dark);
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+
+  .theme-swatch:hover {
+    border-color: var(--bg-light);
+  }
+
+  .theme-swatch.active {
+    border-color: var(--accent);
+  }
+
+  .swatch-colors {
+    display: flex;
+    gap: 2px;
+    height: 20px;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .swatch-bar {
+    flex: 1;
+  }
+
+  .swatch-label {
+    font-size: 11px;
+    color: var(--fg-dim);
+    text-align: center;
+  }
+
+  .theme-swatch.active .swatch-label {
     color: var(--fg);
   }
 </style>

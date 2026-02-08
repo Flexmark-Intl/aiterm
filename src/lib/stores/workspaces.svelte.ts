@@ -46,6 +46,7 @@ function createWorkspacesStore() {
   let workspaces = $state<Workspace[]>([]);
   let activeWorkspaceId = $state<string | null>(null);
   let sidebarWidth = $state(180);
+  let sidebarCollapsed = $state(false);
 
   const activeWorkspace = $derived(
     workspaces.find(w => w.id === activeWorkspaceId) ?? null
@@ -68,12 +69,14 @@ function createWorkspacesStore() {
     get activePane() { return activePane; },
     get activeTab() { return activeTab; },
     get sidebarWidth() { return sidebarWidth; },
+    get sidebarCollapsed() { return sidebarCollapsed; },
 
     async load() {
       const data = await commands.getAppData();
       workspaces = data.workspaces;
       activeWorkspaceId = data.active_workspace_id;
       sidebarWidth = data.sidebar_width || 180;
+      sidebarCollapsed = data.sidebar_collapsed ?? false;
 
       // Create default workspace if none exist
       if (workspaces.length === 0) {
@@ -87,6 +90,11 @@ function createWorkspacesStore() {
 
     async saveSidebarWidth() {
       await commands.setSidebarWidth(sidebarWidth);
+    },
+
+    async toggleSidebar() {
+      sidebarCollapsed = !sidebarCollapsed;
+      await commands.setSidebarCollapsed(sidebarCollapsed);
     },
 
     async createWorkspace(name: string) {
