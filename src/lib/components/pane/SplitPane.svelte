@@ -81,13 +81,15 @@
         />
       {:else}
         <span class="pane-name">{pane.name}</span>
-        <button
-          class="close-btn"
-          onclick={handleClosePane}
-          title="Close pane"
-        >
-          &times;
-        </button>
+        <div class="pane-actions">
+          <button
+            class="close-btn"
+            onclick={handleClosePane}
+            title="Close pane"
+          >
+            &times;
+          </button>
+        </div>
       {/if}
     </div>
   {/if}
@@ -138,21 +140,33 @@
     color: var(--fg);
   }
 
-  .close-btn {
-    opacity: 0;
-    padding: 2px 8px;
-    border-radius: 4px;
-    font-size: 16px;
-    color: var(--fg-dim);
+  .pane-actions {
+    display: flex;
+    align-items: center;
     margin-left: auto;
+    opacity: 0;
+    transition: opacity 0.15s ease;
   }
 
-  .pane-header:hover .close-btn {
+  .pane-header:hover .pane-actions {
     opacity: 1;
   }
 
+  .close-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    color: var(--fg-dim);
+    border-radius: 4px;
+    font-size: 14px;
+    transition: background 0.1s, color 0.1s;
+  }
+
   .close-btn:hover {
-    background: var(--red);
+    background: var(--bg-light);
     color: var(--fg);
   }
 
