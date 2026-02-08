@@ -2,15 +2,18 @@ import type { Terminal } from '@xterm/xterm';
 import type { SplitDirection, SplitNode, Tab, Pane, Workspace } from '$lib/tauri/types';
 import * as commands from '$lib/tauri/commands';
 import { terminalsStore } from '$lib/stores/terminals.svelte';
+import { preferencesStore } from '$lib/stores/preferences.svelte';
+import { getCompiledPatterns } from '$lib/utils/promptPattern';
 
 /**
- * Heuristically extract a remote cwd from the terminal prompt.
- * Looks at the last few lines for common prompt patterns:
- *   user@host:/path$  |  user@host:~$  |  [user@host /path]$
+ * Extract the remote cwd from the terminal prompt using user-configured patterns.
+ * Patterns are defined in preferences and compiled to regexes at runtime.
  */
 function extractRemoteCwd(terminal: Terminal): string | null {
   const buffer = terminal.buffer.active;
   const cursorLine = buffer.baseY + buffer.cursorY;
+  const patterns = getCompiledPatterns(preferencesStore.promptPatterns);
+  if (patterns.length === 0) return null;
 
   for (let i = cursorLine; i >= Math.max(0, cursorLine - 5); i--) {
     const line = buffer.getLine(i);
@@ -18,13 +21,10 @@ function extractRemoteCwd(terminal: Terminal): string | null {
     const text = line.translateToString(true).trim();
     if (!text) continue;
 
-    // Pattern: ...:~/path$ or ...:/path$ (colon before path, common in bash/zsh prompts)
-    let match = text.match(/:([~\/][^\s:]*)\s*[$#%>]\s*$/);
-    if (match) return match[1];
-
-    // Pattern: [user@host /path]$ (path inside brackets)
-    match = text.match(/[\[(\s](\/\S+)\s*[\])]\s*[$#%>]\s*$/);
-    if (match) return match[1];
+    for (const re of patterns) {
+      const match = text.match(re);
+      if (match?.[1]) return match[1];
+    }
   }
 
   return null;
@@ -175,12 +175,16 @@ function createWorkspacesStore() {
 
         // 4. Store split context for the new TerminalPane to consume on mount
         // OSC 7 gives the most accurate cwd (works for both local and remote shells)
-        const osc7Cwd = terminalsStore.getOsc7Cwd(sourceTabId);
+        const osc7Cwd = terminalsStore.getOsc(sourceTabId)?.cwd ?? null;
 
         let remoteCwd: string | null = null;
         if (sshCommand) {
-          // SSH active: OSC 7 reports the *remote* cwd, lsof reports the *local* cwd
-          remoteCwd = osc7Cwd ?? (instance ? extractRemoteCwd(instance.terminal) : null);
+          // SSH active: OSC 7 may be stale (from the local shell before SSH started)
+          // or updated by the remote shell. Compare with the lsof-reported local cwd:
+          // if they match, OSC 7 is stale → fall back to prompt heuristic.
+          const isOsc7Stale = osc7Cwd === cwd;
+          const osc7RemoteCwd = (osc7Cwd && !isOsc7Stale) ? osc7Cwd : null;
+          remoteCwd = osc7RemoteCwd ?? (instance ? extractRemoteCwd(instance.terminal) : null);
         } else {
           // No SSH: OSC 7 reports local cwd, can supplement lsof
           cwd = cwd ?? osc7Cwd;
@@ -285,8 +289,8 @@ function createWorkspacesStore() {
       });
     },
 
-    async renameTab(workspaceId: string, paneId: string, tabId: string, name: string) {
-      await commands.renameTab(workspaceId, paneId, tabId, name);
+    async renameTab(workspaceId: string, paneId: string, tabId: string, name: string, customName?: boolean) {
+      await commands.renameTab(workspaceId, paneId, tabId, name, customName);
       workspaces = workspaces.map(w => {
         if (w.id === workspaceId) {
           return {
@@ -296,7 +300,7 @@ function createWorkspacesStore() {
                 return {
                   ...p,
                   tabs: p.tabs.map(t =>
-                    t.id === tabId ? { ...t, name } : t
+                    t.id === tabId ? { ...t, name, ...(customName !== undefined ? { custom_name: customName } : {}) } : t
                   )
                 };
               }

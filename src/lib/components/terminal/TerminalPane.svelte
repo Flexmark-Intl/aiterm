@@ -49,6 +49,38 @@
   }
   let contextMenu = $state<{ x: number; y: number } | null>(null);
 
+  // Escape a path for use inside single quotes.
+  // Handles ~ by leaving it unquoted so the shell expands it.
+  function shellEscapePath(path: string): string {
+    if (path === '~') return '~';
+    if (path.startsWith('~/')) {
+      const rest = path.slice(2).replace(/'/g, "'\\''");
+      return `~/'${rest}'`;
+    }
+    const escaped = path.replace(/'/g, "'\\''");
+    return `'${escaped}'`;
+  }
+
+  // Build the SSH command for split cloning.
+  // For ssh: inject -t and append 'cd <path> && exec "$SHELL" -l'
+  // so the remote shell starts in the right directory atomically.
+  function buildSshCommand(sshCmd: string | null, remoteCwd: string | null): string {
+    if (!sshCmd) return '';
+    if (!remoteCwd) return sshCmd;
+
+    const cdPath = shellEscapePath(remoteCwd);
+
+    // If it's a plain ssh command, inject -t and append remote command
+    const sshMatch = sshCmd.match(/^(ssh\s+)/);
+    if (sshMatch) {
+      const rest = sshCmd.slice(sshMatch[1].length);
+      return `ssh -t ${rest} 'cd ${cdPath} && exec $SHELL -l'`;
+    }
+
+    // Fallback for aliases/mosh/autossh: send ssh command then cd on next line
+    return sshCmd + '\n' + `cd ${cdPath}`;
+  }
+
   // Portal: attach containerRef to its slot in the split tree
   function attachToSlot() {
     const slot = document.querySelector(`[data-terminal-slot="${tabId}"]`) as HTMLElement;
@@ -121,13 +153,24 @@
 
     terminal.open(containerRef);
 
+    // OSC 0 (icon name + title) and OSC 2 (title): shells/programs set window title
+    terminal.parser.registerOscHandler(0, (data) => {
+      if (data) terminalsStore.updateOsc(tabId, { title: data });
+      return true;
+    });
+    terminal.parser.registerOscHandler(2, (data) => {
+      if (data) terminalsStore.updateOsc(tabId, { title: data });
+      return true;
+    });
+
     // OSC 7: shells report cwd via \e]7;file://host/path\e\\
     terminal.parser.registerOscHandler(7, (data) => {
       try {
         const url = new URL(data);
         if (url.protocol === 'file:') {
           const cwd = decodeURIComponent(url.pathname);
-          if (cwd) terminalsStore.setOsc7Cwd(tabId, cwd);
+          const cwdHost = url.hostname || null;
+          if (cwd) terminalsStore.updateOsc(tabId, { cwd, cwdHost });
         }
       } catch {
         // not a valid URL — ignore
@@ -200,26 +243,14 @@
 
     // If the source pane was running SSH, replay the command in the new terminal
     if (splitCtx?.sshCommand) {
-      // Small delay to let the shell prompt initialize before sending
+      // Small delay to let the local shell prompt initialize before sending
       setTimeout(async () => {
-        const bytes = Array.from(new TextEncoder().encode(splitCtx.sshCommand + '\n'));
         try {
+          const cmd = buildSshCommand(splitCtx.sshCommand, splitCtx.remoteCwd);
+          const bytes = Array.from(new TextEncoder().encode(cmd + '\n'));
           await writeTerminal(ptyId, bytes);
         } catch (e) {
           console.error('Failed to replay SSH command:', e);
-        }
-
-        // If we know the remote cwd, cd to it after SSH connects
-        if (splitCtx.remoteCwd) {
-          setTimeout(async () => {
-            const escaped = splitCtx.remoteCwd!.replace(/'/g, "'\\''");
-            const cdBytes = Array.from(new TextEncoder().encode(`cd '${escaped}'\n`));
-            try {
-              await writeTerminal(ptyId, cdBytes);
-            } catch (e) {
-              console.error('Failed to cd on remote:', e);
-            }
-          }, 2000);
         }
       }, 500);
     }

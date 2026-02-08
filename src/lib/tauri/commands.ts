@@ -64,8 +64,8 @@ export async function deleteTab(workspaceId: string, paneId: string, tabId: stri
   return invoke('delete_tab', { workspaceId, paneId, tabId });
 }
 
-export async function renameTab(workspaceId: string, paneId: string, tabId: string, name: string): Promise<void> {
-  return invoke('rename_tab', { workspaceId, paneId, tabId, name });
+export async function renameTab(workspaceId: string, paneId: string, tabId: string, name: string, customName?: boolean): Promise<void> {
+  return invoke('rename_tab', { workspaceId, paneId, tabId, name, customName: customName ?? null });
 }
 
 export async function setActiveWorkspace(workspaceId: string): Promise<void> {

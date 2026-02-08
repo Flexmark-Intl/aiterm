@@ -1,8 +1,10 @@
 <script lang="ts">
-  import { tick } from 'svelte';
+  import { tick, onDestroy } from 'svelte';
   import type { Tab, Pane } from '$lib/tauri/types';
   import { workspacesStore } from '$lib/stores/workspaces.svelte';
   import { activityStore } from '$lib/stores/activity.svelte';
+  import { terminalsStore } from '$lib/stores/terminals.svelte';
+  import type { OscState } from '$lib/stores/terminals.svelte';
 
   interface Props {
     workspaceId: string;
@@ -15,6 +17,22 @@
   let editingName = $state('');
   let editInput = $state<HTMLInputElement | null>(null);
 
+  // Track OSC titles for tabs in this pane
+  let oscTitles = $state<Map<string, string>>(new Map());
+
+  const unsubOsc = terminalsStore.onOscChange((tabId: string, osc: OscState) => {
+    if (osc.title && pane.tabs.some(t => t.id === tabId)) {
+      oscTitles = new Map(oscTitles);
+      oscTitles.set(tabId, osc.title);
+    }
+  });
+  onDestroy(unsubOsc);
+
+  function displayName(tab: Tab): string {
+    if (tab.custom_name) return tab.name;
+    return oscTitles.get(tab.id) ?? tab.name;
+  }
+
   async function startEditing(id: string, currentName: string, e: MouseEvent) {
     e.stopPropagation();
     editingId = id;
@@ -25,7 +43,7 @@
 
   async function finishEditing() {
     if (editingId && editingName.trim()) {
-      await workspacesStore.renameTab(workspaceId, pane.id, editingId, editingName.trim());
+      await workspacesStore.renameTab(workspaceId, pane.id, editingId, editingName.trim(), true);
     }
     editingId = null;
     editingName = '';
@@ -90,7 +108,7 @@
         {#if tab.id !== pane.active_tab_id && activityStore.hasActivity(tab.id)}
           <span class="activity-dot"></span>
         {/if}
-        <span class="tab-name">{tab.name}</span>
+        <span class="tab-name">{displayName(tab)}</span>
         <div class="tab-actions">
           <button
             class="tab-btn close-btn"

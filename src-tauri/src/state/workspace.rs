@@ -161,6 +161,9 @@ pub struct Tab {
     pub pty_id: Option<String>,
     #[serde(default)]
     pub scrollback: Option<String>,
+    /// True when the user has explicitly renamed this tab (disables OSC title).
+    #[serde(default)]
+    pub custom_name: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -228,6 +231,14 @@ fn default_scrollback_limit() -> u32 {
     10000
 }
 
+fn default_prompt_patterns() -> Vec<String> {
+    vec![
+        "\\u@\\h:\\d\\p".to_string(),
+        "\\h \\u[\\d]\\p".to_string(),
+        "[\\u@\\h \\d]\\p".to_string(),
+    ]
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum CursorStyle {
@@ -251,6 +262,8 @@ pub struct Preferences {
     pub auto_save_interval: u32,
     #[serde(default = "default_scrollback_limit")]
     pub scrollback_limit: u32,
+    #[serde(default = "default_prompt_patterns")]
+    pub prompt_patterns: Vec<String>,
 }
 
 impl Default for Preferences {
@@ -262,6 +275,7 @@ impl Default for Preferences {
             cursor_blink: default_cursor_blink(),
             auto_save_interval: default_auto_save_interval(),
             scrollback_limit: default_scrollback_limit(),
+            prompt_patterns: default_prompt_patterns(),
         }
     }
 }
@@ -273,6 +287,7 @@ impl Tab {
             name,
             pty_id: None,
             scrollback: None,
+            custom_name: false,
         }
     }
 }

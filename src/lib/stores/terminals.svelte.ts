@@ -3,6 +3,24 @@ import type { SerializeAddon } from '@xterm/addon-serialize';
 import type { SearchAddon } from '@xterm/addon-search';
 import { setTabScrollback } from '$lib/tauri/commands';
 
+/**
+ * Per-terminal state collected from OSC escape sequences.
+ *
+ * Supported:
+ *   OSC 0/2 — title (shown in tab)
+ *   OSC 7   — cwd   (used for split cloning)
+ *
+ * Future candidates:
+ *   OSC 9   — desktop notification when a command finishes
+ *   OSC 133 — shell integration (prompt/command boundaries)
+ */
+export interface OscState {
+  title: string | null;
+  cwd: string | null;
+  /** Hostname from the OSC 7 URL — used to distinguish local vs remote cwd. */
+  cwdHost: string | null;
+}
+
 interface TerminalInstance {
   terminal: Terminal;
   ptyId: string;
@@ -11,7 +29,7 @@ interface TerminalInstance {
   workspaceId: string;
   paneId: string;
   tabId: string;
-  lastOsc7Cwd: string | null;
+  osc: OscState;
 }
 
 export interface SplitContext {
@@ -25,6 +43,12 @@ function createTerminalsStore() {
   let searchVisibleFor = $state<string | null>(null);
   let _shuttingDown = false;
   const splitContexts = new Map<string, SplitContext>();
+  // Listeners notified when any terminal's OSC state changes
+  const oscListeners = new Set<(tabId: string, osc: OscState) => void>();
+
+  function emitOscChange(tabId: string, osc: OscState) {
+    for (const fn of oscListeners) fn(tabId, osc);
+  }
 
   return {
     get instances() { return instances; },
@@ -51,7 +75,11 @@ function createTerminalsStore() {
       paneId: string
     ) {
       instances = new Map(instances);
-      instances.set(tabId, { terminal, ptyId, serializeAddon, searchAddon, workspaceId, paneId, tabId, lastOsc7Cwd: null });
+      instances.set(tabId, {
+        terminal, ptyId, serializeAddon, searchAddon,
+        workspaceId, paneId, tabId,
+        osc: { title: null, cwd: null, cwdHost: null },
+      });
     },
 
     unregister(tabId: string) {
@@ -63,14 +91,25 @@ function createTerminalsStore() {
       return instances.get(tabId);
     },
 
-    setOsc7Cwd(tabId: string, cwd: string) {
+    // --- OSC state ---
+
+    updateOsc(tabId: string, patch: Partial<OscState>) {
       const instance = instances.get(tabId);
-      if (instance) instance.lastOsc7Cwd = cwd;
+      if (!instance) return;
+      Object.assign(instance.osc, patch);
+      emitOscChange(tabId, instance.osc);
     },
 
-    getOsc7Cwd(tabId: string): string | null {
-      return instances.get(tabId)?.lastOsc7Cwd ?? null;
+    getOsc(tabId: string): OscState | undefined {
+      return instances.get(tabId)?.osc;
     },
+
+    onOscChange(fn: (tabId: string, osc: OscState) => void): () => void {
+      oscListeners.add(fn);
+      return () => oscListeners.delete(fn);
+    },
+
+    // --- terminal actions ---
 
     focusTerminal(tabId: string) {
       const instance = instances.get(tabId);

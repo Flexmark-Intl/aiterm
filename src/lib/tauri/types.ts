@@ -3,6 +3,7 @@ export interface Tab {
   name: string;
   pty_id: string | null;
   scrollback: string | null;
+  custom_name: boolean;
 }
 
 export interface Pane {
@@ -46,6 +47,7 @@ export interface Preferences {
   cursor_blink: boolean;
   auto_save_interval: number;
   scrollback_limit: number;
+  prompt_patterns: string[];
 }
 
 export interface AppData {

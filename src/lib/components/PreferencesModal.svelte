@@ -9,6 +9,14 @@
 
   let { open, onclose }: Props = $props();
 
+  let activeSection = $state<'terminal' | 'ui' | 'shell'>('terminal');
+
+  const sections = [
+    { id: 'terminal' as const, label: 'Terminal' },
+    { id: 'ui' as const, label: 'Scrollback' },
+    { id: 'shell' as const, label: 'Shell' },
+  ];
+
   const fontFamilies = [
     'Menlo',
     'Monaco',
@@ -60,100 +68,142 @@
         <button class="close-btn" onclick={onclose}>&times;</button>
       </div>
 
-      <div class="content">
-        <section>
-          <h3>Terminal</h3>
-
-          <div class="setting">
-            <label for="font-size">Font Size</label>
-            <div class="range-wrapper">
-              <input
-                type="range"
-                id="font-size"
-                min="10"
-                max="24"
-                value={preferencesStore.fontSize}
-                oninput={(e) => preferencesStore.setFontSize(parseInt(e.currentTarget.value))}
-              />
-              <span class="range-value">{preferencesStore.fontSize}px</span>
-            </div>
-          </div>
-
-          <div class="setting">
-            <label for="font-family">Font Family</label>
-            <select
-              id="font-family"
-              value={preferencesStore.fontFamily}
-              onchange={(e) => preferencesStore.setFontFamily(e.currentTarget.value)}
-            >
-              {#each fontFamilies as font}
-                <option value={font}>{font}</option>
-              {/each}
-            </select>
-          </div>
-
-          <div class="setting">
-            <span class="label-text">Cursor Style</span>
-            <div class="radio-group">
-              {#each ['block', 'underline', 'bar'] as style}
-                <label class="radio-label">
-                  <input
-                    type="radio"
-                    name="cursor-style"
-                    value={style}
-                    checked={preferencesStore.cursorStyle === style}
-                    onchange={() => preferencesStore.setCursorStyle(style as CursorStyle)}
-                  />
-                  {style.charAt(0).toUpperCase() + style.slice(1)}
-                </label>
-              {/each}
-            </div>
-          </div>
-
-          <div class="setting">
-            <label for="cursor-blink">Cursor Blink</label>
+      <div class="modal-body">
+        <nav class="sidebar">
+          {#each sections as section}
             <button
-              id="cursor-blink"
-              class="toggle"
-              class:active={preferencesStore.cursorBlink}
-              onclick={() => preferencesStore.setCursorBlink(!preferencesStore.cursorBlink)}
-              aria-pressed={preferencesStore.cursorBlink}
-              aria-label="Toggle cursor blink"
+              class="sidebar-item"
+              class:active={activeSection === section.id}
+              onclick={() => activeSection = section.id}
             >
-              <span class="toggle-knob"></span>
+              {section.label}
             </button>
-          </div>
-        </section>
+          {/each}
+        </nav>
 
-        <section>
-          <h3>UI</h3>
+        <div class="section-content">
+          {#if activeSection === 'terminal'}
+            <div class="setting">
+              <label for="font-size">Font Size</label>
+              <div class="range-wrapper">
+                <input
+                  type="range"
+                  id="font-size"
+                  min="10"
+                  max="24"
+                  value={preferencesStore.fontSize}
+                  oninput={(e) => preferencesStore.setFontSize(parseInt(e.currentTarget.value))}
+                />
+                <span class="range-value">{preferencesStore.fontSize}px</span>
+              </div>
+            </div>
 
-          <div class="setting">
-            <label for="auto-save">Auto-save Interval</label>
-            <select
-              id="auto-save"
-              value={preferencesStore.autoSaveInterval}
-              onchange={(e) => preferencesStore.setAutoSaveInterval(parseInt(e.currentTarget.value))}
-            >
-              {#each autoSaveOptions as opt}
-                <option value={opt.value}>{opt.label}</option>
-              {/each}
-            </select>
-          </div>
+            <div class="setting">
+              <label for="font-family">Font Family</label>
+              <select
+                id="font-family"
+                value={preferencesStore.fontFamily}
+                onchange={(e) => preferencesStore.setFontFamily(e.currentTarget.value)}
+              >
+                {#each fontFamilies as font}
+                  <option value={font}>{font}</option>
+                {/each}
+              </select>
+            </div>
 
-          <div class="setting">
-            <label for="scrollback">Scrollback Limit</label>
-            <select
-              id="scrollback"
-              value={preferencesStore.scrollbackLimit}
-              onchange={(e) => preferencesStore.setScrollbackLimit(parseInt(e.currentTarget.value))}
-            >
-              {#each scrollbackOptions as opt}
-                <option value={opt.value}>{opt.label}</option>
-              {/each}
-            </select>
-          </div>
-        </section>
+            <div class="setting">
+              <span class="label-text">Cursor Style</span>
+              <div class="radio-group">
+                {#each ['block', 'underline', 'bar'] as style}
+                  <label class="radio-label">
+                    <input
+                      type="radio"
+                      name="cursor-style"
+                      value={style}
+                      checked={preferencesStore.cursorStyle === style}
+                      onchange={() => preferencesStore.setCursorStyle(style as CursorStyle)}
+                    />
+                    {style.charAt(0).toUpperCase() + style.slice(1)}
+                  </label>
+                {/each}
+              </div>
+            </div>
+
+            <div class="setting">
+              <label for="cursor-blink">Cursor Blink</label>
+              <button
+                id="cursor-blink"
+                class="toggle"
+                class:active={preferencesStore.cursorBlink}
+                onclick={() => preferencesStore.setCursorBlink(!preferencesStore.cursorBlink)}
+                aria-pressed={preferencesStore.cursorBlink}
+                aria-label="Toggle cursor blink"
+              >
+                <span class="toggle-knob"></span>
+              </button>
+            </div>
+          {:else if activeSection === 'ui'}
+            <div class="setting">
+              <label for="auto-save">Auto-save Interval</label>
+              <select
+                id="auto-save"
+                value={preferencesStore.autoSaveInterval}
+                onchange={(e) => preferencesStore.setAutoSaveInterval(parseInt(e.currentTarget.value))}
+              >
+                {#each autoSaveOptions as opt}
+                  <option value={opt.value}>{opt.label}</option>
+                {/each}
+              </select>
+            </div>
+
+            <div class="setting">
+              <label for="scrollback">Scrollback Limit</label>
+              <select
+                id="scrollback"
+                value={preferencesStore.scrollbackLimit}
+                onchange={(e) => preferencesStore.setScrollbackLimit(parseInt(e.currentTarget.value))}
+              >
+                {#each scrollbackOptions as opt}
+                  <option value={opt.value}>{opt.label}</option>
+                {/each}
+              </select>
+            </div>
+          {:else if activeSection === 'shell'}
+            <p class="section-desc">
+              Prompt patterns for detecting the remote directory when splitting SSH panes.
+              Use <code>\h</code> hostname, <code>\u</code> username, <code>\d</code> directory, <code>\p</code> prompt char (<code>$ # % &gt;</code>).
+            </p>
+
+            {#each preferencesStore.promptPatterns as pattern, idx}
+              <div class="pattern-row">
+                <input
+                  type="text"
+                  class="pattern-input"
+                  value={pattern}
+                  placeholder={'e.g. \\h \\u[\\d]\\p'}
+                  onchange={(e) => {
+                    const updated = [...preferencesStore.promptPatterns];
+                    updated[idx] = e.currentTarget.value;
+                    preferencesStore.setPromptPatterns(updated);
+                  }}
+                />
+                <button
+                  class="pattern-delete"
+                  onclick={() => {
+                    const updated = preferencesStore.promptPatterns.filter((_, i) => i !== idx);
+                    preferencesStore.setPromptPatterns(updated);
+                  }}
+                  title="Remove pattern"
+                >&times;</button>
+              </div>
+            {/each}
+
+            <button
+              class="add-pattern-btn"
+              onclick={() => preferencesStore.setPromptPatterns([...preferencesStore.promptPatterns, ''])}
+            >+ Add Pattern</button>
+          {/if}
+        </div>
       </div>
     </div>
   </div>
@@ -174,9 +224,10 @@
     background: var(--bg-medium);
     border: 1px solid var(--bg-light);
     border-radius: 8px;
-    width: 400px;
+    width: 600px;
     max-height: 80vh;
-    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
   }
 
@@ -186,6 +237,7 @@
     justify-content: space-between;
     padding: 16px 20px;
     border-bottom: 1px solid var(--bg-light);
+    flex-shrink: 0;
   }
 
   h2 {
@@ -207,32 +259,53 @@
     color: var(--fg);
   }
 
-  .content {
-    padding: 16px 20px;
+  .modal-body {
+    display: flex;
+    flex: 1;
+    min-height: 0;
   }
 
-  section {
-    margin-bottom: 24px;
+  .sidebar {
+    width: 140px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--bg-light);
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
   }
 
-  section:last-child {
-    margin-bottom: 0;
-  }
-
-  h3 {
-    margin: 0 0 16px 0;
-    font-size: 12px;
-    font-weight: 600;
+  .sidebar-item {
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 13px;
     color: var(--fg-dim);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.1s, color 0.1s;
+  }
+
+  .sidebar-item:hover {
+    background: var(--bg-light);
+    color: var(--fg);
+  }
+
+  .sidebar-item.active {
+    background: var(--bg-dark);
+    color: var(--fg);
+  }
+
+  .section-content {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
   }
 
   .setting {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 12px;
+    margin-bottom: 16px;
   }
 
   .setting:last-child {
@@ -327,5 +400,72 @@
 
   .toggle.active .toggle-knob {
     transform: translateX(18px);
+  }
+
+  .section-desc {
+    font-size: 12px;
+    color: var(--fg-dim);
+    margin: 0 0 16px 0;
+    line-height: 1.5;
+  }
+
+  .section-desc code {
+    background: var(--bg-dark);
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 11px;
+  }
+
+  .pattern-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+  }
+
+  .pattern-input {
+    flex: 1;
+    background: var(--bg-dark);
+    border: 1px solid var(--bg-light);
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 13px;
+    font-family: 'Menlo', Monaco, monospace;
+    color: var(--fg);
+  }
+
+  .pattern-input:focus {
+    border-color: var(--accent);
+    outline: none;
+  }
+
+  .pattern-delete {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    color: var(--fg-dim);
+    border-radius: 4px;
+    font-size: 14px;
+  }
+
+  .pattern-delete:hover {
+    background: var(--bg-light);
+    color: var(--fg);
+  }
+
+  .add-pattern-btn {
+    font-size: 12px;
+    color: var(--fg-dim);
+    padding: 4px 8px;
+    border-radius: 4px;
+    margin-top: 4px;
+  }
+
+  .add-pattern-btn:hover {
+    background: var(--bg-light);
+    color: var(--fg);
   }
 </style>

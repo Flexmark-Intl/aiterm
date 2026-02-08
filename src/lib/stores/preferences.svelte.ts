@@ -8,6 +8,7 @@ function createPreferencesStore() {
   let cursorBlink = $state(true);
   let autoSaveInterval = $state(10);
   let scrollbackLimit = $state(10000);
+  let promptPatterns = $state<string[]>([]);
 
   return {
     get fontSize() { return fontSize; },
@@ -16,6 +17,7 @@ function createPreferencesStore() {
     get cursorBlink() { return cursorBlink; },
     get autoSaveInterval() { return autoSaveInterval; },
     get scrollbackLimit() { return scrollbackLimit; },
+    get promptPatterns() { return promptPatterns; },
 
     async load() {
       const prefs = await commands.getPreferences();
@@ -25,6 +27,7 @@ function createPreferencesStore() {
       cursorBlink = prefs.cursor_blink;
       autoSaveInterval = prefs.auto_save_interval;
       scrollbackLimit = prefs.scrollback_limit;
+      promptPatterns = prefs.prompt_patterns;
     },
 
     async setFontSize(value: number) {
@@ -57,6 +60,11 @@ function createPreferencesStore() {
       await this.save();
     },
 
+    async setPromptPatterns(value: string[]) {
+      promptPatterns = value;
+      await this.save();
+    },
+
     async save() {
       const prefs: Preferences = {
         font_size: fontSize,
@@ -65,6 +73,7 @@ function createPreferencesStore() {
         cursor_blink: cursorBlink,
         auto_save_interval: autoSaveInterval,
         scrollback_limit: scrollbackLimit,
+        prompt_patterns: promptPatterns,
       };
       await commands.setPreferences(prefs);
     }

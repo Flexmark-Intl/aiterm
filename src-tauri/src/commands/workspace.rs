@@ -206,6 +206,7 @@ pub fn rename_tab(
     pane_id: String,
     tab_id: String,
     name: String,
+    custom_name: Option<bool>,
 ) -> Result<(), String> {
     let data_clone = {
         let mut app_data = state.app_data.write();
@@ -213,6 +214,9 @@ pub fn rename_tab(
             if let Some(pane) = workspace.panes.iter_mut().find(|p| p.id == pane_id) {
                 if let Some(tab) = pane.tabs.iter_mut().find(|t| t.id == tab_id) {
                     tab.name = name;
+                    if let Some(cn) = custom_name {
+                        tab.custom_name = cn;
+                    }
                 }
             }
         }
