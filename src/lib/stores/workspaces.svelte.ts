@@ -136,19 +136,23 @@ function createWorkspacesStore() {
 
       if (instance) {
         // Serialize current scrollback
-        try {
-          scrollback = instance.serializeAddon.serialize();
-        } catch (e) {
-          console.error('Failed to serialize scrollback for split:', e);
+        if (preferencesStore.cloneScrollback) {
+          try {
+            scrollback = instance.serializeAddon.serialize();
+          } catch (e) {
+            console.error('Failed to serialize scrollback for split:', e);
+          }
         }
 
         // Get PTY info (cwd + SSH detection)
-        try {
-          const info = await commands.getPtyInfo(instance.ptyId);
-          cwd = info.cwd;
-          sshCommand = info.foreground_command;
-        } catch (e) {
-          // PTY may already be gone — fall through with null
+        if (preferencesStore.cloneCwd || preferencesStore.cloneSsh) {
+          try {
+            const info = await commands.getPtyInfo(instance.ptyId);
+            cwd = preferencesStore.cloneCwd ? info.cwd : null;
+            sshCommand = preferencesStore.cloneSsh ? info.foreground_command : null;
+          } catch (e) {
+            // PTY may already be gone — fall through with null
+          }
         }
       }
 
@@ -167,31 +171,35 @@ function createWorkspacesStore() {
         await commands.renameTab(workspaceId, newPane.id, newTabId, sourceTab.name);
       }
       if (newTabId) {
-        try {
-          await commands.copyTabHistory(sourceTabId, newTabId);
-        } catch (e) {
-          console.error('Failed to copy tab history:', e);
+        if (preferencesStore.cloneHistory) {
+          try {
+            await commands.copyTabHistory(sourceTabId, newTabId);
+          } catch (e) {
+            console.error('Failed to copy tab history:', e);
+          }
         }
 
         // 4. Store split context for the new TerminalPane to consume on mount
-        // OSC 7 gives the most accurate cwd (works for both local and remote shells)
-        const osc7Cwd = terminalsStore.getOsc(sourceTabId)?.cwd ?? null;
+        if (preferencesStore.cloneCwd || preferencesStore.cloneSsh) {
+          // OSC 7 gives the most accurate cwd (works for both local and remote shells)
+          const osc7Cwd = terminalsStore.getOsc(sourceTabId)?.cwd ?? null;
 
-        let remoteCwd: string | null = null;
-        if (sshCommand) {
-          // SSH active: OSC 7 may be stale (from the local shell before SSH started)
-          // or updated by the remote shell. Compare with the lsof-reported local cwd:
-          // if they match, OSC 7 is stale → fall back to prompt heuristic.
-          const isOsc7Stale = osc7Cwd === cwd;
-          const osc7RemoteCwd = (osc7Cwd && !isOsc7Stale) ? osc7Cwd : null;
-          remoteCwd = osc7RemoteCwd ?? (instance ? extractRemoteCwd(instance.terminal) : null);
-        } else {
-          // No SSH: OSC 7 reports local cwd, can supplement lsof
-          cwd = cwd ?? osc7Cwd;
-        }
+          let remoteCwd: string | null = null;
+          if (sshCommand) {
+            // SSH active: OSC 7 may be stale (from the local shell before SSH started)
+            // or updated by the remote shell. Compare with the lsof-reported local cwd:
+            // if they match, OSC 7 is stale → fall back to prompt heuristic.
+            const isOsc7Stale = osc7Cwd === cwd;
+            const osc7RemoteCwd = (osc7Cwd && !isOsc7Stale) ? osc7Cwd : null;
+            remoteCwd = osc7RemoteCwd ?? (instance ? extractRemoteCwd(instance.terminal) : null);
+          } else if (preferencesStore.cloneCwd) {
+            // No SSH: OSC 7 reports local cwd, can supplement lsof
+            cwd = cwd ?? osc7Cwd;
+          }
 
-        if (cwd || sshCommand) {
-          terminalsStore.setSplitContext(newTabId, { cwd, sshCommand, remoteCwd });
+          if (cwd || sshCommand) {
+            terminalsStore.setSplitContext(newTabId, { cwd, sshCommand, remoteCwd });
+          }
         }
       }
 

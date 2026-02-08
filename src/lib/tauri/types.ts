@@ -48,6 +48,10 @@ export interface Preferences {
   auto_save_interval: number;
   scrollback_limit: number;
   prompt_patterns: string[];
+  clone_cwd: boolean;
+  clone_scrollback: boolean;
+  clone_ssh: boolean;
+  clone_history: boolean;
 }
 
 export interface AppData {

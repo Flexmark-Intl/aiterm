@@ -239,6 +239,10 @@ fn default_prompt_patterns() -> Vec<String> {
     ]
 }
 
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum CursorStyle {
@@ -264,6 +268,14 @@ pub struct Preferences {
     pub scrollback_limit: u32,
     #[serde(default = "default_prompt_patterns")]
     pub prompt_patterns: Vec<String>,
+    #[serde(default = "default_true")]
+    pub clone_cwd: bool,
+    #[serde(default = "default_true")]
+    pub clone_scrollback: bool,
+    #[serde(default = "default_true")]
+    pub clone_ssh: bool,
+    #[serde(default = "default_true")]
+    pub clone_history: bool,
 }
 
 impl Default for Preferences {
@@ -276,6 +288,10 @@ impl Default for Preferences {
             auto_save_interval: default_auto_save_interval(),
             scrollback_limit: default_scrollback_limit(),
             prompt_patterns: default_prompt_patterns(),
+            clone_cwd: true,
+            clone_scrollback: true,
+            clone_ssh: true,
+            clone_history: true,
         }
     }
 }

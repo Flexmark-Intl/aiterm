@@ -9,6 +9,10 @@ function createPreferencesStore() {
   let autoSaveInterval = $state(10);
   let scrollbackLimit = $state(10000);
   let promptPatterns = $state<string[]>([]);
+  let cloneCwd = $state(true);
+  let cloneScrollback = $state(true);
+  let cloneSsh = $state(true);
+  let cloneHistory = $state(true);
 
   return {
     get fontSize() { return fontSize; },
@@ -18,6 +22,10 @@ function createPreferencesStore() {
     get autoSaveInterval() { return autoSaveInterval; },
     get scrollbackLimit() { return scrollbackLimit; },
     get promptPatterns() { return promptPatterns; },
+    get cloneCwd() { return cloneCwd; },
+    get cloneScrollback() { return cloneScrollback; },
+    get cloneSsh() { return cloneSsh; },
+    get cloneHistory() { return cloneHistory; },
 
     async load() {
       const prefs = await commands.getPreferences();
@@ -28,6 +36,10 @@ function createPreferencesStore() {
       autoSaveInterval = prefs.auto_save_interval;
       scrollbackLimit = prefs.scrollback_limit;
       promptPatterns = prefs.prompt_patterns;
+      cloneCwd = prefs.clone_cwd;
+      cloneScrollback = prefs.clone_scrollback;
+      cloneSsh = prefs.clone_ssh;
+      cloneHistory = prefs.clone_history;
     },
 
     async setFontSize(value: number) {
@@ -65,6 +77,26 @@ function createPreferencesStore() {
       await this.save();
     },
 
+    async setCloneCwd(value: boolean) {
+      cloneCwd = value;
+      await this.save();
+    },
+
+    async setCloneScrollback(value: boolean) {
+      cloneScrollback = value;
+      await this.save();
+    },
+
+    async setCloneSsh(value: boolean) {
+      cloneSsh = value;
+      await this.save();
+    },
+
+    async setCloneHistory(value: boolean) {
+      cloneHistory = value;
+      await this.save();
+    },
+
     async save() {
       const prefs: Preferences = {
         font_size: fontSize,
@@ -74,6 +106,10 @@ function createPreferencesStore() {
         auto_save_interval: autoSaveInterval,
         scrollback_limit: scrollbackLimit,
         prompt_patterns: promptPatterns,
+        clone_cwd: cloneCwd,
+        clone_scrollback: cloneScrollback,
+        clone_ssh: cloneSsh,
+        clone_history: cloneHistory,
       };
       await commands.setPreferences(prefs);
     }

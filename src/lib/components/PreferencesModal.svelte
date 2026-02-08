@@ -9,12 +9,12 @@
 
   let { open, onclose }: Props = $props();
 
-  let activeSection = $state<'terminal' | 'ui' | 'shell'>('terminal');
+  let activeSection = $state<'terminal' | 'ui' | 'panels'>('terminal');
 
   const sections = [
     { id: 'terminal' as const, label: 'Terminal' },
     { id: 'ui' as const, label: 'Scrollback' },
-    { id: 'shell' as const, label: 'Shell' },
+    { id: 'panels' as const, label: 'Panels' },
   ];
 
   const fontFamilies = [
@@ -31,6 +31,12 @@
     { value: 10, label: '10 seconds' },
     { value: 30, label: '30 seconds' },
     { value: 60, label: '60 seconds' },
+  ];
+
+  const defaultPromptPatterns = [
+    '\\u@\\h:\\d\\p',
+    '\\h \\u[\\d]\\p',
+    '[\\u@\\h \\d]\\p',
   ];
 
   const scrollbackOptions = [
@@ -168,9 +174,72 @@
                 {/each}
               </select>
             </div>
-          {:else if activeSection === 'shell'}
+          {:else if activeSection === 'panels'}
+            <h3 class="section-heading">Duplication</h3>
             <p class="section-desc">
-              Prompt patterns for detecting the remote directory when splitting SSH panes.
+              What to clone when splitting a pane (<kbd>Cmd+D</kbd>).
+            </p>
+
+            <div class="setting">
+              <label for="clone-cwd">Working Directory</label>
+              <button
+                id="clone-cwd"
+                class="toggle"
+                class:active={preferencesStore.cloneCwd}
+                onclick={() => preferencesStore.setCloneCwd(!preferencesStore.cloneCwd)}
+                aria-pressed={preferencesStore.cloneCwd}
+                aria-label="Toggle clone working directory"
+              >
+                <span class="toggle-knob"></span>
+              </button>
+            </div>
+
+            <div class="setting">
+              <label for="clone-scrollback">Scrollback Buffer</label>
+              <button
+                id="clone-scrollback"
+                class="toggle"
+                class:active={preferencesStore.cloneScrollback}
+                onclick={() => preferencesStore.setCloneScrollback(!preferencesStore.cloneScrollback)}
+                aria-pressed={preferencesStore.cloneScrollback}
+                aria-label="Toggle clone scrollback buffer"
+              >
+                <span class="toggle-knob"></span>
+              </button>
+            </div>
+
+            <div class="setting">
+              <label for="clone-ssh">SSH Session</label>
+              <button
+                id="clone-ssh"
+                class="toggle"
+                class:active={preferencesStore.cloneSsh}
+                onclick={() => preferencesStore.setCloneSsh(!preferencesStore.cloneSsh)}
+                aria-pressed={preferencesStore.cloneSsh}
+                aria-label="Toggle clone SSH session"
+              >
+                <span class="toggle-knob"></span>
+              </button>
+            </div>
+
+            <div class="setting">
+              <label for="clone-history">Shell History</label>
+              <button
+                id="clone-history"
+                class="toggle"
+                class:active={preferencesStore.cloneHistory}
+                onclick={() => preferencesStore.setCloneHistory(!preferencesStore.cloneHistory)}
+                aria-pressed={preferencesStore.cloneHistory}
+                aria-label="Toggle clone shell history"
+              >
+                <span class="toggle-knob"></span>
+              </button>
+            </div>
+
+            <h3 class="section-heading">Prompt Patterns</h3>
+            <p class="section-desc">
+              Patterns for detecting the remote directory when splitting SSH panes.
+              This lets cloned terminals automatically <code>cd</code> to the source directory on the remote host.
               Use <code>\h</code> hostname, <code>\u</code> username, <code>\d</code> directory, <code>\p</code> prompt char (<code>$ # % &gt;</code>).
             </p>
 
@@ -198,10 +267,16 @@
               </div>
             {/each}
 
-            <button
-              class="add-pattern-btn"
-              onclick={() => preferencesStore.setPromptPatterns([...preferencesStore.promptPatterns, ''])}
-            >+ Add Pattern</button>
+            <div class="pattern-actions">
+              <button
+                class="add-pattern-btn"
+                onclick={() => preferencesStore.setPromptPatterns([...preferencesStore.promptPatterns, ''])}
+              >+ Add Pattern</button>
+              <button
+                class="add-pattern-btn"
+                onclick={() => preferencesStore.setPromptPatterns([...defaultPromptPatterns])}
+              >Reset to Defaults</button>
+            </div>
           {/if}
         </div>
       </div>
@@ -402,11 +477,32 @@
     transform: translateX(18px);
   }
 
+  .section-heading {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--fg-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin: 0 0 8px 0;
+  }
+
+  .section-heading:not(:first-child) {
+    margin-top: 24px;
+  }
+
   .section-desc {
     font-size: 12px;
     color: var(--fg-dim);
     margin: 0 0 16px 0;
     line-height: 1.5;
+  }
+
+  .section-desc kbd {
+    background: var(--bg-dark);
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-family: inherit;
   }
 
   .section-desc code {
@@ -456,12 +552,17 @@
     color: var(--fg);
   }
 
+  .pattern-actions {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 4px;
+  }
+
   .add-pattern-btn {
     font-size: 12px;
     color: var(--fg-dim);
     padding: 4px 8px;
     border-radius: 4px;
-    margin-top: 4px;
   }
 
   .add-pattern-btn:hover {
