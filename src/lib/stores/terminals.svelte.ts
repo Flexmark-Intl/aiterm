@@ -1,0 +1,79 @@
+import type { Terminal } from '@xterm/xterm';
+import type { SerializeAddon } from '@xterm/addon-serialize';
+import { setTabScrollback } from '$lib/tauri/commands';
+
+interface TerminalInstance {
+  terminal: Terminal;
+  ptyId: string;
+  serializeAddon: SerializeAddon;
+  workspaceId: string;
+  windowId: string;
+  tabId: string;
+}
+
+function createTerminalsStore() {
+  let instances = $state<Map<string, TerminalInstance>>(new Map());
+  let _shuttingDown = false;
+
+  return {
+    get instances() { return instances; },
+    get shuttingDown() { return _shuttingDown; },
+
+    register(
+      tabId: string,
+      terminal: Terminal,
+      ptyId: string,
+      serializeAddon: SerializeAddon,
+      workspaceId: string,
+      windowId: string
+    ) {
+      instances = new Map(instances);
+      instances.set(tabId, { terminal, ptyId, serializeAddon, workspaceId, windowId, tabId });
+    },
+
+    unregister(tabId: string) {
+      instances = new Map(instances);
+      instances.delete(tabId);
+    },
+
+    get(tabId: string): TerminalInstance | undefined {
+      return instances.get(tabId);
+    },
+
+    focusTerminal(tabId: string) {
+      const instance = instances.get(tabId);
+      if (instance) {
+        instance.terminal.focus();
+      }
+    },
+
+    async saveAllScrollback(): Promise<void> {
+      _shuttingDown = true;
+
+      // Serialize all terminals synchronously first to avoid interleaving
+      const toSave: { workspaceId: string; windowId: string; tabId: string; scrollback: string }[] = [];
+      for (const [tabId, instance] of instances) {
+        try {
+          const scrollback = instance.serializeAddon.serialize();
+          toSave.push({
+            workspaceId: instance.workspaceId,
+            windowId: instance.windowId,
+            tabId: instance.tabId,
+            scrollback,
+          });
+        } catch (e) {
+          console.error(`saveAllScrollback: FAILED ${tabId} -`, e);
+        }
+      }
+
+      // Now send all saves to backend
+      await Promise.all(
+        toSave.map(({ workspaceId, windowId, tabId, scrollback }) =>
+          setTabScrollback(workspaceId, windowId, tabId, scrollback)
+        )
+      );
+    }
+  };
+}
+
+export const terminalsStore = createTerminalsStore();
