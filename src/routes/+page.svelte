@@ -81,7 +81,7 @@
 <div class="app">
   <div class="titlebar" data-tauri-drag-region>
     <div class="titlebar-spacer"></div>
-    <span class="titlebar-title">aiTerm</span>
+    <img src="/logo-light.png" alt="aiTerm" class="titlebar-logo" />
     <div class="titlebar-controls">
       <LayoutSelector layout={workspacesStore.layout} onchange={handleLayoutChange} />
     </div>
@@ -90,7 +90,7 @@
   <div class="app-body">
     {#if loading}
       <div class="loading">
-        <span>Loading...</span>
+        <img src="/logo-light.png" alt="aiTerm" class="loading-logo" />
       </div>
     {:else}
       <WorkspaceSidebar width={workspacesStore.sidebarWidth} />
@@ -151,12 +151,10 @@
     width: 78px; /* Space for traffic lights */
   }
 
-  .titlebar-title {
-    flex: 1;
-    text-align: center;
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--fg);
+  .titlebar-logo {
+    height: 16px;
+    opacity: 0.7;
+    pointer-events: none;
   }
 
   .titlebar-controls {
@@ -176,7 +174,11 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--fg-dim);
+  }
+
+  .loading-logo {
+    height: 48px;
+    opacity: 0.5;
   }
 
   .main-content {

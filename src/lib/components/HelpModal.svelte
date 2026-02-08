@@ -56,6 +56,7 @@
 
         <section>
           <h3>General</h3>
+          <div class="shortcut"><kbd>Cmd</kbd> + <kbd>K</kbd> <span>Clear terminal + scrollback</span></div>
           <div class="shortcut"><kbd>Cmd</kbd> + <kbd>,</kbd> <span>Preferences</span></div>
           <div class="shortcut"><kbd>Cmd</kbd> + <kbd>/</kbd> <span>Show this help</span></div>
           <div class="shortcut"><kbd>Cmd</kbd> + <kbd>Q</kbd> <span>Quit</span></div>

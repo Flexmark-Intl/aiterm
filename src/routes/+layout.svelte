@@ -138,6 +138,17 @@
         return;
       }
 
+      // Cmd+K - Clear terminal and scrollback
+      if (isMeta && !e.shiftKey && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        e.stopPropagation();
+        const tab = workspacesStore.activeTab;
+        if (tab) {
+          terminalsStore.clearTerminal(tab.id);
+        }
+        return;
+      }
+
       // Cmd+/ or Cmd+? - Show help
       if (isMeta && (e.key === '/' || e.key === '?' || e.code === 'Slash')) {
         e.preventDefault();

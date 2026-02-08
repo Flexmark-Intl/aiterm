@@ -47,6 +47,18 @@ function createTerminalsStore() {
       }
     },
 
+    async clearTerminal(tabId: string) {
+      const instance = instances.get(tabId);
+      if (!instance) return;
+      // Clear scrollback buffer but keep current viewport (prompt stays visible)
+      instance.terminal.write('\x1b[3J');
+      instance.terminal.clear();
+      // Serialize the now-empty state and persist it, so auto-save
+      // and saveAllScrollback don't re-save stale content
+      const scrollback = instance.serializeAddon.serialize();
+      await setTabScrollback(instance.workspaceId, instance.paneId, instance.tabId, scrollback);
+    },
+
     async saveAllScrollback(): Promise<void> {
       _shuttingDown = true;
 
