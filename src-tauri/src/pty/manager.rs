@@ -57,13 +57,14 @@ pub fn spawn_pty(
         cmd.env("BASH_SILENCE_DEPRECATION_WARNING", "1");
     }
 
-    // Set up per-tab history file
+    // Set up per-tab history file (sanitize tab_id to prevent path traversal)
+    let safe_tab_id = tab_id.replace(['/', '\\', '.'], "");
     if let Some(data_dir) = dirs::data_dir() {
         let history_dir = data_dir.join("com.aiterm.app").join("history");
         // Create history directory if it doesn't exist
         let _ = std::fs::create_dir_all(&history_dir);
 
-        let history_file = history_dir.join(format!("{}.history", tab_id));
+        let history_file = history_dir.join(format!("{}.history", safe_tab_id));
         let history_path = history_file.to_string_lossy().to_string();
 
         // Set HISTFILE for bash/zsh/sh
@@ -73,13 +74,12 @@ pub fn spawn_pty(
             }
             "fish" => {
                 // Fish uses a different variable
-                cmd.env("fish_history", tab_id);
+                cmd.env("fish_history", &safe_tab_id);
             }
             _ => {
                 cmd.env("HISTFILE", &history_path);
             }
         }
-        eprintln!("Set HISTFILE to {}", history_path);
     }
 
     // Get current working directory - use home dir for new terminals
@@ -88,16 +88,13 @@ pub fn spawn_pty(
         cmd.env("HOME", home.to_string_lossy().to_string());
     }
 
-    eprintln!("Spawning command...");
     let mut child = pair.slave.spawn_command(cmd).map_err(|e| {
         eprintln!("Failed to spawn command: {}", e);
         e.to_string()
     })?;
-    eprintln!("Command spawned successfully");
 
     // Drop the slave - this is important! The shell won't start properly if we keep it open
     drop(pair.slave);
-    eprintln!("Slave dropped");
 
     // Get reader and writer from master
     let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
@@ -112,8 +109,10 @@ pub fn spawn_pty(
         registry.insert(pty_id.to_string(), PtyHandle { sender: tx });
     }
 
-    // Spawn writer thread
+    // Spawn writer thread (with PTY registry cleanup on exit)
     let master = pair.master;
+    let state_clone = Arc::clone(state);
+    let pty_id_owned = pty_id.to_string();
     thread::spawn(move || {
         loop {
             match rx.recv_timeout(Duration::from_millis(100)) {
@@ -147,6 +146,8 @@ pub fn spawn_pty(
                 }
             }
         }
+        // Cleanup: remove PTY handle from registry on exit
+        state_clone.pty_registry.write().remove(&pty_id_owned);
     });
 
     // Spawn reader thread
@@ -154,28 +155,23 @@ pub fn spawn_pty(
     let app_handle_clone = app_handle.clone();
 
     thread::spawn(move || {
-        eprintln!("Reader thread started for {}", pty_id_clone);
         let mut buf = [0u8; 4096];
         loop {
             match reader.read(&mut buf) {
                 Ok(0) => {
-                    eprintln!("Reader got EOF");
                     break;
                 }
                 Ok(n) => {
-                    eprintln!("Reader got {} bytes", n);
                     let data = buf[..n].to_vec();
                     let event_name = format!("pty-output-{}", pty_id_clone);
                     let _ = app_handle_clone.emit(&event_name, data);
                 }
-                Err(e) => {
-                    eprintln!("Reader error: {}", e);
+                Err(_) => {
                     break;
                 }
             }
         }
         // Emit close event
-        eprintln!("Reader thread exiting for {}", pty_id_clone);
         let event_name = format!("pty-close-{}", pty_id_clone);
         let _ = app_handle_clone.emit(&event_name, ());
     });
@@ -184,19 +180,12 @@ pub fn spawn_pty(
 }
 
 pub fn write_pty(state: &Arc<AppState>, pty_id: &str, data: &[u8]) -> Result<(), String> {
-    eprintln!("write_pty called: pty_id={}, data_len={}", pty_id, data.len());
     let registry = state.pty_registry.read();
-    let handle = registry.get(pty_id).ok_or_else(|| {
-        eprintln!("PTY not found: {}", pty_id);
-        "PTY not found".to_string()
-    })?;
+    let handle = registry.get(pty_id).ok_or("PTY not found")?;
     handle
         .sender
         .send(PtyCommand::Write(data.to_vec()))
-        .map_err(|e| {
-            eprintln!("Failed to send write command: {}", e);
-            e.to_string()
-        })
+        .map_err(|e| e.to_string())
 }
 
 pub fn resize_pty(state: &Arc<AppState>, pty_id: &str, cols: u16, rows: u16) -> Result<(), String> {

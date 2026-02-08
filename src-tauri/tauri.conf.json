@@ -10,7 +10,7 @@
     "frontendDist": "../build"
   },
   "app": {
-    "withGlobalTauri": true,
+    "withGlobalTauri": false,
     "windows": [
       {
         "title": "aiTerm",
@@ -25,7 +25,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'"
     },
     "macOSPrivateApi": true
   },

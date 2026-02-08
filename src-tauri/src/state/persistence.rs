@@ -7,6 +7,14 @@ pub fn get_state_path() -> Option<PathBuf> {
     dirs::data_dir().map(|p| p.join("com.aiterm.app").join("aiterm-state.json"))
 }
 
+fn get_backup_path() -> Option<PathBuf> {
+    dirs::data_dir().map(|p| p.join("com.aiterm.app").join("aiterm-state.bak.json"))
+}
+
+fn get_temp_path() -> Option<PathBuf> {
+    dirs::data_dir().map(|p| p.join("com.aiterm.app").join("aiterm-state.tmp.json"))
+}
+
 pub fn load_state() -> AppData {
     let Some(path) = get_state_path() else {
         eprintln!("[load_state] No data directory found");
@@ -21,21 +29,44 @@ pub fn load_state() -> AppData {
     }
 
     match fs::read_to_string(&path) {
-        Ok(contents) => {
-            let data: AppData = serde_json::from_str(&contents).unwrap_or_default();
-            // Log scrollback lengths for each tab
-            for ws in &data.workspaces {
-                for win in &ws.windows {
-                    for tab in &win.tabs {
-                        let sb_len = tab.scrollback.as_ref().map(|s| s.len()).unwrap_or(0);
-                        eprintln!("[load_state] Tab {} scrollback: {} chars", &tab.id[..8.min(tab.id.len())], sb_len);
-                    }
-                }
+        Ok(contents) => match serde_json::from_str::<AppData>(&contents) {
+            Ok(data) => data,
+            Err(e) => {
+                eprintln!("[load_state] Failed to parse state file: {}. Trying backup.", e);
+                load_from_backup()
             }
-            data
         },
         Err(e) => {
-            eprintln!("[load_state] Failed to read file: {}", e);
+            eprintln!("[load_state] Failed to read file: {}. Trying backup.", e);
+            load_from_backup()
+        }
+    }
+}
+
+fn load_from_backup() -> AppData {
+    let Some(backup_path) = get_backup_path() else {
+        eprintln!("[load_state] No backup path available, using defaults");
+        return AppData::default();
+    };
+
+    if !backup_path.exists() {
+        eprintln!("[load_state] No backup file found, using defaults");
+        return AppData::default();
+    }
+
+    match fs::read_to_string(&backup_path) {
+        Ok(contents) => match serde_json::from_str::<AppData>(&contents) {
+            Ok(data) => {
+                eprintln!("[load_state] Successfully loaded from backup");
+                data
+            }
+            Err(e) => {
+                eprintln!("[load_state] Backup also corrupt: {}. Using defaults.", e);
+                AppData::default()
+            }
+        },
+        Err(e) => {
+            eprintln!("[load_state] Failed to read backup: {}. Using defaults.", e);
             AppData::default()
         }
     }
@@ -43,6 +74,8 @@ pub fn load_state() -> AppData {
 
 pub fn save_state(data: &AppData) -> Result<(), String> {
     let path = get_state_path().ok_or("Could not determine data directory")?;
+    let temp_path = get_temp_path().ok_or("Could not determine temp path")?;
+    let backup_path = get_backup_path().ok_or("Could not determine backup path")?;
 
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -50,10 +83,18 @@ pub fn save_state(data: &AppData) -> Result<(), String> {
 
     let json = serde_json::to_string_pretty(data).map_err(|e| e.to_string())?;
 
-    // Log what we're saving
-    eprintln!("[save_state] Saving to {:?} ({} bytes)", path, json.len());
+    // Write to temp file first
+    fs::write(&temp_path, &json).map_err(|e| format!("Failed to write temp file: {}", e))?;
 
-    fs::write(&path, json).map_err(|e| e.to_string())?;
+    // Copy current state to backup (if it exists)
+    if path.exists() {
+        if let Err(e) = fs::copy(&path, &backup_path) {
+            eprintln!("[save_state] Warning: failed to create backup: {}", e);
+        }
+    }
+
+    // Atomic rename temp -> real path
+    fs::rename(&temp_path, &path).map_err(|e| format!("Failed to rename temp file: {}", e))?;
 
     Ok(())
 }

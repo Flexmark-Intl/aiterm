@@ -23,10 +23,6 @@ export async function getAppData(): Promise<AppData> {
   return invoke('get_app_data');
 }
 
-export async function saveAppData(data: AppData): Promise<void> {
-  return invoke('save_app_data', { data });
-}
-
 export async function createWorkspace(name: string): Promise<Workspace> {
   return invoke('create_workspace', { name });
 }

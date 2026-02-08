@@ -171,13 +171,15 @@ function createWorkspacesStore() {
             ...w,
             windows: w.windows.map(win => {
               if (win.id === windowId) {
+                const oldIndex = win.tabs.findIndex(t => t.id === tabId);
                 const newTabs = win.tabs.filter(t => t.id !== tabId);
+                const newActiveId = win.active_tab_id === tabId
+                  ? (newTabs[Math.min(oldIndex, newTabs.length - 1)]?.id ?? null)
+                  : win.active_tab_id;
                 return {
                   ...win,
                   tabs: newTabs,
-                  active_tab_id: win.active_tab_id === tabId
-                    ? newTabs[0]?.id ?? null
-                    : win.active_tab_id
+                  active_tab_id: newActiveId
                 };
               }
               return win;

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
+
   interface Props {
     direction: 'horizontal' | 'vertical';
     onresize: (delta: number) => void;
@@ -35,6 +37,11 @@
     window.removeEventListener('mouseup', handleMouseUp);
     onresizeend?.();
   }
+
+  onDestroy(() => {
+    window.removeEventListener('mousemove', handleMouseMove);
+    window.removeEventListener('mouseup', handleMouseUp);
+  });
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->

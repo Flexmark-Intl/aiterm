@@ -31,7 +31,6 @@
   let unlistenClose: UnlistenFn;
   let resizeObserver: ResizeObserver;
   let initialized = false;
-  let debugInterval: ReturnType<typeof setInterval>;
 
   // Tokyo Night theme
   const theme = {
@@ -83,11 +82,7 @@
 
     // Restore scrollback if available
     if (initialScrollback) {
-      console.log(`[${tabId.slice(0,8)}] Restoring scrollback: ${initialScrollback.length} chars`);
       terminal.write(initialScrollback);
-      terminal.write('\r\n');
-    } else {
-      console.log(`[${tabId.slice(0,8)}] No scrollback to restore`);
     }
 
     // Wait for container to have dimensions
@@ -102,20 +97,10 @@
     if (rows < 1) rows = 24;
 
     // Listen for PTY output
-    let totalBytesReceived = 0;
     unlistenOutput = await listen<number[]>(`pty-output-${ptyId}`, (event) => {
       const data = new Uint8Array(event.payload);
-      totalBytesReceived += data.length;
       terminal.write(data);
     });
-
-    // Debug: log buffer stats periodically
-    debugInterval = setInterval(() => {
-      const bufferLength = terminal.buffer.active.length;
-      console.log(`[${tabId.slice(0,8)}] visible=${visible}, bytes=${totalBytesReceived}, bufferLines=${bufferLength}`);
-    }, 5000);
-
-    // Auto-save is now handled reactively via $effect
 
     // Listen for PTY close
     unlistenClose = await listen(`pty-close-${ptyId}`, () => {
@@ -158,9 +143,6 @@
   });
 
   onDestroy(() => {
-    // Clear intervals
-    if (debugInterval) clearInterval(debugInterval);
-
     // Do NOT save scrollback here — saveAllScrollback() handles it before
     // destroy is called, and async onDestroy is not awaited by Svelte,
     // which causes race conditions with terminal.dispose() below.

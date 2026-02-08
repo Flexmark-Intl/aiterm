@@ -67,11 +67,14 @@ function createTerminalsStore() {
       }
 
       // Now send all saves to backend
-      await Promise.all(
+      const results = await Promise.allSettled(
         toSave.map(({ workspaceId, windowId, tabId, scrollback }) =>
           setTabScrollback(workspaceId, windowId, tabId, scrollback)
         )
       );
+      for (const r of results) {
+        if (r.status === 'rejected') console.error('Failed to save scrollback:', r.reason);
+      }
     }
   };
 }

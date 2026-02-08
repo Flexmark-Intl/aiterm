@@ -4,4 +4,4 @@ pub mod workspace;
 
 pub use app_state::{AppState, PtyCommand, PtyHandle};
 pub use persistence::{load_state, save_state};
-pub use workspace::{AppData, CursorStyle, Layout, Preferences, Tab, Window, WindowSizes, Workspace};
+pub use workspace::{AppData, Layout, Preferences, Tab, Window, Workspace};

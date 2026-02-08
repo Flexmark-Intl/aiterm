@@ -28,7 +28,6 @@ pub fn run() {
             commands::terminal::resize_terminal,
             commands::terminal::kill_terminal,
             commands::workspace::get_app_data,
-            commands::workspace::save_app_data,
             commands::workspace::create_workspace,
             commands::workspace::delete_workspace,
             commands::workspace::rename_workspace,

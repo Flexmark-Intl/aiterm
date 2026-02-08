@@ -18,21 +18,17 @@
   let showPreferences = $state(false);
 
   onMount(() => {
-    console.log('[layout] onMount starting');
-
     // Load preferences
-    preferencesStore.load();
+    preferencesStore.load().catch((e: unknown) => console.error('Failed to load preferences:', e));
 
     // Handle window close - save all scrollback before closing
     const appWindow = getCurrentWindow();
+    let unlistenClose: (() => void) | undefined;
 
-    // Use async IIFE to properly await the listener setup
     (async () => {
-      const unlisten = await appWindow.onCloseRequested(async (event) => {
-        // Prevent immediate close so we can save
+      unlistenClose = await appWindow.onCloseRequested(async (event) => {
         event.preventDefault();
 
-        // Save all terminal scrollback (also sets shuttingDown flag)
         await terminalsStore.saveAllScrollback();
 
         try {
@@ -41,10 +37,8 @@
           console.error('sync_state failed:', e);
         }
 
-        // Now allow the window to close
         await appWindow.destroy();
       });
-      console.log('[layout] close handler registered');
     })();
 
     function handleKeydown(e: KeyboardEvent) {
@@ -165,6 +159,7 @@
 
     return () => {
       window.removeEventListener('keydown', handleKeydown, true);
+      unlistenClose?.();
     };
   });
 </script>
