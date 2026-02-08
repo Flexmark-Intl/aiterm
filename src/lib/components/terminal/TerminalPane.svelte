@@ -36,6 +36,15 @@
   let resizeObserver: ResizeObserver;
   let initialized = $state(false);
   let trackActivity = false;
+
+  // Fit terminal with one fewer row for bottom breathing room
+  function fitWithPadding() {
+    fitAddon.fit();
+    const { cols, rows } = terminal;
+    if (rows > 1) {
+      terminal.resize(cols, rows - 1);
+    }
+  }
   let contextMenu = $state<{ x: number; y: number } | null>(null);
 
   // Tokyo Night theme
@@ -112,7 +121,7 @@
     // Wait for container to have dimensions
     await new Promise(resolve => requestAnimationFrame(resolve));
     await new Promise(resolve => setTimeout(resolve, 100)); // Extra delay for layout
-    fitAddon.fit();
+    fitWithPadding();
 
     let { cols, rows } = terminal;
 
@@ -187,7 +196,7 @@
     // Handle resize
     resizeObserver = new ResizeObserver(() => {
       if (visible) {
-        fitAddon.fit();
+        fitWithPadding();
         const { cols, rows } = terminal;
         resizeTerminal(ptyId, cols, rows).catch(console.error);
       }
@@ -219,7 +228,7 @@
     if (visible && initialized && fitAddon) {
       // Delay fit to ensure container is visible
       requestAnimationFrame(() => {
-        fitAddon.fit();
+        fitWithPadding();
         terminal.focus();
       });
       activityStore.clearActive(tabId);
@@ -243,7 +252,7 @@
     // Re-fit after font changes
     requestAnimationFrame(() => {
       if (fitAddon && visible) {
-        fitAddon.fit();
+        fitWithPadding();
         const { cols, rows } = terminal;
         resizeTerminal(ptyId, cols, rows).catch(console.error);
       }
