@@ -35,6 +35,7 @@
   let unlistenClose: UnlistenFn;
   let resizeObserver: ResizeObserver;
   let initialized = $state(false);
+  let trackActivity = false;
   let contextMenu = $state<{ x: number; y: number } | null>(null);
 
   // Tokyo Night theme
@@ -123,7 +124,7 @@
     unlistenOutput = await listen<number[]>(`pty-output-${ptyId}`, (event) => {
       const data = new Uint8Array(event.payload);
       terminal.write(data);
-      if (!visible) {
+      if (!visible && trackActivity) {
         activityStore.markActive(tabId);
       }
     });
@@ -195,6 +196,8 @@
 
     initialized = true;
     terminal.focus();
+    // Delay activity tracking so initial shell prompt doesn't trigger indicator
+    setTimeout(() => { trackActivity = true; }, 2000);
   });
 
   onDestroy(() => {
