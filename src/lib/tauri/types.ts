@@ -5,13 +5,13 @@ export interface Tab {
   scrollback: string | null;
 }
 
-export interface WindowSizes {
+export interface PaneSizes {
   horizontal: Record<string, number>;
   vertical: Record<string, number>;
   grid: Record<string, number>;
 }
 
-export interface Window {
+export interface Pane {
   id: string;
   name: string;
   tabs: Tab[];
@@ -21,9 +21,9 @@ export interface Window {
 export interface Workspace {
   id: string;
   name: string;
-  windows: Window[];
-  active_window_id: string | null;
-  window_sizes: WindowSizes;
+  panes: Pane[];
+  active_pane_id: string | null;
+  pane_sizes: PaneSizes;
 }
 
 export type Layout = 'horizontal' | 'vertical' | 'grid';

@@ -7,7 +7,7 @@ interface TerminalInstance {
   ptyId: string;
   serializeAddon: SerializeAddon;
   workspaceId: string;
-  windowId: string;
+  paneId: string;
   tabId: string;
 }
 
@@ -25,10 +25,10 @@ function createTerminalsStore() {
       ptyId: string,
       serializeAddon: SerializeAddon,
       workspaceId: string,
-      windowId: string
+      paneId: string
     ) {
       instances = new Map(instances);
-      instances.set(tabId, { terminal, ptyId, serializeAddon, workspaceId, windowId, tabId });
+      instances.set(tabId, { terminal, ptyId, serializeAddon, workspaceId, paneId, tabId });
     },
 
     unregister(tabId: string) {
@@ -51,13 +51,13 @@ function createTerminalsStore() {
       _shuttingDown = true;
 
       // Serialize all terminals synchronously first to avoid interleaving
-      const toSave: { workspaceId: string; windowId: string; tabId: string; scrollback: string }[] = [];
+      const toSave: { workspaceId: string; paneId: string; tabId: string; scrollback: string }[] = [];
       for (const [tabId, instance] of instances) {
         try {
           const scrollback = instance.serializeAddon.serialize();
           toSave.push({
             workspaceId: instance.workspaceId,
-            windowId: instance.windowId,
+            paneId: instance.paneId,
             tabId: instance.tabId,
             scrollback,
           });
@@ -68,8 +68,8 @@ function createTerminalsStore() {
 
       // Now send all saves to backend
       const results = await Promise.allSettled(
-        toSave.map(({ workspaceId, windowId, tabId, scrollback }) =>
-          setTabScrollback(workspaceId, windowId, tabId, scrollback)
+        toSave.map(({ workspaceId, paneId, tabId, scrollback }) =>
+          setTabScrollback(workspaceId, paneId, tabId, scrollback)
         )
       );
       for (const r of results) {

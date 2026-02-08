@@ -2,27 +2,27 @@
   import { onMount } from 'svelte';
   import { workspacesStore } from '$lib/stores/workspaces.svelte';
   import WorkspaceSidebar from '$lib/components/workspace/WorkspaceSidebar.svelte';
-  import TerminalWindow from '$lib/components/window/TerminalWindow.svelte';
+  import SplitPane from '$lib/components/pane/SplitPane.svelte';
   import LayoutSelector from '$lib/components/LayoutSelector.svelte';
   import Resizer from '$lib/components/Resizer.svelte';
   import type { Layout } from '$lib/tauri/types';
   import * as commands from '$lib/tauri/commands';
 
   let loading = $state(true);
-  let windowSizes = $state<Record<string, number>>({});
+  let paneSizes = $state<Record<string, number>>({});
   let mainContentEl = $state<HTMLElement | null>(null);
 
-  // Get current layout's window sizes
+  // Get current layout's pane sizes
   const currentSizes = $derived.by(() => {
     const ws = workspacesStore.activeWorkspace;
     if (!ws) return {};
     const layout = workspacesStore.layout;
-    return ws.window_sizes?.[layout] || {};
+    return ws.pane_sizes?.[layout] || {};
   });
 
-  // Get flex value for a window
-  function getWindowFlex(windowId: string): number {
-    return windowSizes[windowId] ?? currentSizes[windowId] ?? 1;
+  // Get flex value for a pane
+  function getPaneFlex(paneId: string): number {
+    return paneSizes[paneId] ?? currentSizes[paneId] ?? 1;
   }
 
   onMount(async () => {
@@ -32,10 +32,10 @@
 
   function handleLayoutChange(newLayout: Layout) {
     // Save current sizes before switching
-    saveWindowSizes();
+    savePaneSizes();
     workspacesStore.setLayout(newLayout);
     // Reset local sizes to load from new layout
-    windowSizes = {};
+    paneSizes = {};
   }
 
   function handleSidebarResize(delta: number) {
@@ -46,7 +46,7 @@
     workspacesStore.saveSidebarWidth();
   }
 
-  function handleWindowResize(windowId: string, nextWindowId: string, delta: number) {
+  function handlePaneResize(paneId: string, nextPaneId: string, delta: number) {
     const layout = workspacesStore.layout;
     const isHorizontal = layout === 'horizontal' || layout === 'grid';
 
@@ -57,24 +57,24 @@
     // Convert delta to flex ratio change
     const deltaRatio = delta / containerSize * 2;
 
-    const currentFlex = getWindowFlex(windowId);
-    const nextFlex = getWindowFlex(nextWindowId);
+    const currentFlex = getPaneFlex(paneId);
+    const nextFlex = getPaneFlex(nextPaneId);
 
     // Update sizes
-    windowSizes = {
-      ...windowSizes,
-      [windowId]: Math.max(0.2, currentFlex + deltaRatio),
-      [nextWindowId]: Math.max(0.2, nextFlex - deltaRatio),
+    paneSizes = {
+      ...paneSizes,
+      [paneId]: Math.max(0.2, currentFlex + deltaRatio),
+      [nextPaneId]: Math.max(0.2, nextFlex - deltaRatio),
     };
   }
 
-  function saveWindowSizes() {
+  function savePaneSizes() {
     const ws = workspacesStore.activeWorkspace;
-    if (!ws || Object.keys(windowSizes).length === 0) return;
+    if (!ws || Object.keys(paneSizes).length === 0) return;
 
     // Merge with existing sizes
-    const merged = { ...currentSizes, ...windowSizes };
-    commands.setWindowSizes(ws.id, workspacesStore.layout, merged);
+    const merged = { ...currentSizes, ...paneSizes };
+    commands.setPaneSizes(ws.id, workspacesStore.layout, merged);
   }
 </script>
 
@@ -98,19 +98,21 @@
 
       <main class="main-content layout-{workspacesStore.layout}" bind:this={mainContentEl}>
         {#if workspacesStore.activeWorkspace}
-          {#each workspacesStore.activeWorkspace.windows as window, index (window.id)}
-            <TerminalWindow
-              workspaceId={workspacesStore.activeWorkspace.id}
-              {window}
-              isActive={window.id === workspacesStore.activeWorkspace.active_window_id}
-              flex={getWindowFlex(window.id)}
+          {@const workspace = workspacesStore.activeWorkspace}
+          {#each workspace.panes as pane, index (pane.id)}
+            <SplitPane
+              workspaceId={workspace.id}
+              {pane}
+              isActive={pane.id === workspace.active_pane_id}
+              showHeader={workspace.panes.length > 1}
+              flex={workspacesStore.layout === 'grid' ? 1 : getPaneFlex(pane.id)}
             />
-            {#if index < workspacesStore.activeWorkspace.windows.length - 1}
-              {@const nextWindow = workspacesStore.activeWorkspace.windows[index + 1]}
+            {#if workspacesStore.layout !== 'grid' && index < workspace.panes.length - 1}
+              {@const nextPane = workspace.panes[index + 1]}
               <Resizer
                 direction={workspacesStore.layout === 'vertical' ? 'vertical' : 'horizontal'}
-                onresize={(delta) => handleWindowResize(window.id, nextWindow.id, delta)}
-                onresizeend={saveWindowSizes}
+                onresize={(delta) => handlePaneResize(pane.id, nextPane.id, delta)}
+                onresizeend={savePaneSizes}
               />
             {/if}
           {/each}
@@ -193,14 +195,15 @@
   }
 
   .main-content.layout-grid {
-    flex-direction: row;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    grid-auto-rows: 1fr;
+    gap: 1px;
+    background: var(--bg-light);
   }
 
-  .main-content.layout-grid > :global(.terminal-window) {
-    flex: 1 1 calc(50% - 1px);
-    min-width: 300px;
-    max-width: calc(50%);
+  .main-content.layout-grid > :global(.split-pane:last-child:nth-child(odd)) {
+    grid-column: 1 / -1;
   }
 
   .empty-state {

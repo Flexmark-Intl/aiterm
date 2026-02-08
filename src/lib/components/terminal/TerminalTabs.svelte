@@ -1,14 +1,14 @@
 <script lang="ts">
   import { tick } from 'svelte';
-  import type { Tab, Window } from '$lib/tauri/types';
+  import type { Tab, Pane } from '$lib/tauri/types';
   import { workspacesStore } from '$lib/stores/workspaces.svelte';
 
   interface Props {
     workspaceId: string;
-    window: Window;
+    pane: Pane;
   }
 
-  let { workspaceId, window }: Props = $props();
+  let { workspaceId, pane }: Props = $props();
 
   let editingId = $state<string | null>(null);
   let editingName = $state('');
@@ -24,7 +24,7 @@
 
   async function finishEditing() {
     if (editingId && editingName.trim()) {
-      await workspacesStore.renameTab(workspaceId, window.id, editingId, editingName.trim());
+      await workspacesStore.renameTab(workspaceId, pane.id, editingId, editingName.trim());
     }
     editingId = null;
     editingName = '';
@@ -40,38 +40,38 @@
   }
 
   async function handleNewTab() {
-    const count = window.tabs.length + 1;
-    await workspacesStore.createTab(workspaceId, window.id, `Terminal ${count}`);
+    const count = pane.tabs.length + 1;
+    await workspacesStore.createTab(workspaceId, pane.id, `Terminal ${count}`);
   }
 
   async function handleCloseTab(tabId: string, e: MouseEvent) {
     e.stopPropagation();
-    if (window.tabs.length > 1) {
-      await workspacesStore.deleteTab(workspaceId, window.id, tabId);
+    if (pane.tabs.length > 1) {
+      await workspacesStore.deleteTab(workspaceId, pane.id, tabId);
     } else {
-      // Last tab - close the window
+      // Last tab - close the pane
       const ws = workspacesStore.activeWorkspace;
-      if (ws && ws.windows.length > 1) {
-        await workspacesStore.deleteWindow(workspaceId, window.id);
+      if (ws && ws.panes.length > 1) {
+        await workspacesStore.deletePane(workspaceId, pane.id);
       }
     }
   }
 
   async function handleTabClick(tabId: string) {
-    await workspacesStore.setActiveTab(workspaceId, window.id, tabId);
+    await workspacesStore.setActiveTab(workspaceId, pane.id, tabId);
   }
 </script>
 
 <div class="tabs-bar">
-  {#each window.tabs as tab, index (tab.id)}
+  {#each pane.tabs as tab, index (tab.id)}
     <div
       class="tab"
-      class:active={tab.id === window.active_tab_id}
+      class:active={tab.id === pane.active_tab_id}
       onclick={() => handleTabClick(tab.id)}
       ondblclick={(e) => startEditing(tab.id, tab.name, e)}
       role="tab"
       tabindex="0"
-      aria-selected={tab.id === window.active_tab_id}
+      aria-selected={tab.id === pane.active_tab_id}
       onkeydown={(e) => e.key === 'Enter' && handleTabClick(tab.id)}
     >
       {#if editingId === tab.id}

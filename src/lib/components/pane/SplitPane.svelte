@@ -1,18 +1,19 @@
 <script lang="ts">
   import { tick } from 'svelte';
-  import type { Window } from '$lib/tauri/types';
+  import type { Pane } from '$lib/tauri/types';
   import { workspacesStore } from '$lib/stores/workspaces.svelte';
   import TerminalTabs from '$lib/components/terminal/TerminalTabs.svelte';
   import TerminalPane from '$lib/components/terminal/TerminalPane.svelte';
 
   interface Props {
     workspaceId: string;
-    window: Window;
+    pane: Pane;
     isActive: boolean;
+    showHeader: boolean;
     flex?: number;
   }
 
-  let { workspaceId, window, isActive, flex = 1 }: Props = $props();
+  let { workspaceId, pane, isActive, showHeader, flex = 1 }: Props = $props();
 
   let editingName = $state(false);
   let nameValue = $state('');
@@ -20,14 +21,14 @@
 
   async function startEditing() {
     editingName = true;
-    nameValue = window.name;
+    nameValue = pane.name;
     await tick();
     editInput?.select();
   }
 
   async function finishEditing() {
-    if (nameValue.trim() && nameValue !== window.name) {
-      await workspacesStore.renameWindow(workspaceId, window.id, nameValue.trim());
+    if (nameValue.trim() && nameValue !== pane.name) {
+      await workspacesStore.renamePane(workspaceId, pane.id, nameValue.trim());
     }
     editingName = false;
   }
@@ -37,66 +38,68 @@
       finishEditing();
     } else if (e.key === 'Escape') {
       editingName = false;
-      nameValue = window.name;
+      nameValue = pane.name;
     }
   }
 
   async function handleClick() {
     if (!isActive) {
-      await workspacesStore.setActiveWindow(workspaceId, window.id);
+      await workspacesStore.setActivePane(workspaceId, pane.id);
     }
   }
 
-  async function handleCloseWindow(e: MouseEvent) {
+  async function handleClosePane(e: MouseEvent) {
     e.stopPropagation();
     const ws = workspacesStore.activeWorkspace;
-    if (ws && ws.windows.length > 1) {
-      await workspacesStore.deleteWindow(workspaceId, window.id);
+    if (ws && ws.panes.length > 1) {
+      await workspacesStore.deletePane(workspaceId, pane.id);
     }
   }
 </script>
 
-<div class="terminal-window" class:active={isActive} style="flex: {flex}">
-  <div
-    class="window-header"
-    onclick={handleClick}
-    ondblclick={startEditing}
-    role="button"
-    tabindex="0"
-    onkeydown={(e) => e.key === 'Enter' && handleClick()}
-  >
-    {#if editingName}
-      <!-- svelte-ignore a11y_autofocus -->
-      <input
-        type="text"
-        bind:value={nameValue}
-        bind:this={editInput}
-        onblur={finishEditing}
-        onkeydown={handleKeydown}
-        class="name-input"
-        autofocus
-      />
-    {:else}
-      <span class="window-name">Window: {window.name}</span>
-      <button
-        class="close-btn"
-        onclick={handleCloseWindow}
-        title="Close window"
-      >
-        &times;
-      </button>
-    {/if}
-  </div>
+<div class="split-pane" class:active={isActive} style="flex: {flex}">
+  {#if showHeader}
+    <div
+      class="pane-header"
+      onclick={handleClick}
+      ondblclick={startEditing}
+      role="button"
+      tabindex="0"
+      onkeydown={(e) => e.key === 'Enter' && handleClick()}
+    >
+      {#if editingName}
+        <!-- svelte-ignore a11y_autofocus -->
+        <input
+          type="text"
+          bind:value={nameValue}
+          bind:this={editInput}
+          onblur={finishEditing}
+          onkeydown={handleKeydown}
+          class="name-input"
+          autofocus
+        />
+      {:else}
+        <span class="pane-name">{pane.name}</span>
+        <button
+          class="close-btn"
+          onclick={handleClosePane}
+          title="Close pane"
+        >
+          &times;
+        </button>
+      {/if}
+    </div>
+  {/if}
 
-  <TerminalTabs {workspaceId} {window} />
+  <TerminalTabs {workspaceId} {pane} />
 
   <div class="terminal-area">
-    {#each window.tabs as tab (tab.id)}
+    {#each pane.tabs as tab (tab.id)}
       <TerminalPane
         {workspaceId}
-        windowId={window.id}
+        paneId={pane.id}
         tabId={tab.id}
-        visible={tab.id === window.active_tab_id}
+        visible={tab.id === pane.active_tab_id}
         initialScrollback={tab.scrollback}
       />
     {/each}
@@ -104,18 +107,18 @@
 </div>
 
 <style>
-  .terminal-window {
+  .split-pane {
     display: flex;
     flex-direction: column;
     min-height: 0;
     min-width: 0;
   }
 
-  .terminal-window:last-child {
+  .split-pane:last-child {
     border-right: none;
   }
 
-  .window-header {
+  .pane-header {
     height: var(--header-height);
     display: flex;
     align-items: center;
@@ -125,7 +128,7 @@
     cursor: pointer;
   }
 
-  .window-name {
+  .pane-name {
     flex: 1;
     font-weight: 500;
     color: var(--fg);
@@ -140,7 +143,7 @@
     margin-left: auto;
   }
 
-  .window-header:hover .close-btn {
+  .pane-header:hover .close-btn {
     opacity: 1;
   }
 

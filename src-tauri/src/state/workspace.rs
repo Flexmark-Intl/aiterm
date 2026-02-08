@@ -19,7 +19,7 @@ pub struct Tab {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Window {
+pub struct Pane {
     pub id: String,
     pub name: String,
     pub tabs: Vec<Tab>,
@@ -29,7 +29,7 @@ pub struct Window {
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct WindowSizes {
+pub struct PaneSizes {
     #[serde(default)]
     pub horizontal: HashMap<String, f64>,
     #[serde(default)]
@@ -42,10 +42,12 @@ pub struct WindowSizes {
 pub struct Workspace {
     pub id: String,
     pub name: String,
-    pub windows: Vec<Window>,
-    pub active_window_id: Option<String>,
-    #[serde(default)]
-    pub window_sizes: WindowSizes,
+    #[serde(alias = "windows")]
+    pub panes: Vec<Pane>,
+    #[serde(alias = "active_window_id")]
+    pub active_pane_id: Option<String>,
+    #[serde(default, alias = "window_sizes")]
+    pub pane_sizes: PaneSizes,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -137,7 +139,7 @@ impl Tab {
     }
 }
 
-impl Window {
+impl Pane {
     pub fn new(name: String) -> Self {
         let tab = Tab::new("Terminal".to_string());
         let tab_id = tab.id.clone();
@@ -152,14 +154,14 @@ impl Window {
 
 impl Workspace {
     pub fn new(name: String) -> Self {
-        let window = Window::new("Window 1".to_string());
-        let window_id = window.id.clone();
+        let pane = Pane::new("Pane 1".to_string());
+        let pane_id = pane.id.clone();
         Self {
             id: uuid::Uuid::new_v4().to_string(),
             name,
-            windows: vec![window],
-            active_window_id: Some(window_id),
-            window_sizes: WindowSizes::default(),
+            panes: vec![pane],
+            active_pane_id: Some(pane_id),
+            pane_sizes: PaneSizes::default(),
         }
     }
 }

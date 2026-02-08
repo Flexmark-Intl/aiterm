@@ -14,13 +14,13 @@
 
   interface Props {
     workspaceId: string;
-    windowId: string;
+    paneId: string;
     tabId: string;
     visible: boolean;
     initialScrollback?: string | null;
   }
 
-  let { workspaceId, windowId, tabId, visible, initialScrollback }: Props = $props();
+  let { workspaceId, paneId, tabId, visible, initialScrollback }: Props = $props();
 
   let containerRef: HTMLDivElement;
   let terminal: Terminal;
@@ -30,7 +30,7 @@
   let unlistenOutput: UnlistenFn;
   let unlistenClose: UnlistenFn;
   let resizeObserver: ResizeObserver;
-  let initialized = false;
+  let initialized = $state(false);
 
   // Tokyo Night theme
   const theme = {
@@ -83,6 +83,22 @@
     // Restore scrollback if available
     if (initialScrollback) {
       terminal.write(initialScrollback);
+
+      // Check if the last line looks like a shell prompt — if so, erase it
+      // to avoid a duplicate prompt when the new shell starts.
+      // If not a prompt, add a newline for clean separation.
+      const buffer = terminal.buffer.active;
+      const lastLine = buffer.getLine(buffer.baseY + buffer.cursorY);
+      const lineText = lastLine?.translateToString(true) ?? '';
+      const lineRaw = lastLine?.translateToString(false) ?? '';
+      if (lineRaw.trim().length === 0 && lineRaw.length > 0) {
+        // Whitespace-only line — erase it
+        terminal.write('\x1b[2K\r');
+      } else if (lineText.length > 0 && /[$%>#]\s*$/.test(lineText)) {
+        terminal.write('\x1b[2K\r');
+      } else if (lineText.length > 0) {
+        terminal.write('\r\n');
+      }
     }
 
     // Wait for container to have dimensions
@@ -113,10 +129,10 @@
     } catch (e) {
       console.error('Failed to spawn PTY:', e);
     }
-    await workspacesStore.setTabPtyId(workspaceId, windowId, tabId, ptyId);
+    await workspacesStore.setTabPtyId(workspaceId, paneId, tabId, ptyId);
 
     // Register terminal instance with serialize addon for scrollback saving
-    terminalsStore.register(tabId, terminal, ptyId, serializeAddon, workspaceId, windowId);
+    terminalsStore.register(tabId, terminal, ptyId, serializeAddon, workspaceId, paneId);
 
     // Handle keyboard input
     terminal.onData(async (data) => {
@@ -205,7 +221,7 @@
         if (terminalsStore.shuttingDown) return;
         try {
           const scrollback = serializeAddon.serialize();
-          await setTabScrollback(workspaceId, windowId, tabId, scrollback);
+          await setTabScrollback(workspaceId, paneId, tabId, scrollback);
         } catch (e) {
           console.error('Failed to auto-save scrollback:', e);
         }

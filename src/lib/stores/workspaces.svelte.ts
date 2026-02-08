@@ -1,4 +1,4 @@
-import type { AppData, Layout, Tab, Window, Workspace } from '$lib/tauri/types';
+import type { AppData, Layout, Tab, Pane, Workspace } from '$lib/tauri/types';
 import * as commands from '$lib/tauri/commands';
 
 function createWorkspacesStore() {
@@ -11,21 +11,21 @@ function createWorkspacesStore() {
     workspaces.find(w => w.id === activeWorkspaceId) ?? null
   );
 
-  const activeWindow = $derived.by(() => {
+  const activePane = $derived.by(() => {
     if (!activeWorkspace) return null;
-    return activeWorkspace.windows.find(w => w.id === activeWorkspace.active_window_id) ?? null;
+    return activeWorkspace.panes.find(p => p.id === activeWorkspace.active_pane_id) ?? null;
   });
 
   const activeTab = $derived.by(() => {
-    if (!activeWindow) return null;
-    return activeWindow.tabs.find(t => t.id === activeWindow.active_tab_id) ?? null;
+    if (!activePane) return null;
+    return activePane.tabs.find(t => t.id === activePane.active_tab_id) ?? null;
   });
 
   return {
     get workspaces() { return workspaces; },
     get activeWorkspaceId() { return activeWorkspaceId; },
     get activeWorkspace() { return activeWorkspace; },
-    get activeWindow() { return activeWindow; },
+    get activePane() { return activePane; },
     get activeTab() { return activeTab; },
     get layout() { return layout; },
     get sidebarWidth() { return sidebarWidth; },
@@ -83,46 +83,46 @@ function createWorkspacesStore() {
       activeWorkspaceId = workspaceId;
     },
 
-    async createWindow(workspaceId: string, name: string) {
-      const window = await commands.createWindow(workspaceId, name);
+    async createPane(workspaceId: string, name: string) {
+      const pane = await commands.createPane(workspaceId, name);
       workspaces = workspaces.map(w => {
         if (w.id === workspaceId) {
           return {
             ...w,
-            windows: [...w.windows, window],
-            active_window_id: window.id
+            panes: [...w.panes, pane],
+            active_pane_id: pane.id
           };
         }
         return w;
       });
-      return window;
+      return pane;
     },
 
-    async deleteWindow(workspaceId: string, windowId: string) {
-      await commands.deleteWindow(workspaceId, windowId);
+    async deletePane(workspaceId: string, paneId: string) {
+      await commands.deletePane(workspaceId, paneId);
       workspaces = workspaces.map(w => {
         if (w.id === workspaceId) {
-          const newWindows = w.windows.filter(win => win.id !== windowId);
+          const newPanes = w.panes.filter(p => p.id !== paneId);
           return {
             ...w,
-            windows: newWindows,
-            active_window_id: w.active_window_id === windowId
-              ? newWindows[0]?.id ?? null
-              : w.active_window_id
+            panes: newPanes,
+            active_pane_id: w.active_pane_id === paneId
+              ? newPanes[0]?.id ?? null
+              : w.active_pane_id
           };
         }
         return w;
       });
     },
 
-    async renameWindow(workspaceId: string, windowId: string, name: string) {
-      await commands.renameWindow(workspaceId, windowId, name);
+    async renamePane(workspaceId: string, paneId: string, name: string) {
+      await commands.renamePane(workspaceId, paneId, name);
       workspaces = workspaces.map(w => {
         if (w.id === workspaceId) {
           return {
             ...w,
-            windows: w.windows.map(win =>
-              win.id === windowId ? { ...win, name } : win
+            panes: w.panes.map(p =>
+              p.id === paneId ? { ...p, name } : p
             )
           };
         }
@@ -130,31 +130,31 @@ function createWorkspacesStore() {
       });
     },
 
-    async setActiveWindow(workspaceId: string, windowId: string) {
-      await commands.setActiveWindow(workspaceId, windowId);
+    async setActivePane(workspaceId: string, paneId: string) {
+      await commands.setActivePane(workspaceId, paneId);
       workspaces = workspaces.map(w => {
         if (w.id === workspaceId) {
-          return { ...w, active_window_id: windowId };
+          return { ...w, active_pane_id: paneId };
         }
         return w;
       });
     },
 
-    async createTab(workspaceId: string, windowId: string, name: string) {
-      const tab = await commands.createTab(workspaceId, windowId, name);
+    async createTab(workspaceId: string, paneId: string, name: string) {
+      const tab = await commands.createTab(workspaceId, paneId, name);
       workspaces = workspaces.map(w => {
         if (w.id === workspaceId) {
           return {
             ...w,
-            windows: w.windows.map(win => {
-              if (win.id === windowId) {
+            panes: w.panes.map(p => {
+              if (p.id === paneId) {
                 return {
-                  ...win,
-                  tabs: [...win.tabs, tab],
+                  ...p,
+                  tabs: [...p.tabs, tab],
                   active_tab_id: tab.id
                 };
               }
-              return win;
+              return p;
             })
           };
         }
@@ -163,26 +163,26 @@ function createWorkspacesStore() {
       return tab;
     },
 
-    async deleteTab(workspaceId: string, windowId: string, tabId: string) {
-      await commands.deleteTab(workspaceId, windowId, tabId);
+    async deleteTab(workspaceId: string, paneId: string, tabId: string) {
+      await commands.deleteTab(workspaceId, paneId, tabId);
       workspaces = workspaces.map(w => {
         if (w.id === workspaceId) {
           return {
             ...w,
-            windows: w.windows.map(win => {
-              if (win.id === windowId) {
-                const oldIndex = win.tabs.findIndex(t => t.id === tabId);
-                const newTabs = win.tabs.filter(t => t.id !== tabId);
-                const newActiveId = win.active_tab_id === tabId
+            panes: w.panes.map(p => {
+              if (p.id === paneId) {
+                const oldIndex = p.tabs.findIndex(t => t.id === tabId);
+                const newTabs = p.tabs.filter(t => t.id !== tabId);
+                const newActiveId = p.active_tab_id === tabId
                   ? (newTabs[Math.min(oldIndex, newTabs.length - 1)]?.id ?? null)
-                  : win.active_tab_id;
+                  : p.active_tab_id;
                 return {
-                  ...win,
+                  ...p,
                   tabs: newTabs,
                   active_tab_id: newActiveId
                 };
               }
-              return win;
+              return p;
             })
           };
         }
@@ -190,22 +190,22 @@ function createWorkspacesStore() {
       });
     },
 
-    async renameTab(workspaceId: string, windowId: string, tabId: string, name: string) {
-      await commands.renameTab(workspaceId, windowId, tabId, name);
+    async renameTab(workspaceId: string, paneId: string, tabId: string, name: string) {
+      await commands.renameTab(workspaceId, paneId, tabId, name);
       workspaces = workspaces.map(w => {
         if (w.id === workspaceId) {
           return {
             ...w,
-            windows: w.windows.map(win => {
-              if (win.id === windowId) {
+            panes: w.panes.map(p => {
+              if (p.id === paneId) {
                 return {
-                  ...win,
-                  tabs: win.tabs.map(t =>
+                  ...p,
+                  tabs: p.tabs.map(t =>
                     t.id === tabId ? { ...t, name } : t
                   )
                 };
               }
-              return win;
+              return p;
             })
           };
         }
@@ -213,17 +213,17 @@ function createWorkspacesStore() {
       });
     },
 
-    async setActiveTab(workspaceId: string, windowId: string, tabId: string) {
-      await commands.setActiveTab(workspaceId, windowId, tabId);
+    async setActiveTab(workspaceId: string, paneId: string, tabId: string) {
+      await commands.setActiveTab(workspaceId, paneId, tabId);
       workspaces = workspaces.map(w => {
         if (w.id === workspaceId) {
           return {
             ...w,
-            windows: w.windows.map(win => {
-              if (win.id === windowId) {
-                return { ...win, active_tab_id: tabId };
+            panes: w.panes.map(p => {
+              if (p.id === paneId) {
+                return { ...p, active_tab_id: tabId };
               }
-              return win;
+              return p;
             })
           };
         }
@@ -231,22 +231,22 @@ function createWorkspacesStore() {
       });
     },
 
-    async setTabPtyId(workspaceId: string, windowId: string, tabId: string, ptyId: string) {
-      await commands.setTabPtyId(workspaceId, windowId, tabId, ptyId);
+    async setTabPtyId(workspaceId: string, paneId: string, tabId: string, ptyId: string) {
+      await commands.setTabPtyId(workspaceId, paneId, tabId, ptyId);
       workspaces = workspaces.map(w => {
         if (w.id === workspaceId) {
           return {
             ...w,
-            windows: w.windows.map(win => {
-              if (win.id === windowId) {
+            panes: w.panes.map(p => {
+              if (p.id === paneId) {
                 return {
-                  ...win,
-                  tabs: win.tabs.map(t =>
+                  ...p,
+                  tabs: p.tabs.map(t =>
                     t.id === tabId ? { ...t, pty_id: ptyId } : t
                   )
                 };
               }
-              return win;
+              return p;
             })
           };
         }

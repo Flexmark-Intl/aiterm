@@ -45,8 +45,8 @@
         </section>
 
         <section>
-          <h3>Windows</h3>
-          <div class="shortcut"><kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>T</kbd> <span>New window</span></div>
+          <h3>Panes</h3>
+          <div class="shortcut"><kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>T</kbd> <span>New pane</span></div>
         </section>
 
         <section>
@@ -68,7 +68,7 @@
 
         <section>
           <h3>Tips</h3>
-          <p>Double-click on workspace, window, or tab names to rename them.</p>
+          <p>Double-click on workspace, pane, or tab names to rename them.</p>
         </section>
       </div>
     </div>

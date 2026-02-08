@@ -49,22 +49,22 @@
         e.preventDefault();
         e.stopPropagation();
         const ws = workspacesStore.activeWorkspace;
-        const win = workspacesStore.activeWindow;
-        if (ws && win) {
-          const count = win.tabs.length + 1;
-          workspacesStore.createTab(ws.id, win.id, `Terminal ${count}`);
+        const pane = workspacesStore.activePane;
+        if (ws && pane) {
+          const count = pane.tabs.length + 1;
+          workspacesStore.createTab(ws.id, pane.id, `Terminal ${count}`);
         }
         return;
       }
 
-      // Cmd+Shift+T - New window
+      // Cmd+Shift+T - New pane
       if (isMeta && e.shiftKey && e.key.toLowerCase() === 't') {
         e.preventDefault();
         e.stopPropagation();
         const ws = workspacesStore.activeWorkspace;
         if (ws) {
-          const count = ws.windows.length + 1;
-          workspacesStore.createWindow(ws.id, `Window ${count}`);
+          const count = ws.panes.length + 1;
+          workspacesStore.createPane(ws.id, `Pane ${count}`);
         }
         return;
       }
@@ -78,18 +78,18 @@
         return;
       }
 
-      // Cmd+W - Close current tab (or window if last tab)
+      // Cmd+W - Close current tab (or pane if last tab)
       if (isMeta && e.key.toLowerCase() === 'w') {
         e.preventDefault();
         e.stopPropagation();
         const ws = workspacesStore.activeWorkspace;
-        const win = workspacesStore.activeWindow;
+        const pane = workspacesStore.activePane;
         const tab = workspacesStore.activeTab;
-        if (ws && win && tab) {
-          if (win.tabs.length > 1) {
-            workspacesStore.deleteTab(ws.id, win.id, tab.id);
-          } else if (ws.windows.length > 1) {
-            workspacesStore.deleteWindow(ws.id, win.id);
+        if (ws && pane && tab) {
+          if (pane.tabs.length > 1) {
+            workspacesStore.deleteTab(ws.id, pane.id, tab.id);
+          } else if (ws.panes.length > 1) {
+            workspacesStore.deletePane(ws.id, pane.id);
           }
         }
         return;
@@ -100,10 +100,10 @@
         e.preventDefault();
         const index = parseInt(e.key) - 1;
         const ws = workspacesStore.activeWorkspace;
-        const win = workspacesStore.activeWindow;
-        if (ws && win && win.tabs[index]) {
-          workspacesStore.setActiveTab(ws.id, win.id, win.tabs[index].id);
-          terminalsStore.focusTerminal(win.tabs[index].id);
+        const pane = workspacesStore.activePane;
+        if (ws && pane && pane.tabs[index]) {
+          workspacesStore.setActiveTab(ws.id, pane.id, pane.tabs[index].id);
+          terminalsStore.focusTerminal(pane.tabs[index].id);
         }
         return;
       }
@@ -113,12 +113,12 @@
         e.preventDefault();
         e.stopPropagation();
         const ws = workspacesStore.activeWorkspace;
-        const win = workspacesStore.activeWindow;
-        if (ws && win && win.tabs.length > 1) {
-          const currentIndex = win.tabs.findIndex(t => t.id === win.active_tab_id);
-          const prevIndex = currentIndex <= 0 ? win.tabs.length - 1 : currentIndex - 1;
-          workspacesStore.setActiveTab(ws.id, win.id, win.tabs[prevIndex].id);
-          terminalsStore.focusTerminal(win.tabs[prevIndex].id);
+        const pane = workspacesStore.activePane;
+        if (ws && pane && pane.tabs.length > 1) {
+          const currentIndex = pane.tabs.findIndex(t => t.id === pane.active_tab_id);
+          const prevIndex = currentIndex <= 0 ? pane.tabs.length - 1 : currentIndex - 1;
+          workspacesStore.setActiveTab(ws.id, pane.id, pane.tabs[prevIndex].id);
+          terminalsStore.focusTerminal(pane.tabs[prevIndex].id);
         }
         return;
       }
@@ -128,12 +128,12 @@
         e.preventDefault();
         e.stopPropagation();
         const ws = workspacesStore.activeWorkspace;
-        const win = workspacesStore.activeWindow;
-        if (ws && win && win.tabs.length > 1) {
-          const currentIndex = win.tabs.findIndex(t => t.id === win.active_tab_id);
-          const nextIndex = currentIndex >= win.tabs.length - 1 ? 0 : currentIndex + 1;
-          workspacesStore.setActiveTab(ws.id, win.id, win.tabs[nextIndex].id);
-          terminalsStore.focusTerminal(win.tabs[nextIndex].id);
+        const pane = workspacesStore.activePane;
+        if (ws && pane && pane.tabs.length > 1) {
+          const currentIndex = pane.tabs.findIndex(t => t.id === pane.active_tab_id);
+          const nextIndex = currentIndex >= pane.tabs.length - 1 ? 0 : currentIndex + 1;
+          workspacesStore.setActiveTab(ws.id, pane.id, pane.tabs[nextIndex].id);
+          terminalsStore.focusTerminal(pane.tabs[nextIndex].id);
         }
         return;
       }

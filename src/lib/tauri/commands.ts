@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { AppData, Layout, Preferences, Tab, Window, Workspace } from './types';
+import type { AppData, Layout, Pane, Preferences, Tab, Workspace } from './types';
 
 // Terminal commands
 export async function spawnTerminal(ptyId: string, tabId: string, cols: number, rows: number): Promise<void> {
@@ -35,44 +35,44 @@ export async function renameWorkspace(workspaceId: string, name: string): Promis
   return invoke('rename_workspace', { workspaceId, name });
 }
 
-export async function createWindow(workspaceId: string, name: string): Promise<Window> {
-  return invoke('create_window', { workspaceId, name });
+export async function createPane(workspaceId: string, name: string): Promise<Pane> {
+  return invoke('create_pane', { workspaceId, name });
 }
 
-export async function deleteWindow(workspaceId: string, windowId: string): Promise<void> {
-  return invoke('delete_window', { workspaceId, windowId });
+export async function deletePane(workspaceId: string, paneId: string): Promise<void> {
+  return invoke('delete_pane', { workspaceId, paneId });
 }
 
-export async function renameWindow(workspaceId: string, windowId: string, name: string): Promise<void> {
-  return invoke('rename_window', { workspaceId, windowId, name });
+export async function renamePane(workspaceId: string, paneId: string, name: string): Promise<void> {
+  return invoke('rename_pane', { workspaceId, paneId, name });
 }
 
-export async function createTab(workspaceId: string, windowId: string, name: string): Promise<Tab> {
-  return invoke('create_tab', { workspaceId, windowId, name });
+export async function createTab(workspaceId: string, paneId: string, name: string): Promise<Tab> {
+  return invoke('create_tab', { workspaceId, paneId, name });
 }
 
-export async function deleteTab(workspaceId: string, windowId: string, tabId: string): Promise<void> {
-  return invoke('delete_tab', { workspaceId, windowId, tabId });
+export async function deleteTab(workspaceId: string, paneId: string, tabId: string): Promise<void> {
+  return invoke('delete_tab', { workspaceId, paneId, tabId });
 }
 
-export async function renameTab(workspaceId: string, windowId: string, tabId: string, name: string): Promise<void> {
-  return invoke('rename_tab', { workspaceId, windowId, tabId, name });
+export async function renameTab(workspaceId: string, paneId: string, tabId: string, name: string): Promise<void> {
+  return invoke('rename_tab', { workspaceId, paneId, tabId, name });
 }
 
 export async function setActiveWorkspace(workspaceId: string): Promise<void> {
   return invoke('set_active_workspace', { workspaceId });
 }
 
-export async function setActiveWindow(workspaceId: string, windowId: string): Promise<void> {
-  return invoke('set_active_window', { workspaceId, windowId });
+export async function setActivePane(workspaceId: string, paneId: string): Promise<void> {
+  return invoke('set_active_pane', { workspaceId, paneId });
 }
 
-export async function setActiveTab(workspaceId: string, windowId: string, tabId: string): Promise<void> {
-  return invoke('set_active_tab', { workspaceId, windowId, tabId });
+export async function setActiveTab(workspaceId: string, paneId: string, tabId: string): Promise<void> {
+  return invoke('set_active_tab', { workspaceId, paneId, tabId });
 }
 
-export async function setTabPtyId(workspaceId: string, windowId: string, tabId: string, ptyId: string): Promise<void> {
-  return invoke('set_tab_pty_id', { workspaceId, windowId, tabId, ptyId });
+export async function setTabPtyId(workspaceId: string, paneId: string, tabId: string, ptyId: string): Promise<void> {
+  return invoke('set_tab_pty_id', { workspaceId, paneId, tabId, ptyId });
 }
 
 export async function setLayout(layout: Layout): Promise<void> {
@@ -83,12 +83,12 @@ export async function setSidebarWidth(width: number): Promise<void> {
   return invoke('set_sidebar_width', { width });
 }
 
-export async function setWindowSizes(workspaceId: string, layout: Layout, sizes: Record<string, number>): Promise<void> {
-  return invoke('set_window_sizes', { workspaceId, layout, sizes });
+export async function setPaneSizes(workspaceId: string, layout: Layout, sizes: Record<string, number>): Promise<void> {
+  return invoke('set_pane_sizes', { workspaceId, layout, sizes });
 }
 
-export async function setTabScrollback(workspaceId: string, windowId: string, tabId: string, scrollback: string | null): Promise<void> {
-  return invoke('set_tab_scrollback', { workspaceId, windowId, tabId, scrollback });
+export async function setTabScrollback(workspaceId: string, paneId: string, tabId: string, scrollback: string | null): Promise<void> {
+  return invoke('set_tab_scrollback', { workspaceId, paneId, tabId, scrollback });
 }
 
 export async function getPreferences(): Promise<Preferences> {

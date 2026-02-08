@@ -21,7 +21,7 @@ src/                          # Frontend (Svelte/TypeScript)
 │   ├── components/           # Svelte components
 │   │   ├── terminal/         # TerminalPane, TerminalTabs
 │   │   ├── workspace/        # WorkspaceSidebar
-│   │   └── window/           # TerminalWindow
+│   │   └── pane/             # SplitPane
 │   ├── stores/               # Svelte 5 stores (.svelte.ts)
 │   │   ├── workspaces.svelte.ts
 │   │   ├── terminals.svelte.ts
@@ -36,7 +36,7 @@ src-tauri/src/                # Backend (Rust)
 │   ├── workspace.rs          # State CRUD operations
 │   └── terminal.rs           # PTY spawn/write/resize/kill
 ├── state/                    # Application state
-│   ├── workspace.rs          # Data structures (Workspace, Window, Tab, Preferences)
+│   ├── workspace.rs          # Data structures (Workspace, Pane, Tab, Preferences)
 │   ├── app_state.rs          # Global state container
 │   └── persistence.rs        # JSON file storage
 └── pty/                      # PTY management
@@ -116,11 +116,11 @@ Use CSS variables from `app.css`. Component styles are scoped.
 ```
 Workspace
 ├── id, name
-├── windows: Window[]
-├── active_window_id
-└── window_sizes (per-layout)
+├── panes: Pane[]
+├── active_pane_id
+└── pane_sizes (per-layout)
 
-Window
+Pane
 ├── id, name
 ├── tabs: Tab[]
 └── active_tab_id
@@ -148,11 +148,11 @@ Preferences
 | Shortcut | Action |
 |----------|--------|
 | Cmd+T | New tab |
-| Cmd+W | Close tab (or window if last tab) |
+| Cmd+W | Close tab (or pane if last tab) |
 | Cmd+1-9 | Switch to tab |
 | Cmd+Shift+[ | Previous tab |
 | Cmd+Shift+] | Next tab |
-| Cmd+Shift+T | New window |
+| Cmd+Shift+T | New pane |
 | Cmd+N | New workspace |
 | Cmd+, | Preferences |
 | Cmd+/ | Help |
