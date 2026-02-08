@@ -57,14 +57,28 @@
         return;
       }
 
-      // Cmd+Shift+T - New pane
-      if (isMeta && e.shiftKey && e.key.toLowerCase() === 't') {
+      // Cmd+D - Split pane right (horizontal), cloning context
+      if (isMeta && !e.shiftKey && e.key.toLowerCase() === 'd') {
         e.preventDefault();
         e.stopPropagation();
         const ws = workspacesStore.activeWorkspace;
-        if (ws) {
-          const count = ws.panes.length + 1;
-          workspacesStore.createPane(ws.id, `Pane ${count}`);
+        const pane = workspacesStore.activePane;
+        const tab = workspacesStore.activeTab;
+        if (ws && pane && tab) {
+          workspacesStore.splitPaneWithContext(ws.id, pane.id, tab.id, 'horizontal');
+        }
+        return;
+      }
+
+      // Cmd+Shift+D - Split pane down (vertical), cloning context
+      if (isMeta && e.shiftKey && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        e.stopPropagation();
+        const ws = workspacesStore.activeWorkspace;
+        const pane = workspacesStore.activePane;
+        const tab = workspacesStore.activeTab;
+        if (ws && pane && tab) {
+          workspacesStore.splitPaneWithContext(ws.id, pane.id, tab.id, 'vertical');
         }
         return;
       }

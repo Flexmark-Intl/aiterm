@@ -1,9 +1,18 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { AppData, Layout, Pane, Preferences, Tab, Workspace } from './types';
+import type { AppData, Pane, Preferences, SplitDirection, Tab, Workspace } from './types';
 
 // Terminal commands
-export async function spawnTerminal(ptyId: string, tabId: string, cols: number, rows: number): Promise<void> {
-  return invoke('spawn_terminal', { ptyId, tabId, cols, rows });
+export async function spawnTerminal(ptyId: string, tabId: string, cols: number, rows: number, cwd?: string | null): Promise<void> {
+  return invoke('spawn_terminal', { ptyId, tabId, cols, rows, cwd: cwd ?? null });
+}
+
+export interface PtyInfo {
+  cwd: string | null;
+  foreground_command: string | null;
+}
+
+export async function getPtyInfo(ptyId: string): Promise<PtyInfo> {
+  return invoke('get_pty_info', { ptyId });
 }
 
 export async function writeTerminal(ptyId: string, data: number[]): Promise<void> {
@@ -35,8 +44,8 @@ export async function renameWorkspace(workspaceId: string, name: string): Promis
   return invoke('rename_workspace', { workspaceId, name });
 }
 
-export async function createPane(workspaceId: string, name: string): Promise<Pane> {
-  return invoke('create_pane', { workspaceId, name });
+export async function splitPane(workspaceId: string, targetPaneId: string, direction: SplitDirection, scrollback?: string | null): Promise<Pane> {
+  return invoke('split_pane', { workspaceId, targetPaneId, direction, scrollback: scrollback ?? null });
 }
 
 export async function deletePane(workspaceId: string, paneId: string): Promise<void> {
@@ -75,16 +84,12 @@ export async function setTabPtyId(workspaceId: string, paneId: string, tabId: st
   return invoke('set_tab_pty_id', { workspaceId, paneId, tabId, ptyId });
 }
 
-export async function setLayout(layout: Layout): Promise<void> {
-  return invoke('set_layout', { layout });
-}
-
 export async function setSidebarWidth(width: number): Promise<void> {
   return invoke('set_sidebar_width', { width });
 }
 
-export async function setPaneSizes(workspaceId: string, layout: Layout, sizes: Record<string, number>): Promise<void> {
-  return invoke('set_pane_sizes', { workspaceId, layout, sizes });
+export async function setSplitRatio(workspaceId: string, splitId: string, ratio: number): Promise<void> {
+  return invoke('set_split_ratio', { workspaceId, splitId, ratio });
 }
 
 export async function setTabScrollback(workspaceId: string, paneId: string, tabId: string, scrollback: string | null): Promise<void> {
@@ -97,4 +102,8 @@ export async function getPreferences(): Promise<Preferences> {
 
 export async function setPreferences(preferences: Preferences): Promise<void> {
   return invoke('set_preferences', { preferences });
+}
+
+export async function copyTabHistory(sourceTabId: string, destTabId: string): Promise<void> {
+  return invoke('copy_tab_history', { sourceTabId, destTabId });
 }

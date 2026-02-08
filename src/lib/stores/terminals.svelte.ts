@@ -13,15 +13,32 @@ interface TerminalInstance {
   tabId: string;
 }
 
+export interface SplitContext {
+  cwd: string | null;
+  sshCommand: string | null;
+  remoteCwd: string | null;
+}
+
 function createTerminalsStore() {
   let instances = $state<Map<string, TerminalInstance>>(new Map());
   let searchVisibleFor = $state<string | null>(null);
   let _shuttingDown = false;
+  const splitContexts = new Map<string, SplitContext>();
 
   return {
     get instances() { return instances; },
     get shuttingDown() { return _shuttingDown; },
     get searchVisibleFor() { return searchVisibleFor; },
+
+    setSplitContext(tabId: string, ctx: SplitContext) {
+      splitContexts.set(tabId, ctx);
+    },
+
+    consumeSplitContext(tabId: string): SplitContext | undefined {
+      const ctx = splitContexts.get(tabId);
+      if (ctx) splitContexts.delete(tabId);
+      return ctx;
+    },
 
     register(
       tabId: string,

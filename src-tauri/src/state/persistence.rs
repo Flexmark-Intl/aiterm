@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use super::workspace::AppData;
+use super::workspace::{AppData, Layout, SplitDirection, SplitNode};
 
 pub fn get_state_path() -> Option<PathBuf> {
     dirs::data_dir().map(|p| p.join("com.aiterm.app").join("aiterm-state.json"))
@@ -68,6 +68,47 @@ fn load_from_backup() -> AppData {
         Err(e) => {
             eprintln!("[load_state] Failed to read backup: {}. Using defaults.", e);
             AppData::default()
+        }
+    }
+}
+
+pub fn migrate_app_data(data: &mut AppData) {
+    let direction = match data.layout.as_ref() {
+        Some(Layout::Vertical) => SplitDirection::Vertical,
+        _ => SplitDirection::Horizontal,
+    };
+
+    for workspace in &mut data.workspaces {
+        if workspace.split_root.is_none() && !workspace.panes.is_empty() {
+            if workspace.panes.len() == 1 {
+                workspace.split_root = Some(SplitNode::Leaf {
+                    pane_id: workspace.panes[0].id.clone(),
+                });
+            } else {
+                // Build left-leaning chain: [A, B, C] -> Split(Split(A, B), C)
+                let mut node = SplitNode::Leaf {
+                    pane_id: workspace.panes[0].id.clone(),
+                };
+                for pane in &workspace.panes[1..] {
+                    node = SplitNode::Split {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        direction: direction.clone(),
+                        ratio: 0.5,
+                        children: Box::new((
+                            node,
+                            SplitNode::Leaf {
+                                pane_id: pane.id.clone(),
+                            },
+                        )),
+                    };
+                }
+                workspace.split_root = Some(node);
+            }
+            eprintln!(
+                "[migrate] Converted {} flat panes to split tree for workspace '{}'",
+                workspace.panes.len(),
+                workspace.name
+            );
         }
     }
 }

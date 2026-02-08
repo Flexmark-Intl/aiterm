@@ -12,8 +12,17 @@ pub fn spawn_terminal(
     tab_id: String,
     cols: u16,
     rows: u16,
+    cwd: Option<String>,
 ) -> Result<(), String> {
-    pty::spawn_pty(&app_handle, &*state, &pty_id, &tab_id, cols, rows)
+    pty::spawn_pty(&app_handle, &*state, &pty_id, &tab_id, cols, rows, cwd)
+}
+
+#[tauri::command]
+pub fn get_pty_info(
+    state: State<'_, Arc<AppState>>,
+    pty_id: String,
+) -> Result<pty::PtyInfo, String> {
+    pty::get_pty_info(&*state, &pty_id)
 }
 
 #[tauri::command]

@@ -15,6 +15,7 @@ pub fn spawn_pty(
     tab_id: &str,
     cols: u16,
     rows: u16,
+    cwd: Option<String>,
 ) -> Result<(), String> {
     eprintln!("spawn_pty called: pty_id={}, tab_id={}, cols={}, rows={}", pty_id, tab_id, cols, rows);
     let pty_system = native_pty_system();
@@ -82,9 +83,18 @@ pub fn spawn_pty(
         }
     }
 
-    // Get current working directory - use home dir for new terminals
+    // Set working directory — use provided cwd (from split) or fall back to home
+    if let Some(ref dir) = cwd {
+        let path = std::path::Path::new(dir);
+        if path.is_dir() {
+            cmd.cwd(path);
+        } else if let Some(home) = dirs::home_dir() {
+            cmd.cwd(home);
+        }
+    } else if let Some(home) = dirs::home_dir() {
+        cmd.cwd(home);
+    }
     if let Some(home) = dirs::home_dir() {
-        cmd.cwd(home.clone());
         cmd.env("HOME", home.to_string_lossy().to_string());
     }
 
@@ -92,6 +102,8 @@ pub fn spawn_pty(
         eprintln!("Failed to spawn command: {}", e);
         e.to_string()
     })?;
+
+    let child_pid = child.process_id();
 
     // Drop the slave - this is important! The shell won't start properly if we keep it open
     drop(pair.slave);
@@ -103,10 +115,10 @@ pub fn spawn_pty(
     // Create channel for commands
     let (tx, rx) = mpsc::channel::<PtyCommand>();
 
-    // Store PTY handle
+    // Store PTY handle with child PID
     {
         let mut registry = state.pty_registry.write();
-        registry.insert(pty_id.to_string(), PtyHandle { sender: tx });
+        registry.insert(pty_id.to_string(), PtyHandle { sender: tx, child_pid });
     }
 
     // Spawn writer thread (with PTY registry cleanup on exit)
@@ -205,4 +217,106 @@ pub fn kill_pty(state: &Arc<AppState>, pty_id: &str) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+/// Info returned when querying a PTY for split cloning
+#[derive(serde::Serialize, Clone)]
+pub struct PtyInfo {
+    pub cwd: Option<String>,
+    pub foreground_command: Option<String>,
+}
+
+pub fn get_pty_info(state: &Arc<AppState>, pty_id: &str) -> Result<PtyInfo, String> {
+    let registry = state.pty_registry.read();
+    let handle = registry.get(pty_id).ok_or("PTY not found")?;
+    let pid = handle.child_pid.ok_or("No child PID")?;
+
+    let cwd = get_cwd_for_pid(pid);
+    let foreground_command = get_foreground_command(pid);
+
+    Ok(PtyInfo { cwd, foreground_command })
+}
+
+/// Get the current working directory of a process (macOS)
+fn get_cwd_for_pid(pid: u32) -> Option<String> {
+    let output = std::process::Command::new("lsof")
+        .args(["-a", "-d", "cwd", "-p", &pid.to_string(), "-Fn"])
+        .output()
+        .ok()?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // lsof output: lines starting with 'n' contain the path
+    for line in stdout.lines() {
+        if let Some(path) = line.strip_prefix('n') {
+            if path.starts_with('/') {
+                return Some(path.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Check if a command string looks like an SSH/remote connection command
+fn is_ssh_command(cmd: &str) -> bool {
+    let base = cmd.split_whitespace().next().unwrap_or("");
+    let basename = std::path::Path::new(base)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(base);
+    matches!(basename, "ssh" | "mosh" | "autossh")
+}
+
+/// Get the foreground process command (for SSH detection)
+/// Walks child processes to find any SSH-like process in the chain.
+/// An alias like `gnova` that expands to `ssh user@host` will show
+/// `ssh user@host` in the process tree, so aliases are handled transparently.
+fn get_foreground_command(shell_pid: u32) -> Option<String> {
+    let output = std::process::Command::new("ps")
+        .args(["-o", "pid=,ppid=,command=", "-x"])
+        .output()
+        .ok()?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Build a map of ppid -> [(pid, command)]
+    let mut children: std::collections::HashMap<u32, Vec<(u32, String)>> =
+        std::collections::HashMap::new();
+
+    for line in stdout.lines() {
+        let parts: Vec<&str> = line.trim().splitn(3, char::is_whitespace).collect();
+        if parts.len() < 3 {
+            continue;
+        }
+        let pid: u32 = match parts[0].trim().parse() {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        let ppid: u32 = match parts[1].trim().parse() {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        let cmd = parts[2].trim().to_string();
+        children.entry(ppid).or_default().push((pid, cmd));
+    }
+
+    // Walk down from shell_pid to the leaf, remembering any SSH command found
+    let mut current_pid = shell_pid;
+    let mut ssh_cmd: Option<String> = None;
+
+    loop {
+        if let Some(kids) = children.get(&current_pid) {
+            if let Some((kid_pid, kid_cmd)) = kids.first() {
+                if is_ssh_command(kid_cmd) {
+                    ssh_cmd = Some(kid_cmd.clone());
+                }
+                current_pid = *kid_pid;
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+
+    ssh_cmd
 }

@@ -2,41 +2,16 @@
   import { onMount } from 'svelte';
   import { workspacesStore } from '$lib/stores/workspaces.svelte';
   import WorkspaceSidebar from '$lib/components/workspace/WorkspaceSidebar.svelte';
-  import SplitPane from '$lib/components/pane/SplitPane.svelte';
-  import LayoutSelector from '$lib/components/LayoutSelector.svelte';
+  import SplitContainer from '$lib/components/pane/SplitContainer.svelte';
+  import TerminalPane from '$lib/components/terminal/TerminalPane.svelte';
   import Resizer from '$lib/components/Resizer.svelte';
-  import type { Layout } from '$lib/tauri/types';
-  import * as commands from '$lib/tauri/commands';
 
   let loading = $state(true);
-  let paneSizes = $state<Record<string, number>>({});
-  let mainContentEl = $state<HTMLElement | null>(null);
-
-  // Get current layout's pane sizes
-  const currentSizes = $derived.by(() => {
-    const ws = workspacesStore.activeWorkspace;
-    if (!ws) return {};
-    const layout = workspacesStore.layout;
-    return ws.pane_sizes?.[layout] || {};
-  });
-
-  // Get flex value for a pane
-  function getPaneFlex(paneId: string): number {
-    return paneSizes[paneId] ?? currentSizes[paneId] ?? 1;
-  }
 
   onMount(async () => {
     await workspacesStore.load();
     loading = false;
   });
-
-  function handleLayoutChange(newLayout: Layout) {
-    // Save current sizes before switching
-    savePaneSizes();
-    workspacesStore.setLayout(newLayout);
-    // Reset local sizes to load from new layout
-    paneSizes = {};
-  }
 
   function handleSidebarResize(delta: number) {
     workspacesStore.setSidebarWidth(workspacesStore.sidebarWidth + delta);
@@ -45,46 +20,12 @@
   function handleSidebarResizeEnd() {
     workspacesStore.saveSidebarWidth();
   }
-
-  function handlePaneResize(paneId: string, nextPaneId: string, delta: number) {
-    const layout = workspacesStore.layout;
-    const isHorizontal = layout === 'horizontal' || layout === 'grid';
-
-    // Get container size
-    if (!mainContentEl) return;
-    const containerSize = isHorizontal ? mainContentEl.clientWidth : mainContentEl.clientHeight;
-
-    // Convert delta to flex ratio change
-    const deltaRatio = delta / containerSize * 2;
-
-    const currentFlex = getPaneFlex(paneId);
-    const nextFlex = getPaneFlex(nextPaneId);
-
-    // Update sizes
-    paneSizes = {
-      ...paneSizes,
-      [paneId]: Math.max(0.2, currentFlex + deltaRatio),
-      [nextPaneId]: Math.max(0.2, nextFlex - deltaRatio),
-    };
-  }
-
-  function savePaneSizes() {
-    const ws = workspacesStore.activeWorkspace;
-    if (!ws || Object.keys(paneSizes).length === 0) return;
-
-    // Merge with existing sizes
-    const merged = { ...currentSizes, ...paneSizes };
-    commands.setPaneSizes(ws.id, workspacesStore.layout, merged);
-  }
 </script>
 
 <div class="app">
   <div class="titlebar" data-tauri-drag-region>
     <div class="titlebar-spacer"></div>
     <img src="/logo-light.png" alt="aiTerm" class="titlebar-logo" />
-    <div class="titlebar-controls">
-      <LayoutSelector layout={workspacesStore.layout} onchange={handleLayoutChange} />
-    </div>
   </div>
 
   <div class="app-body">
@@ -96,26 +37,32 @@
       <WorkspaceSidebar width={workspacesStore.sidebarWidth} />
       <Resizer direction="horizontal" onresize={handleSidebarResize} onresizeend={handleSidebarResizeEnd} />
 
-      <main class="main-content layout-{workspacesStore.layout}" bind:this={mainContentEl}>
+      <main class="main-content">
         {#if workspacesStore.activeWorkspace}
           {@const workspace = workspacesStore.activeWorkspace}
-          {#each workspace.panes as pane, index (pane.id)}
-            <SplitPane
+          {#if workspace.split_root}
+            <SplitContainer
+              node={workspace.split_root}
               workspaceId={workspace.id}
-              {pane}
-              isActive={pane.id === workspace.active_pane_id}
-              showHeader={workspace.panes.length > 1}
-              flex={workspacesStore.layout === 'grid' ? 1 : getPaneFlex(pane.id)}
+              panes={workspace.panes}
             />
-            {#if workspacesStore.layout !== 'grid' && index < workspace.panes.length - 1}
-              {@const nextPane = workspace.panes[index + 1]}
-              <Resizer
-                direction={workspacesStore.layout === 'vertical' ? 'vertical' : 'horizontal'}
-                onresize={(delta) => handlePaneResize(pane.id, nextPane.id, delta)}
-                onresizeend={savePaneSizes}
-              />
-            {/if}
-          {/each}
+          {/if}
+
+          <!-- Portal layer: terminals rendered flat so they survive split tree changes.
+               Zero-size container so they don't affect flex layout before portaling. -->
+          <div class="terminal-host">
+            {#each workspace.panes as pane (pane.id)}
+              {#each pane.tabs as tab (tab.id)}
+                <TerminalPane
+                  workspaceId={workspace.id}
+                  paneId={pane.id}
+                  tabId={tab.id}
+                  visible={tab.id === pane.active_tab_id}
+                  initialScrollback={tab.scrollback}
+                />
+              {/each}
+            {/each}
+          </div>
         {:else}
           <div class="empty-state">
             <p>No workspace selected</p>
@@ -157,12 +104,6 @@
     pointer-events: none;
   }
 
-  .titlebar-controls {
-    position: absolute;
-    right: 12px;
-    -webkit-app-region: no-drag;
-  }
-
   .app-body {
     flex: 1;
     display: flex;
@@ -188,26 +129,6 @@
     background: var(--bg-dark);
   }
 
-  .main-content.layout-horizontal {
-    flex-direction: row;
-  }
-
-  .main-content.layout-vertical {
-    flex-direction: column;
-  }
-
-  .main-content.layout-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    grid-auto-rows: 1fr;
-    gap: 1px;
-    background: var(--bg-light);
-  }
-
-  .main-content.layout-grid > :global(.split-pane:last-child:nth-child(odd)) {
-    grid-column: 1 / -1;
-  }
-
   .empty-state {
     flex: 1;
     display: flex;
@@ -223,5 +144,13 @@
     background: var(--bg-medium);
     border-radius: 4px;
     font-family: inherit;
+  }
+
+  .terminal-host {
+    position: absolute;
+    width: 0;
+    height: 0;
+    overflow: hidden;
+    pointer-events: none;
   }
 </style>

@@ -12,6 +12,7 @@ pub enum PtyCommand {
 
 pub struct PtyHandle {
     pub sender: Sender<PtyCommand>,
+    pub child_pid: Option<u32>,
 }
 
 pub struct AppState {

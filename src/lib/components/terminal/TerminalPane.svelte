@@ -39,6 +39,8 @@
 
   // Fit terminal with one fewer row for bottom breathing room
   function fitWithPadding() {
+    // Guard: skip if container is not in the document (detached during split re-render)
+    if (!containerRef?.isConnected) return;
     fitAddon.fit();
     const { cols, rows } = terminal;
     if (rows > 1) {
@@ -46,6 +48,28 @@
     }
   }
   let contextMenu = $state<{ x: number; y: number } | null>(null);
+
+  // Portal: attach containerRef to its slot in the split tree
+  function attachToSlot() {
+    const slot = document.querySelector(`[data-terminal-slot="${tabId}"]`) as HTMLElement;
+    if (slot && containerRef && containerRef.parentElement !== slot) {
+      slot.appendChild(containerRef);
+      if (visible && initialized) {
+        requestAnimationFrame(() => {
+          fitWithPadding();
+          const { cols, rows } = terminal;
+          resizeTerminal(ptyId, cols, rows).catch(console.error);
+        });
+      }
+    }
+  }
+
+  function handleSlotReady(e: Event) {
+    const detail = (e as CustomEvent).detail;
+    if (detail?.tabId === tabId) {
+      attachToSlot();
+    }
+  }
 
   // Tokyo Night theme
   const theme = {
@@ -97,6 +121,12 @@
 
     terminal.open(containerRef);
 
+    // Portal into the slot rendered by SplitPane
+    attachToSlot();
+
+    // Listen for slot re-creation (after split tree changes)
+    window.addEventListener('terminal-slot-ready', handleSlotReady);
+
     // Restore scrollback if available
     if (initialScrollback) {
       terminal.write(initialScrollback);
@@ -143,13 +173,42 @@
       terminal.write('\r\n[Process exited]\r\n');
     });
 
-    // Spawn PTY with tab-specific history
+    // Check for split context (cwd, SSH command from source pane)
+    const splitCtx = terminalsStore.consumeSplitContext(tabId);
+
+    // Spawn PTY with tab-specific history, optionally inheriting cwd
     try {
-      await spawnTerminal(ptyId, tabId, cols, rows);
+      await spawnTerminal(ptyId, tabId, cols, rows, splitCtx?.cwd);
     } catch (e) {
       console.error('Failed to spawn PTY:', e);
     }
     await workspacesStore.setTabPtyId(workspaceId, paneId, tabId, ptyId);
+
+    // If the source pane was running SSH, replay the command in the new terminal
+    if (splitCtx?.sshCommand) {
+      // Small delay to let the shell prompt initialize before sending
+      setTimeout(async () => {
+        const bytes = Array.from(new TextEncoder().encode(splitCtx.sshCommand + '\n'));
+        try {
+          await writeTerminal(ptyId, bytes);
+        } catch (e) {
+          console.error('Failed to replay SSH command:', e);
+        }
+
+        // If we know the remote cwd, cd to it after SSH connects
+        if (splitCtx.remoteCwd) {
+          setTimeout(async () => {
+            const escaped = splitCtx.remoteCwd!.replace(/'/g, "'\\''");
+            const cdBytes = Array.from(new TextEncoder().encode(`cd '${escaped}'\n`));
+            try {
+              await writeTerminal(ptyId, cdBytes);
+            } catch (e) {
+              console.error('Failed to cd on remote:', e);
+            }
+          }, 2000);
+        }
+      }, 500);
+    }
 
     // Register terminal instance with serialize addon for scrollback saving
     terminalsStore.register(tabId, terminal, ptyId, serializeAddon, searchAddon, workspaceId, paneId);
@@ -195,7 +254,7 @@
 
     // Handle resize
     resizeObserver = new ResizeObserver(() => {
-      if (visible) {
+      if (visible && containerRef?.isConnected) {
         fitWithPadding();
         const { cols, rows } = terminal;
         resizeTerminal(ptyId, cols, rows).catch(console.error);
@@ -214,6 +273,7 @@
     // destroy is called, and async onDestroy is not awaited by Svelte,
     // which causes race conditions with terminal.dispose() below.
 
+    window.removeEventListener('terminal-slot-ready', handleSlotReady);
     if (unlistenOutput) unlistenOutput();
     if (unlistenClose) unlistenClose();
     if (resizeObserver) resizeObserver.disconnect();

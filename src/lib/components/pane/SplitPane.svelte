@@ -1,9 +1,8 @@
 <script lang="ts">
-  import { tick } from 'svelte';
+  import { tick, onMount } from 'svelte';
   import type { Pane } from '$lib/tauri/types';
   import { workspacesStore } from '$lib/stores/workspaces.svelte';
   import TerminalTabs from '$lib/components/terminal/TerminalTabs.svelte';
-  import TerminalPane from '$lib/components/terminal/TerminalPane.svelte';
   import SearchBar from '$lib/components/terminal/SearchBar.svelte';
 
   interface Props {
@@ -11,14 +10,20 @@
     pane: Pane;
     isActive: boolean;
     showHeader: boolean;
-    flex?: number;
   }
 
-  let { workspaceId, pane, isActive, showHeader, flex = 1 }: Props = $props();
+  let { workspaceId, pane, isActive, showHeader }: Props = $props();
 
   let editingName = $state(false);
   let nameValue = $state('');
   let editInput = $state<HTMLInputElement | null>(null);
+
+  // Notify portaled TerminalPanes that their slots are ready
+  onMount(() => {
+    for (const tab of pane.tabs) {
+      window.dispatchEvent(new CustomEvent('terminal-slot-ready', { detail: { tabId: tab.id } }));
+    }
+  });
 
   async function startEditing() {
     editingName = true;
@@ -58,7 +63,7 @@
   }
 </script>
 
-<div class="split-pane" class:active={isActive} style="flex: {flex}">
+<div class="split-pane" class:active={isActive}>
   {#if showHeader}
     <div
       class="pane-header"
@@ -101,19 +106,18 @@
       <SearchBar tabId={pane.active_tab_id} />
     {/if}
     {#each pane.tabs as tab (tab.id)}
-      <TerminalPane
-        {workspaceId}
-        paneId={pane.id}
-        tabId={tab.id}
-        visible={tab.id === pane.active_tab_id}
-        initialScrollback={tab.scrollback}
-      />
+      <div
+        class="terminal-slot"
+        class:hidden-tab={tab.id !== pane.active_tab_id}
+        data-terminal-slot={tab.id}
+      ></div>
     {/each}
   </div>
 </div>
 
 <style>
   .split-pane {
+    flex: 1;
     display: flex;
     flex-direction: column;
     min-height: 0;
@@ -180,5 +184,22 @@
     display: flex;
     min-height: 0;
     position: relative;
+  }
+
+  .terminal-slot {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+  }
+
+  .terminal-slot.hidden-tab {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    opacity: 0;
+    pointer-events: none;
+    z-index: -1;
   }
 </style>

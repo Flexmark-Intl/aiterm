@@ -1,8 +1,8 @@
 use std::sync::Arc;
 use tauri::State;
 
-use crate::state::{save_state, AppData, AppState, Layout, Pane, Preferences, Tab, Workspace};
-use std::collections::HashMap;
+use crate::state::{save_state, AppData, AppState, Pane, Preferences, Tab, Workspace};
+use crate::state::workspace::SplitDirection;
 
 #[tauri::command]
 pub fn debug_log(message: String) {
@@ -67,24 +67,36 @@ pub fn rename_workspace(
 }
 
 #[tauri::command]
-pub fn create_pane(
+pub fn split_pane(
     state: State<'_, Arc<AppState>>,
     workspace_id: String,
-    name: String,
+    target_pane_id: String,
+    direction: SplitDirection,
+    scrollback: Option<String>,
 ) -> Result<Pane, String> {
-    let pane = Pane::new(name);
+    let mut new_pane = Pane::new("Terminal".to_string());
+    // Pre-populate the new tab's scrollback so it's available on first render
+    if let Some(ref sb) = scrollback {
+        if let Some(tab) = new_pane.tabs.first_mut() {
+            tab.scrollback = Some(sb.clone());
+        }
+    }
     let data_clone = {
         let mut app_data = state.app_data.write();
         if let Some(workspace) = app_data.workspaces.iter_mut().find(|w| w.id == workspace_id) {
-            workspace.panes.push(pane.clone());
-            workspace.active_pane_id = Some(pane.id.clone());
+            if let Some(ref root) = workspace.split_root {
+                workspace.split_root =
+                    Some(root.split_pane(&target_pane_id, &new_pane.id, direction));
+            }
+            workspace.panes.push(new_pane.clone());
+            workspace.active_pane_id = Some(new_pane.id.clone());
             app_data.clone()
         } else {
             return Err("Workspace not found".to_string());
         }
     };
     save_state(&data_clone)?;
-    Ok(pane)
+    Ok(new_pane)
 }
 
 #[tauri::command]
@@ -96,6 +108,11 @@ pub fn delete_pane(
     let data_clone = {
         let mut app_data = state.app_data.write();
         if let Some(workspace) = app_data.workspaces.iter_mut().find(|w| w.id == workspace_id) {
+            // Remove from split tree
+            if let Some(ref root) = workspace.split_root {
+                workspace.split_root = root.remove_pane(&pane_id);
+            }
+            // Remove from flat list
             workspace.panes.retain(|p| p.id != pane_id);
 
             if workspace.active_pane_id.as_ref() == Some(&pane_id) {
@@ -272,16 +289,6 @@ pub fn set_tab_pty_id(
 }
 
 #[tauri::command]
-pub fn set_layout(state: State<'_, Arc<AppState>>, layout: Layout) -> Result<(), String> {
-    let data_clone = {
-        let mut app_data = state.app_data.write();
-        app_data.layout = layout;
-        app_data.clone()
-    };
-    save_state(&data_clone)
-}
-
-#[tauri::command]
 pub fn set_sidebar_width(state: State<'_, Arc<AppState>>, width: u32) -> Result<(), String> {
     let data_clone = {
         let mut app_data = state.app_data.write();
@@ -292,19 +299,17 @@ pub fn set_sidebar_width(state: State<'_, Arc<AppState>>, width: u32) -> Result<
 }
 
 #[tauri::command]
-pub fn set_pane_sizes(
+pub fn set_split_ratio(
     state: State<'_, Arc<AppState>>,
     workspace_id: String,
-    layout: Layout,
-    sizes: HashMap<String, f64>,
+    split_id: String,
+    ratio: f64,
 ) -> Result<(), String> {
     let data_clone = {
         let mut app_data = state.app_data.write();
         if let Some(workspace) = app_data.workspaces.iter_mut().find(|w| w.id == workspace_id) {
-            match layout {
-                Layout::Horizontal => workspace.pane_sizes.horizontal = sizes,
-                Layout::Vertical => workspace.pane_sizes.vertical = sizes,
-                Layout::Grid => workspace.pane_sizes.grid = sizes,
+            if let Some(ref root) = workspace.split_root {
+                workspace.split_root = Some(root.set_ratio(&split_id, ratio.clamp(0.1, 0.9)));
             }
         }
         app_data.clone()
@@ -347,4 +352,23 @@ pub fn set_preferences(state: State<'_, Arc<AppState>>, preferences: Preferences
         app_data.clone()
     };
     save_state(&data_clone)
+}
+
+#[tauri::command]
+pub fn copy_tab_history(source_tab_id: String, dest_tab_id: String) -> Result<(), String> {
+    let data_dir = dirs::data_dir().ok_or("No data directory")?;
+    let history_dir = data_dir.join("com.aiterm.app").join("history");
+
+    // Sanitize tab IDs the same way as spawn_pty
+    let safe_source = source_tab_id.replace(['/', '\\', '.'], "");
+    let safe_dest = dest_tab_id.replace(['/', '\\', '.'], "");
+
+    let source_path = history_dir.join(format!("{}.history", safe_source));
+    let dest_path = history_dir.join(format!("{}.history", safe_dest));
+
+    if source_path.exists() {
+        std::fs::copy(&source_path, &dest_path).map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
 }

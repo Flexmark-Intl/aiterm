@@ -5,12 +5,6 @@ export interface Tab {
   scrollback: string | null;
 }
 
-export interface PaneSizes {
-  horizontal: Record<string, number>;
-  vertical: Record<string, number>;
-  grid: Record<string, number>;
-}
-
 export interface Pane {
   id: string;
   name: string;
@@ -18,15 +12,30 @@ export interface Pane {
   active_tab_id: string | null;
 }
 
+export type SplitDirection = 'horizontal' | 'vertical';
+
+export interface SplitLeaf {
+  type: 'leaf';
+  pane_id: string;
+}
+
+export interface SplitBranch {
+  type: 'split';
+  id: string;
+  direction: SplitDirection;
+  ratio: number;
+  children: [SplitNode, SplitNode];
+}
+
+export type SplitNode = SplitLeaf | SplitBranch;
+
 export interface Workspace {
   id: string;
   name: string;
   panes: Pane[];
   active_pane_id: string | null;
-  pane_sizes: PaneSizes;
+  split_root: SplitNode | null;
 }
-
-export type Layout = 'horizontal' | 'vertical' | 'grid';
 
 export type CursorStyle = 'block' | 'underline' | 'bar';
 
@@ -42,7 +51,6 @@ export interface Preferences {
 export interface AppData {
   workspaces: Workspace[];
   active_workspace_id: string | null;
-  layout: Layout;
   sidebar_width: number;
   preferences: Preferences;
 }

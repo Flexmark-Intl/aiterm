@@ -46,7 +46,8 @@
 
         <section>
           <h3>Panes</h3>
-          <div class="shortcut"><kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>T</kbd> <span>New pane</span></div>
+          <div class="shortcut"><kbd>Cmd</kbd> + <kbd>D</kbd> <span>Split right</span></div>
+          <div class="shortcut"><kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>D</kbd> <span>Split down</span></div>
         </section>
 
         <section>
@@ -64,11 +65,6 @@
           <div class="shortcut"><kbd>Cmd</kbd> + <kbd>,</kbd> <span>Preferences</span></div>
           <div class="shortcut"><kbd>Cmd</kbd> + <kbd>/</kbd> <span>Show this help</span></div>
           <div class="shortcut"><kbd>Cmd</kbd> + <kbd>Q</kbd> <span>Quit</span></div>
-        </section>
-
-        <section>
-          <h3>Layout</h3>
-          <p>Use the layout selector in the top-right corner to switch between horizontal, vertical, and grid layouts.</p>
         </section>
 
         <section>

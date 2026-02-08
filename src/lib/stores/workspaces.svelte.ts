@@ -1,10 +1,50 @@
-import type { AppData, Layout, Tab, Pane, Workspace } from '$lib/tauri/types';
+import type { Terminal } from '@xterm/xterm';
+import type { SplitDirection, SplitNode, Tab, Pane, Workspace } from '$lib/tauri/types';
 import * as commands from '$lib/tauri/commands';
+import { terminalsStore } from '$lib/stores/terminals.svelte';
+
+/**
+ * Heuristically extract a remote cwd from the terminal prompt.
+ * Looks at the last few lines for common prompt patterns:
+ *   user@host:/path$  |  user@host:~$  |  [user@host /path]$
+ */
+function extractRemoteCwd(terminal: Terminal): string | null {
+  const buffer = terminal.buffer.active;
+  const cursorLine = buffer.baseY + buffer.cursorY;
+
+  for (let i = cursorLine; i >= Math.max(0, cursorLine - 5); i--) {
+    const line = buffer.getLine(i);
+    if (!line) continue;
+    const text = line.translateToString(true).trim();
+    if (!text) continue;
+
+    // Pattern: ...:~/path$ or ...:/path$ (colon before path, common in bash/zsh prompts)
+    let match = text.match(/:([~\/][^\s:]*)\s*[$#%>]\s*$/);
+    if (match) return match[1];
+
+    // Pattern: [user@host /path]$ (path inside brackets)
+    match = text.match(/[\[(\s](\/\S+)\s*[\])]\s*[$#%>]\s*$/);
+    if (match) return match[1];
+  }
+
+  return null;
+}
+
+function updateRatioInTree(node: SplitNode, splitId: string, ratio: number): SplitNode {
+  if (node.type === 'leaf') return node;
+  if (node.id === splitId) return { ...node, ratio };
+  return {
+    ...node,
+    children: [
+      updateRatioInTree(node.children[0], splitId, ratio),
+      updateRatioInTree(node.children[1], splitId, ratio),
+    ],
+  };
+}
 
 function createWorkspacesStore() {
   let workspaces = $state<Workspace[]>([]);
   let activeWorkspaceId = $state<string | null>(null);
-  let layout = $state<Layout>('horizontal');
   let sidebarWidth = $state(180);
 
   const activeWorkspace = $derived(
@@ -27,25 +67,18 @@ function createWorkspacesStore() {
     get activeWorkspace() { return activeWorkspace; },
     get activePane() { return activePane; },
     get activeTab() { return activeTab; },
-    get layout() { return layout; },
     get sidebarWidth() { return sidebarWidth; },
 
     async load() {
       const data = await commands.getAppData();
       workspaces = data.workspaces;
       activeWorkspaceId = data.active_workspace_id;
-      layout = data.layout || 'horizontal';
       sidebarWidth = data.sidebar_width || 180;
 
       // Create default workspace if none exist
       if (workspaces.length === 0) {
         await this.createWorkspace('Default');
       }
-    },
-
-    async setLayout(newLayout: Layout) {
-      await commands.setLayout(newLayout);
-      layout = newLayout;
     },
 
     setSidebarWidth(width: number) {
@@ -83,36 +116,92 @@ function createWorkspacesStore() {
       activeWorkspaceId = workspaceId;
     },
 
-    async createPane(workspaceId: string, name: string) {
-      const pane = await commands.createPane(workspaceId, name);
-      workspaces = workspaces.map(w => {
-        if (w.id === workspaceId) {
-          return {
-            ...w,
-            panes: [...w.panes, pane],
-            active_pane_id: pane.id
-          };
-        }
-        return w;
-      });
+    async splitPane(workspaceId: string, targetPaneId: string, direction: SplitDirection) {
+      const pane = await commands.splitPane(workspaceId, targetPaneId, direction);
+      // Reload workspace to get updated split_root from backend
+      const data = await commands.getAppData();
+      const ws = data.workspaces.find(w => w.id === workspaceId);
+      if (ws) {
+        workspaces = workspaces.map(w => w.id === workspaceId ? ws : w);
+      }
       return pane;
+    },
+
+    async splitPaneWithContext(workspaceId: string, sourcePaneId: string, sourceTabId: string, direction: SplitDirection) {
+      // 1. Gather context from the source terminal
+      const instance = terminalsStore.get(sourceTabId);
+      let scrollback: string | null = null;
+      let cwd: string | null = null;
+      let sshCommand: string | null = null;
+
+      if (instance) {
+        // Serialize current scrollback
+        try {
+          scrollback = instance.serializeAddon.serialize();
+        } catch (e) {
+          console.error('Failed to serialize scrollback for split:', e);
+        }
+
+        // Get PTY info (cwd + SSH detection)
+        try {
+          const info = await commands.getPtyInfo(instance.ptyId);
+          cwd = info.cwd;
+          sshCommand = info.foreground_command;
+        } catch (e) {
+          // PTY may already be gone — fall through with null
+        }
+      }
+
+      // 2. Create split (with scrollback pre-populated on new tab)
+      const newPane = await commands.splitPane(workspaceId, sourcePaneId, direction, scrollback);
+
+      // 2b. Name the new pane and tab properly
+      const ws_current = workspaces.find(w => w.id === workspaceId);
+      const paneCount = (ws_current?.panes.length ?? 0) + 1; // +1 for the newly created pane
+      await commands.renamePane(workspaceId, newPane.id, `Pane ${paneCount}`);
+
+      const sourcePane = ws_current?.panes.find(p => p.id === sourcePaneId);
+      const sourceTab = sourcePane?.tabs.find(t => t.id === sourceTabId);
+      const newTabId = newPane.tabs[0]?.id;
+      if (sourceTab && newTabId) {
+        await commands.renameTab(workspaceId, newPane.id, newTabId, sourceTab.name);
+      }
+      if (newTabId) {
+        try {
+          await commands.copyTabHistory(sourceTabId, newTabId);
+        } catch (e) {
+          console.error('Failed to copy tab history:', e);
+        }
+
+        // 4. Store split context for the new TerminalPane to consume on mount
+        // For SSH sessions, try to detect the remote cwd from the prompt
+        let remoteCwd: string | null = null;
+        if (sshCommand && instance) {
+          remoteCwd = extractRemoteCwd(instance.terminal);
+        }
+
+        if (cwd || sshCommand) {
+          terminalsStore.setSplitContext(newTabId, { cwd, sshCommand, remoteCwd });
+        }
+      }
+
+      // 5. Reload workspace to get updated split_root
+      const data = await commands.getAppData();
+      const ws = data.workspaces.find(w => w.id === workspaceId);
+      if (ws) {
+        workspaces = workspaces.map(w => w.id === workspaceId ? ws : w);
+      }
+      return newPane;
     },
 
     async deletePane(workspaceId: string, paneId: string) {
       await commands.deletePane(workspaceId, paneId);
-      workspaces = workspaces.map(w => {
-        if (w.id === workspaceId) {
-          const newPanes = w.panes.filter(p => p.id !== paneId);
-          return {
-            ...w,
-            panes: newPanes,
-            active_pane_id: w.active_pane_id === paneId
-              ? newPanes[0]?.id ?? null
-              : w.active_pane_id
-          };
-        }
-        return w;
-      });
+      // Reload workspace to get updated split_root from backend
+      const data = await commands.getAppData();
+      const ws = data.workspaces.find(w => w.id === workspaceId);
+      if (ws) {
+        workspaces = workspaces.map(w => w.id === workspaceId ? ws : w);
+      }
     },
 
     async renamePane(workspaceId: string, paneId: string, name: string) {
@@ -252,6 +341,19 @@ function createWorkspacesStore() {
         }
         return w;
       });
+    },
+
+    setSplitRatioLocal(workspaceId: string, splitId: string, ratio: number) {
+      workspaces = workspaces.map(w => {
+        if (w.id === workspaceId && w.split_root) {
+          return { ...w, split_root: updateRatioInTree(w.split_root, splitId, ratio) };
+        }
+        return w;
+      });
+    },
+
+    async persistSplitRatio(workspaceId: string, splitId: string, ratio: number) {
+      await commands.setSplitRatio(workspaceId, splitId, ratio);
     }
   };
 }
