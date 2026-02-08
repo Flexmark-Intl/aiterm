@@ -2,6 +2,7 @@
   import { tick } from 'svelte';
   import type { Tab, Pane } from '$lib/tauri/types';
   import { workspacesStore } from '$lib/stores/workspaces.svelte';
+  import { activityStore } from '$lib/stores/activity.svelte';
 
   interface Props {
     workspaceId: string;
@@ -86,6 +87,9 @@
           autofocus
         />
       {:else}
+        {#if tab.id !== pane.active_tab_id && activityStore.hasActivity(tab.id)}
+          <span class="activity-dot"></span>
+        {/if}
         <span class="tab-name">{tab.name}</span>
         <div class="tab-actions">
           <button
@@ -135,6 +139,15 @@
 
   .tab.active {
     background: var(--bg-dark);
+  }
+
+  .activity-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    flex-shrink: 0;
+    margin-right: 4px;
   }
 
   .tab-name {

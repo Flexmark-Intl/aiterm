@@ -4,6 +4,7 @@
   import { workspacesStore } from '$lib/stores/workspaces.svelte';
   import TerminalTabs from '$lib/components/terminal/TerminalTabs.svelte';
   import TerminalPane from '$lib/components/terminal/TerminalPane.svelte';
+  import SearchBar from '$lib/components/terminal/SearchBar.svelte';
 
   interface Props {
     workspaceId: string;
@@ -94,6 +95,9 @@
   <TerminalTabs {workspaceId} {pane} />
 
   <div class="terminal-area">
+    {#if pane.active_tab_id}
+      <SearchBar tabId={pane.active_tab_id} />
+    {/if}
     {#each pane.tabs as tab (tab.id)}
       <TerminalPane
         {workspaceId}

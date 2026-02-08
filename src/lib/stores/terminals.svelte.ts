@@ -1,11 +1,13 @@
 import type { Terminal } from '@xterm/xterm';
 import type { SerializeAddon } from '@xterm/addon-serialize';
+import type { SearchAddon } from '@xterm/addon-search';
 import { setTabScrollback } from '$lib/tauri/commands';
 
 interface TerminalInstance {
   terminal: Terminal;
   ptyId: string;
   serializeAddon: SerializeAddon;
+  searchAddon: SearchAddon;
   workspaceId: string;
   paneId: string;
   tabId: string;
@@ -13,22 +15,25 @@ interface TerminalInstance {
 
 function createTerminalsStore() {
   let instances = $state<Map<string, TerminalInstance>>(new Map());
+  let searchVisibleFor = $state<string | null>(null);
   let _shuttingDown = false;
 
   return {
     get instances() { return instances; },
     get shuttingDown() { return _shuttingDown; },
+    get searchVisibleFor() { return searchVisibleFor; },
 
     register(
       tabId: string,
       terminal: Terminal,
       ptyId: string,
       serializeAddon: SerializeAddon,
+      searchAddon: SearchAddon,
       workspaceId: string,
       paneId: string
     ) {
       instances = new Map(instances);
-      instances.set(tabId, { terminal, ptyId, serializeAddon, workspaceId, paneId, tabId });
+      instances.set(tabId, { terminal, ptyId, serializeAddon, searchAddon, workspaceId, paneId, tabId });
     },
 
     unregister(tabId: string) {
@@ -57,6 +62,43 @@ function createTerminalsStore() {
       // and saveAllScrollback don't re-save stale content
       const scrollback = instance.serializeAddon.serialize();
       await setTabScrollback(instance.workspaceId, instance.paneId, instance.tabId, scrollback);
+    },
+
+    showSearch(tabId: string) {
+      searchVisibleFor = tabId;
+    },
+
+    hideSearch(tabId: string) {
+      if (searchVisibleFor === tabId) {
+        searchVisibleFor = null;
+      }
+      const instance = instances.get(tabId);
+      if (instance) {
+        instance.searchAddon.clearDecorations();
+        instance.terminal.focus();
+      }
+    },
+
+    toggleSearch(tabId: string) {
+      if (searchVisibleFor === tabId) {
+        this.hideSearch(tabId);
+      } else {
+        this.showSearch(tabId);
+      }
+    },
+
+    findNext(tabId: string, query: string) {
+      const instance = instances.get(tabId);
+      if (instance && query) {
+        instance.searchAddon.findNext(query);
+      }
+    },
+
+    findPrevious(tabId: string, query: string) {
+      const instance = instances.get(tabId);
+      if (instance && query) {
+        instance.searchAddon.findPrevious(query);
+      }
     },
 
     async saveAllScrollback(): Promise<void> {

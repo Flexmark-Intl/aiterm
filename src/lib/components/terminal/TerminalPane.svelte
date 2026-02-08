@@ -6,11 +6,13 @@
   import { FitAddon } from '@xterm/addon-fit';
   import { WebLinksAddon } from '@xterm/addon-web-links';
   import { SerializeAddon } from '@xterm/addon-serialize';
+  import { SearchAddon } from '@xterm/addon-search';
   import '@xterm/xterm/css/xterm.css';
   import { spawnTerminal, writeTerminal, resizeTerminal, killTerminal, setTabScrollback } from '$lib/tauri/commands';
   import { terminalsStore } from '$lib/stores/terminals.svelte';
   import { workspacesStore } from '$lib/stores/workspaces.svelte';
   import { preferencesStore } from '$lib/stores/preferences.svelte';
+  import { activityStore } from '$lib/stores/activity.svelte';
 
   interface Props {
     workspaceId: string;
@@ -26,6 +28,7 @@
   let terminal: Terminal;
   let fitAddon: FitAddon;
   let serializeAddon: SerializeAddon;
+  let searchAddon: SearchAddon;
   let ptyId: string;
   let unlistenOutput: UnlistenFn;
   let unlistenClose: UnlistenFn;
@@ -74,8 +77,10 @@
 
     fitAddon = new FitAddon();
     serializeAddon = new SerializeAddon();
+    searchAddon = new SearchAddon();
     terminal.loadAddon(fitAddon);
     terminal.loadAddon(serializeAddon);
+    terminal.loadAddon(searchAddon);
     terminal.loadAddon(new WebLinksAddon());
 
     terminal.open(containerRef);
@@ -116,6 +121,9 @@
     unlistenOutput = await listen<number[]>(`pty-output-${ptyId}`, (event) => {
       const data = new Uint8Array(event.payload);
       terminal.write(data);
+      if (!visible) {
+        activityStore.markActive(tabId);
+      }
     });
 
     // Listen for PTY close
@@ -132,7 +140,7 @@
     await workspacesStore.setTabPtyId(workspaceId, paneId, tabId, ptyId);
 
     // Register terminal instance with serialize addon for scrollback saving
-    terminalsStore.register(tabId, terminal, ptyId, serializeAddon, workspaceId, paneId);
+    terminalsStore.register(tabId, terminal, ptyId, serializeAddon, searchAddon, workspaceId, paneId);
 
     // Handle keyboard input
     terminal.onData(async (data) => {
@@ -180,6 +188,7 @@
         fitAddon.fit();
         terminal.focus();
       });
+      activityStore.clearActive(tabId);
     }
   });
 

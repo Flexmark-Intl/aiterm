@@ -149,6 +149,41 @@
         return;
       }
 
+      // Cmd+F - Find in terminal
+      if (isMeta && !e.shiftKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        e.stopPropagation();
+        const tab = workspacesStore.activeTab;
+        if (tab) {
+          terminalsStore.toggleSearch(tab.id);
+        }
+        return;
+      }
+
+      // Cmd+= / Cmd++ - Zoom in
+      if (isMeta && (e.key === '=' || e.key === '+')) {
+        e.preventDefault();
+        e.stopPropagation();
+        preferencesStore.setFontSize(preferencesStore.fontSize + 1);
+        return;
+      }
+
+      // Cmd+- - Zoom out
+      if (isMeta && e.key === '-') {
+        e.preventDefault();
+        e.stopPropagation();
+        preferencesStore.setFontSize(preferencesStore.fontSize - 1);
+        return;
+      }
+
+      // Cmd+0 - Reset zoom
+      if (isMeta && e.key === '0') {
+        e.preventDefault();
+        e.stopPropagation();
+        preferencesStore.setFontSize(13);
+        return;
+      }
+
       // Cmd+/ or Cmd+? - Show help
       if (isMeta && (e.key === '/' || e.key === '?' || e.code === 'Slash')) {
         e.preventDefault();
