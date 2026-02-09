@@ -122,8 +122,9 @@ function createTerminalsStore() {
     async clearTerminal(tabId: string) {
       const instance = instances.get(tabId);
       if (!instance) return;
-      // Clear scrollback buffer but keep current viewport (prompt stays visible)
-      instance.terminal.write('\x1b[3J');
+      // Full reset: clears scrollback, alternate screen artifacts, and screen content.
+      // Then clear xterm's internal scrollback buffer so serialize doesn't re-save it.
+      instance.terminal.write('\x1bc');
       instance.terminal.clear();
       // Serialize the now-empty state and persist it, so auto-save
       // and saveAllScrollback don't re-save stale content
@@ -182,6 +183,10 @@ function createTerminalsStore() {
       const toSave: { workspaceId: string; paneId: string; tabId: string; scrollback: string }[] = [];
       for (const [tabId, instance] of instances) {
         try {
+          // Skip serialization when a full-screen app (nano, vim, less, etc.)
+          // is using the alternate screen buffer — that content isn't useful
+          // for restore and produces artifacts like baked-in nano UI.
+          if (instance.terminal.buffer.active.type === 'alternate') continue;
           const scrollback = instance.serializeAddon.serialize();
           toSave.push({
             workspaceId: instance.workspaceId,

@@ -422,6 +422,8 @@
       localInterval = setInterval(async () => {
         // Skip auto-save during shutdown — saveAllScrollback handles it
         if (terminalsStore.shuttingDown) return;
+        // Skip when alternate screen is active (nano, vim, less, etc.)
+        if (terminal.buffer.active.type === 'alternate') return;
         try {
           const scrollback = serializeAddon.serialize();
           await setTabScrollback(workspaceId, paneId, tabId, scrollback);
