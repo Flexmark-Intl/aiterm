@@ -9,6 +9,17 @@
 
   let loading = $state(true);
 
+  // Track which workspaces have been visited so we lazily mount terminals
+  // on first activation but keep them alive across workspace switches.
+  let activatedWorkspaceIds = $state(new Set<string>());
+
+  $effect(() => {
+    const id = workspacesStore.activeWorkspaceId;
+    if (id && !activatedWorkspaceIds.has(id)) {
+      activatedWorkspaceIds = new Set(activatedWorkspaceIds).add(id);
+    }
+  });
+
   onMount(async () => {
     await workspacesStore.load();
     loading = false;
@@ -57,17 +68,25 @@
               panes={workspace.panes}
             />
           {/if}
+        {:else}
+          <div class="empty-state">
+            <p>No workspace selected</p>
+            <p>Press <kbd>{modLabel}+{altLabel}+N</kbd> to create a new workspace</p>
+          </div>
+        {/if}
 
-          <!-- Portal layer: terminals rendered flat so they survive split tree changes.
-               Zero-size container so they don't affect flex layout before portaling. -->
-          <div class="terminal-host">
-            {#each workspace.panes as pane (pane.id)}
+        <!-- Portal layer: terminals rendered flat across visited workspaces so they
+             survive both split tree changes and workspace switches.
+             Lazy: only mounts terminals once a workspace is first activated. -->
+        <div class="terminal-host">
+          {#each workspacesStore.workspaces.filter(w => activatedWorkspaceIds.has(w.id)) as ws (ws.id)}
+            {#each ws.panes as pane (pane.id)}
               {#each pane.tabs as tab (tab.id)}
                 <TerminalPane
-                  workspaceId={workspace.id}
+                  workspaceId={ws.id}
                   paneId={pane.id}
                   tabId={tab.id}
-                  visible={tab.id === pane.active_tab_id}
+                  visible={tab.id === pane.active_tab_id && ws.id === workspacesStore.activeWorkspaceId}
                   initialScrollback={tab.scrollback}
                   restoreCwd={tab.restore_cwd}
                   restoreSshCommand={tab.restore_ssh_command}
@@ -75,13 +94,8 @@
                 />
               {/each}
             {/each}
-          </div>
-        {:else}
-          <div class="empty-state">
-            <p>No workspace selected</p>
-            <p>Press <kbd>{modLabel}+{altLabel}+N</kbd> to create a new workspace</p>
-          </div>
-        {/if}
+          {/each}
+        </div>
       </main>
     {/if}
   </div>
