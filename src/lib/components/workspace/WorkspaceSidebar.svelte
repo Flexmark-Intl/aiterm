@@ -62,6 +62,7 @@
       <div
         class="workspace-item"
         class:active={workspace.id === workspacesStore.activeWorkspaceId}
+        data-workspace-id={workspace.id}
         onclick={() => workspacesStore.setActiveWorkspace(workspace.id)}
         ondblclick={() => startEditing(workspace.id, workspace.name)}
         role="button"
@@ -164,6 +165,12 @@
 
   .workspace-item.active {
     background: var(--bg-light);
+  }
+
+  .workspace-item:global(.drop-target) {
+    background: rgba(122, 162, 247, 0.2);
+    outline: 1px solid var(--accent);
+    outline-offset: -1px;
   }
 
   .workspace-indicator {

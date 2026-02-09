@@ -45,7 +45,7 @@ export interface Theme {
   terminal: TerminalColors;
 }
 
-export const themes: Theme[] = [
+export const builtinThemes: Theme[] = [
   {
     id: 'tokyo-night',
     name: 'Tokyo Night',
@@ -468,8 +468,17 @@ export const themes: Theme[] = [
   },
 ];
 
-export function getTheme(id: string): Theme {
-  return themes.find((t) => t.id === id) ?? themes[0];
+/** @deprecated Use builtinThemes instead */
+export const themes = builtinThemes;
+
+export function isBuiltinTheme(id: string): boolean {
+  return builtinThemes.some((t) => t.id === id);
+}
+
+export function getTheme(id: string, customThemes: Theme[] = []): Theme {
+  return customThemes.find((t) => t.id === id)
+    ?? builtinThemes.find((t) => t.id === id)
+    ?? builtinThemes[0];
 }
 
 export function applyUiTheme(ui: UiColors): void {

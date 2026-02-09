@@ -3,6 +3,7 @@ import type { SplitDirection, SplitNode, Tab, Pane, Workspace } from '$lib/tauri
 import * as commands from '$lib/tauri/commands';
 import { terminalsStore } from '$lib/stores/terminals.svelte';
 import { preferencesStore } from '$lib/stores/preferences.svelte';
+import { activityStore } from '$lib/stores/activity.svelte';
 import { getCompiledPatterns } from '$lib/utils/promptPattern';
 
 /**
@@ -401,6 +402,150 @@ function createWorkspacesStore() {
 
     async persistSplitRatio(workspaceId: string, splitId: string, ratio: number) {
       await commands.setSplitRatio(workspaceId, splitId, ratio);
+    },
+
+    /**
+     * Gather terminal context (scrollback, cwd, SSH, history) for a source tab.
+     * Shared by splitPaneWithContext, moveTabToWorkspace, and copyTabToWorkspace.
+     */
+    async _gatherTabContext(sourceTabId: string) {
+      const instance = terminalsStore.get(sourceTabId);
+      let scrollback: string | null = null;
+      let cwd: string | null = null;
+      let sshCommand: string | null = null;
+
+      if (instance) {
+        if (preferencesStore.cloneScrollback) {
+          try {
+            scrollback = instance.serializeAddon.serialize();
+          } catch (e) {
+            console.error('Failed to serialize scrollback:', e);
+          }
+        }
+
+        if (preferencesStore.cloneCwd || preferencesStore.cloneSsh) {
+          try {
+            const info = await commands.getPtyInfo(instance.ptyId);
+            cwd = preferencesStore.cloneCwd ? info.cwd : null;
+            sshCommand = preferencesStore.cloneSsh ? info.foreground_command : null;
+          } catch (e) {
+            // PTY may already be gone
+          }
+        }
+      }
+
+      return { instance, scrollback, cwd, sshCommand };
+    },
+
+    /**
+     * Store split context (cwd/SSH) for a newly created tab so TerminalPane
+     * consumes it on mount.
+     */
+    _storeSplitContext(sourceTabId: string, newTabId: string, cwd: string | null, sshCommand: string | null, instance: { terminal: import('@xterm/xterm').Terminal } | undefined) {
+      if (!preferencesStore.cloneCwd && !preferencesStore.cloneSsh) return;
+
+      const osc7Cwd = terminalsStore.getOsc(sourceTabId)?.cwd ?? null;
+
+      let remoteCwd: string | null = null;
+      if (sshCommand) {
+        const isOsc7Stale = osc7Cwd === cwd;
+        const osc7RemoteCwd = (osc7Cwd && !isOsc7Stale) ? osc7Cwd : null;
+        remoteCwd = osc7RemoteCwd ?? (instance ? extractRemoteCwd(instance.terminal) : null);
+      } else if (preferencesStore.cloneCwd) {
+        cwd = cwd ?? osc7Cwd;
+      }
+
+      if (cwd || sshCommand) {
+        terminalsStore.setSplitContext(newTabId, { cwd, sshCommand, remoteCwd });
+      }
+    },
+
+    /**
+     * Copy a tab to another workspace (clone with context, keep source).
+     */
+    async copyTabToWorkspace(sourceWsId: string, sourcePaneId: string, sourceTabId: string, targetWsId: string) {
+      const sourceWs = workspaces.find(w => w.id === sourceWsId);
+      const sourcePane = sourceWs?.panes.find(p => p.id === sourcePaneId);
+      const sourceTab = sourcePane?.tabs.find(t => t.id === sourceTabId);
+      if (!sourceTab) return;
+
+      // Gather context from source
+      const { instance, scrollback, cwd, sshCommand } = await this._gatherTabContext(sourceTabId);
+
+      // Create tab in target workspace's first pane, preserving original active tab
+      const targetWs = workspaces.find(w => w.id === targetWsId);
+      if (!targetWs || targetWs.panes.length === 0) return;
+      const targetPane = targetWs.panes[0];
+      const previousActiveTabId = targetPane.active_tab_id;
+
+      const newTab = await commands.createTab(targetWsId, targetPane.id, sourceTab.name);
+
+      // Restore the previously active tab (createTab sets the new one as active)
+      if (previousActiveTabId) {
+        await commands.setActiveTab(targetWsId, targetPane.id, previousActiveTabId);
+      }
+
+      // Set scrollback on the new tab
+      if (scrollback) {
+        await commands.setTabScrollback(targetWsId, targetPane.id, newTab.id, scrollback);
+      }
+
+      // Copy custom name
+      if (sourceTab.custom_name) {
+        await commands.renameTab(targetWsId, targetPane.id, newTab.id, sourceTab.name, true);
+      }
+
+      // Copy history
+      if (preferencesStore.cloneHistory) {
+        try {
+          await commands.copyTabHistory(sourceTabId, newTab.id);
+        } catch (e) {
+          console.error('Failed to copy tab history:', e);
+        }
+      }
+
+      // Store split context for the new terminal
+      this._storeSplitContext(sourceTabId, newTab.id, cwd, sshCommand, instance);
+
+      // Mark as unreviewed activity so the tab shows the activity dot
+      activityStore.markActive(newTab.id);
+
+      // Reload all workspaces
+      const data = await commands.getAppData();
+      workspaces = data.workspaces;
+    },
+
+    /**
+     * Move a tab to another workspace (delete source, create in target).
+     */
+    async moveTabToWorkspace(sourceWsId: string, sourcePaneId: string, sourceTabId: string, targetWsId: string) {
+      // Copy first, then delete source
+      await this.copyTabToWorkspace(sourceWsId, sourcePaneId, sourceTabId, targetWsId);
+
+      // Delete source tab (or pane if last tab)
+      const sourceWs = workspaces.find(w => w.id === sourceWsId);
+      const sourcePane = sourceWs?.panes.find(p => p.id === sourcePaneId);
+      if (!sourcePane) return;
+
+      const sourceTab = sourcePane.tabs.find(t => t.id === sourceTabId);
+      if (!sourceTab) return; // already gone
+
+      if (sourcePane.tabs.length <= 1) {
+        // Last tab — delete the pane (if not last pane)
+        if (sourceWs && sourceWs.panes.length > 1) {
+          await commands.deletePane(sourceWsId, sourcePaneId);
+        } else {
+          // Last pane in workspace — just delete the tab and create a fresh one
+          await commands.deleteTab(sourceWsId, sourcePaneId, sourceTabId);
+          await commands.createTab(sourceWsId, sourcePaneId, 'Terminal 1');
+        }
+      } else {
+        await commands.deleteTab(sourceWsId, sourcePaneId, sourceTabId);
+      }
+
+      // Reload all workspaces to reflect deletions
+      const data = await commands.getAppData();
+      workspaces = data.workspaces;
     }
   };
 }

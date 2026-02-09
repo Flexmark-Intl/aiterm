@@ -108,7 +108,7 @@
     ptyId = crypto.randomUUID();
 
     terminal = new Terminal({
-      theme: getTheme(preferencesStore.theme).terminal,
+      theme: getTheme(preferencesStore.theme, preferencesStore.customThemes).terminal,
       fontFamily: `"${preferencesStore.fontFamily}", Monaco, "Courier New", monospace`,
       fontSize: preferencesStore.fontSize,
       lineHeight: 1.2,
@@ -329,7 +329,7 @@
     terminal.options.fontFamily = `"${fontFamily}", Monaco, "Courier New", monospace`;
     terminal.options.cursorBlink = cursorBlink;
     terminal.options.cursorStyle = cursorStyle;
-    terminal.options.theme = getTheme(themeId).terminal;
+    terminal.options.theme = getTheme(themeId, preferencesStore.customThemes).terminal;
 
     // Re-fit after font changes
     requestAnimationFrame(() => {

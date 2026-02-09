@@ -286,6 +286,8 @@ pub struct Preferences {
     pub theme: String,
     #[serde(default)]
     pub shell_title_integration: bool,
+    #[serde(default)]
+    pub custom_themes: Vec<serde_json::Value>,
 }
 
 impl Default for Preferences {
@@ -304,6 +306,7 @@ impl Default for Preferences {
             clone_history: true,
             theme: default_theme(),
             shell_title_integration: false,
+            custom_themes: Vec::new(),
         }
     }
 }

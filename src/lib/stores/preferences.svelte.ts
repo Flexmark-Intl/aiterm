@@ -1,4 +1,6 @@
 import type { CursorStyle, Preferences } from '$lib/tauri/types';
+import type { Theme } from '$lib/themes';
+import { builtinThemes } from '$lib/themes';
 import * as commands from '$lib/tauri/commands';
 
 function createPreferencesStore() {
@@ -15,6 +17,7 @@ function createPreferencesStore() {
   let cloneHistory = $state(true);
   let theme = $state('tokyo-night');
   let shellTitleIntegration = $state(false);
+  let customThemes = $state<Theme[]>([]);
 
   return {
     get fontSize() { return fontSize; },
@@ -30,6 +33,7 @@ function createPreferencesStore() {
     get cloneHistory() { return cloneHistory; },
     get theme() { return theme; },
     get shellTitleIntegration() { return shellTitleIntegration; },
+    get customThemes() { return customThemes; },
 
     async load() {
       const prefs = await commands.getPreferences();
@@ -46,6 +50,7 @@ function createPreferencesStore() {
       cloneHistory = prefs.clone_history;
       theme = prefs.theme;
       shellTitleIntegration = prefs.shell_title_integration;
+      customThemes = prefs.custom_themes ?? [];
     },
 
     async setFontSize(value: number) {
@@ -113,6 +118,24 @@ function createPreferencesStore() {
       await this.save();
     },
 
+    async addCustomTheme(t: Theme) {
+      customThemes = [...customThemes, t];
+      await this.save();
+    },
+
+    async updateCustomTheme(id: string, updated: Theme) {
+      customThemes = customThemes.map((t) => (t.id === id ? updated : t));
+      await this.save();
+    },
+
+    async deleteCustomTheme(id: string) {
+      customThemes = customThemes.filter((t) => t.id !== id);
+      if (theme === id) {
+        theme = builtinThemes[0].id;
+      }
+      await this.save();
+    },
+
     async save() {
       const prefs: Preferences = {
         font_size: fontSize,
@@ -128,6 +151,7 @@ function createPreferencesStore() {
         clone_history: cloneHistory,
         theme,
         shell_title_integration: shellTitleIntegration,
+        custom_themes: customThemes,
       };
       await commands.setPreferences(prefs);
     }

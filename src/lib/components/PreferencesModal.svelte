@@ -1,7 +1,8 @@
 <script lang="ts">
   import { preferencesStore } from '$lib/stores/preferences.svelte';
   import type { CursorStyle } from '$lib/tauri/types';
-  import { themes } from '$lib/themes';
+  import { builtinThemes, getTheme, isBuiltinTheme } from '$lib/themes';
+  import ThemeEditor from '$lib/components/ThemeEditor.svelte';
 
   interface Props {
     open: boolean;
@@ -25,6 +26,7 @@
     'SF Mono',
     'JetBrains Mono',
     'Fira Code',
+    'Consolas',
   ];
 
   const autoSaveOptions = [
@@ -47,6 +49,23 @@
     { value: 10000, label: '10,000 lines' },
     { value: 0, label: 'Unlimited' },
   ];
+
+  const allThemes = $derived([...builtinThemes, ...preferencesStore.customThemes]);
+
+  const selectedTheme = $derived(
+    getTheme(preferencesStore.theme, preferencesStore.customThemes)
+  );
+
+  function createNewTheme() {
+    const source = selectedTheme;
+    const newTheme = {
+      ...structuredClone(source),
+      id: `custom-${crypto.randomUUID()}`,
+      name: `Custom ${source.name}`,
+    };
+    preferencesStore.addCustomTheme(newTheme);
+    preferencesStore.setTheme(newTheme.id);
+  }
 
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
@@ -78,7 +97,7 @@
 
       <div class="modal-body">
         <nav class="sidebar">
-          {#each sections as section}
+          {#each sections as section (section.id)}
             <button
               class="sidebar-item"
               class:active={activeSection === section.id}
@@ -93,11 +112,14 @@
           {#if activeSection === 'appearance'}
             <h3 class="section-heading">Theme</h3>
             <div class="theme-grid">
-              {#each themes as t}
-                <button
+              {#each allThemes as t (t.id)}
+                <div
                   class="theme-swatch"
                   class:active={preferencesStore.theme === t.id}
                   onclick={() => preferencesStore.setTheme(t.id)}
+                  onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') preferencesStore.setTheme(t.id); }}
+                  role="button"
+                  tabindex="0"
                   title={t.name}
                 >
                   <div class="swatch-colors">
@@ -110,22 +132,37 @@
                     <span class="swatch-bar" style:background={t.terminal.cyan}></span>
                   </div>
                   <span class="swatch-label">{t.name}</span>
-                </button>
+                  {#if !isBuiltinTheme(t.id)}
+                    <button
+                      class="swatch-delete"
+                      onclick={(e) => { e.stopPropagation(); preferencesStore.deleteCustomTheme(t.id); }}
+                      title="Delete custom theme"
+                    >&times;</button>
+                  {/if}
+                </div>
               {/each}
+              <button class="theme-swatch new-theme" onclick={createNewTheme} title="Create new theme from current">
+                <div class="new-theme-icon">+</div>
+                <span class="swatch-label">New Theme</span>
+              </button>
             </div>
+
+            <ThemeEditor theme={selectedTheme} />
           {:else if activeSection === 'terminal'}
             <div class="setting">
               <label for="font-size">Font Size</label>
-              <div class="range-wrapper">
+              <div class="number-input-wrapper">
+                <button class="number-btn" onclick={() => preferencesStore.setFontSize(preferencesStore.fontSize - 1)}>−</button>
                 <input
-                  type="range"
+                  type="number"
                   id="font-size"
+                  class="number-input"
                   min="10"
                   max="24"
                   value={preferencesStore.fontSize}
-                  oninput={(e) => preferencesStore.setFontSize(parseInt(e.currentTarget.value))}
+                  onchange={(e) => preferencesStore.setFontSize(parseInt(e.currentTarget.value) || 13)}
                 />
-                <span class="range-value">{preferencesStore.fontSize}px</span>
+                <button class="number-btn" onclick={() => preferencesStore.setFontSize(preferencesStore.fontSize + 1)}>+</button>
               </div>
             </div>
 
@@ -448,25 +485,53 @@
     color: var(--fg);
   }
 
-  .range-wrapper {
+  .number-input-wrapper {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 0;
+    border: 1px solid var(--bg-light);
+    border-radius: 4px;
+    overflow: hidden;
   }
 
-  input[type="range"] {
-    width: 120px;
-    height: 4px;
-    background: var(--bg-light);
-    border-radius: 2px;
-    cursor: pointer;
+  .number-input {
+    width: 48px;
+    text-align: center;
+    background: var(--bg-dark);
+    border: none;
+    border-left: 1px solid var(--bg-light);
+    border-right: 1px solid var(--bg-light);
+    padding: 6px 4px;
+    font-size: 13px;
+    color: var(--fg);
+    appearance: textfield;
+    -moz-appearance: textfield;
   }
 
-  .range-value {
-    font-size: 12px;
+  .number-input::-webkit-inner-spin-button,
+  .number-input::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  .number-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 32px;
+    padding: 0;
+    background: var(--bg-dark);
     color: var(--fg-dim);
-    min-width: 36px;
-    text-align: right;
+    font-size: 14px;
+    cursor: pointer;
+    border: none;
+    border-radius: 0;
+  }
+
+  .number-btn:hover {
+    background: var(--bg-light);
+    color: var(--fg);
   }
 
   select {
@@ -671,5 +736,62 @@
 
   .theme-swatch.active .swatch-label {
     color: var(--fg);
+  }
+
+  .theme-swatch {
+    position: relative;
+  }
+
+  .swatch-delete {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    color: var(--fg-dim);
+    background: var(--bg-medium);
+    border: 1px solid var(--bg-light);
+    border-radius: 50%;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+
+  .theme-swatch:hover .swatch-delete {
+    opacity: 1;
+  }
+
+  .swatch-delete:hover {
+    color: var(--red, #f7768e);
+    border-color: var(--red, #f7768e);
+  }
+
+  .new-theme {
+    border: 2px dashed var(--bg-light);
+    background: transparent;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .new-theme:hover {
+    border-color: var(--accent);
+  }
+
+  .new-theme-icon {
+    font-size: 24px;
+    color: var(--fg-dim);
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .new-theme:hover .new-theme-icon {
+    color: var(--accent);
   }
 </style>

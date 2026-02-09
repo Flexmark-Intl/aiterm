@@ -20,7 +20,7 @@
 
   // Apply UI theme reactively (runs outside onMount so it reacts to changes)
   $effect(() => {
-    const t = getTheme(preferencesStore.theme);
+    const t = getTheme(preferencesStore.theme, preferencesStore.customThemes);
     applyUiTheme(t.ui);
   });
 
