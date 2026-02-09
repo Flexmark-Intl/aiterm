@@ -1,6 +1,10 @@
 <script lang="ts">
   import { tick } from 'svelte';
+  import { getVersion } from '@tauri-apps/api/app';
   import { workspacesStore } from '$lib/stores/workspaces.svelte';
+
+  let appVersion = $state('');
+  getVersion().then(v => { appVersion = v; });
 
   interface Props {
     width: number;
@@ -54,6 +58,9 @@
     <img src="/logo-light.png" alt="aiTerm" class="sidebar-logo" />
     {#if import.meta.env.DEV}
       <span class="dev-badge">DEV</span>
+    {/if}
+    {#if appVersion}
+      <span class="version-badge">v{appVersion}</span>
     {/if}
   </div>
   <div class="sidebar-header">
@@ -140,6 +147,13 @@
     padding: 1px 6px;
     border-radius: 3px;
     letter-spacing: 0.5px;
+    pointer-events: none;
+  }
+
+  .version-badge {
+    margin-left: 6px;
+    font-size: 10px;
+    color: var(--fg-dim);
     pointer-events: none;
   }
 
