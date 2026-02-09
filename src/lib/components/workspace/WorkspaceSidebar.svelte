@@ -50,6 +50,12 @@
 </script>
 
 <aside class="sidebar" style="width: {width}px">
+  <div class="sidebar-titlebar" data-tauri-drag-region>
+    <img src="/logo-light.png" alt="aiTerm" class="sidebar-logo" />
+    {#if import.meta.env.DEV}
+      <span class="dev-badge">DEV</span>
+    {/if}
+  </div>
   <div class="sidebar-header">
     <span class="title">WORKSPACES</span>
     <button class="collapse-btn" onclick={() => workspacesStore.toggleSidebar()} title="Collapse sidebar (⌘B)">
@@ -108,6 +114,33 @@
     background: var(--bg-medium);
     display: flex;
     flex-direction: column;
+  }
+
+  .sidebar-titlebar {
+    height: 38px;
+    min-height: 38px;
+    display: flex;
+    align-items: center;
+    padding-left: 16px;
+    -webkit-app-region: drag;
+  }
+
+  .sidebar-logo {
+    height: 14px;
+    opacity: 0.7;
+    pointer-events: none;
+  }
+
+  .dev-badge {
+    margin-left: 6px;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--bg-dark);
+    background: var(--accent);
+    padding: 1px 6px;
+    border-radius: 3px;
+    letter-spacing: 0.5px;
+    pointer-events: none;
   }
 
   .sidebar-header {

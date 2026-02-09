@@ -3,16 +3,24 @@ use std::path::PathBuf;
 
 use super::workspace::{AppData, Layout, SplitDirection, SplitNode};
 
+pub fn app_data_slug() -> &'static str {
+    if cfg!(debug_assertions) {
+        "com.aiterm.dev"
+    } else {
+        "com.aiterm.app"
+    }
+}
+
 pub fn get_state_path() -> Option<PathBuf> {
-    dirs::data_dir().map(|p| p.join("com.aiterm.app").join("aiterm-state.json"))
+    dirs::data_dir().map(|p| p.join(app_data_slug()).join("aiterm-state.json"))
 }
 
 fn get_backup_path() -> Option<PathBuf> {
-    dirs::data_dir().map(|p| p.join("com.aiterm.app").join("aiterm-state.bak.json"))
+    dirs::data_dir().map(|p| p.join(app_data_slug()).join("aiterm-state.bak.json"))
 }
 
 fn get_temp_path() -> Option<PathBuf> {
-    dirs::data_dir().map(|p| p.join("com.aiterm.app").join("aiterm-state.tmp.json"))
+    dirs::data_dir().map(|p| p.join(app_data_slug()).join("aiterm-state.tmp.json"))
 }
 
 pub fn load_state() -> AppData {

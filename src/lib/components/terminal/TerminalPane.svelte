@@ -22,9 +22,12 @@
     tabId: string;
     visible: boolean;
     initialScrollback?: string | null;
+    restoreCwd?: string | null;
+    restoreSshCommand?: string | null;
+    restoreRemoteCwd?: string | null;
   }
 
-  let { workspaceId, paneId, tabId, visible, initialScrollback }: Props = $props();
+  let { workspaceId, paneId, tabId, visible, initialScrollback, restoreCwd, restoreSshCommand, restoreRemoteCwd }: Props = $props();
 
   let containerRef: HTMLDivElement;
   let terminal: Terminal;
@@ -206,22 +209,26 @@
     });
 
     // Check for split context (cwd, SSH command from source pane)
+    // Fall back to persisted restore context from last session
     const splitCtx = terminalsStore.consumeSplitContext(tabId);
+    const ctx = splitCtx ?? (restoreCwd || restoreSshCommand
+      ? { cwd: restoreCwd ?? null, sshCommand: restoreSshCommand ?? null, remoteCwd: restoreRemoteCwd ?? null }
+      : null);
 
     // Spawn PTY with tab-specific history, optionally inheriting cwd
     try {
-      await spawnTerminal(ptyId, tabId, cols, rows, splitCtx?.cwd);
+      await spawnTerminal(ptyId, tabId, cols, rows, ctx?.cwd);
     } catch (e) {
       console.error('Failed to spawn PTY:', e);
     }
     await workspacesStore.setTabPtyId(workspaceId, paneId, tabId, ptyId);
 
-    // If the source pane was running SSH, replay the command in the new terminal
-    if (splitCtx?.sshCommand) {
+    // If the source pane was running SSH (or last session had SSH), replay the command
+    if (ctx?.sshCommand) {
       // Small delay to let the local shell prompt initialize before sending
       setTimeout(async () => {
         try {
-          const cmd = buildSshCommand(splitCtx.sshCommand, splitCtx.remoteCwd);
+          const cmd = buildSshCommand(ctx.sshCommand, ctx.remoteCwd);
           const bytes = Array.from(new TextEncoder().encode(cmd + '\n'));
           await writeTerminal(ptyId, bytes);
         } catch (e) {

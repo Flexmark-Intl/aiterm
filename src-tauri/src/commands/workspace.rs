@@ -2,6 +2,7 @@ use std::sync::Arc;
 use tauri::State;
 
 use crate::state::{save_state, AppData, AppState, Pane, Preferences, Tab, Workspace};
+use crate::state::persistence::app_data_slug;
 use crate::state::workspace::SplitDirection;
 
 #[tauri::command]
@@ -394,9 +395,33 @@ pub fn set_preferences(state: State<'_, Arc<AppState>>, preferences: Preferences
 }
 
 #[tauri::command]
+pub fn set_tab_restore_context(
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+    pane_id: String,
+    tab_id: String,
+    cwd: Option<String>,
+    ssh_command: Option<String>,
+    remote_cwd: Option<String>,
+) -> Result<(), String> {
+    let mut app_data = state.app_data.write();
+    if let Some(workspace) = app_data.workspaces.iter_mut().find(|w| w.id == workspace_id) {
+        if let Some(pane) = workspace.panes.iter_mut().find(|p| p.id == pane_id) {
+            if let Some(tab) = pane.tabs.iter_mut().find(|t| t.id == tab_id) {
+                tab.restore_cwd = cwd;
+                tab.restore_ssh_command = ssh_command;
+                tab.restore_remote_cwd = remote_cwd;
+            }
+        }
+    }
+    // Don't save_state here — caller will sync_state after all tabs are updated
+    Ok(())
+}
+
+#[tauri::command]
 pub fn copy_tab_history(source_tab_id: String, dest_tab_id: String) -> Result<(), String> {
     let data_dir = dirs::data_dir().ok_or("No data directory")?;
-    let history_dir = data_dir.join("com.aiterm.app").join("history");
+    let history_dir = data_dir.join(app_data_slug()).join("history");
 
     // Sanitize tab IDs the same way as spawn_pty
     let safe_source = source_tab_id.replace(['/', '\\', '.'], "");

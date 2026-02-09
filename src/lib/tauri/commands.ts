@@ -115,3 +115,14 @@ export async function setPreferences(preferences: Preferences): Promise<void> {
 export async function copyTabHistory(sourceTabId: string, destTabId: string): Promise<void> {
   return invoke('copy_tab_history', { sourceTabId, destTabId });
 }
+
+export async function setTabRestoreContext(
+  workspaceId: string,
+  paneId: string,
+  tabId: string,
+  cwd: string | null,
+  sshCommand: string | null,
+  remoteCwd: string | null,
+): Promise<void> {
+  return invoke('set_tab_restore_context', { workspaceId, paneId, tabId, cwd, sshCommand, remoteCwd });
+}

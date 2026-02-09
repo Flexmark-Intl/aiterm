@@ -18,6 +18,7 @@ function createPreferencesStore() {
   let theme = $state('tokyo-night');
   let shellTitleIntegration = $state(false);
   let customThemes = $state<Theme[]>([]);
+  let restoreSession = $state(false);
 
   return {
     get fontSize() { return fontSize; },
@@ -34,6 +35,7 @@ function createPreferencesStore() {
     get theme() { return theme; },
     get shellTitleIntegration() { return shellTitleIntegration; },
     get customThemes() { return customThemes; },
+    get restoreSession() { return restoreSession; },
 
     async load() {
       const prefs = await commands.getPreferences();
@@ -51,6 +53,7 @@ function createPreferencesStore() {
       theme = prefs.theme;
       shellTitleIntegration = prefs.shell_title_integration;
       customThemes = prefs.custom_themes ?? [];
+      restoreSession = prefs.restore_session ?? false;
     },
 
     async setFontSize(value: number) {
@@ -118,6 +121,11 @@ function createPreferencesStore() {
       await this.save();
     },
 
+    async setRestoreSession(value: boolean) {
+      restoreSession = value;
+      await this.save();
+    },
+
     async addCustomTheme(t: Theme) {
       customThemes = [...customThemes, t];
       await this.save();
@@ -152,6 +160,7 @@ function createPreferencesStore() {
         theme,
         shell_title_integration: shellTitleIntegration,
         custom_themes: customThemes,
+        restore_session: restoreSession,
       };
       await commands.setPreferences(prefs);
     }

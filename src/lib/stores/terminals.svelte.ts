@@ -1,7 +1,8 @@
 import type { Terminal } from '@xterm/xterm';
 import type { SerializeAddon } from '@xterm/addon-serialize';
 import type { SearchAddon } from '@xterm/addon-search';
-import { setTabScrollback } from '$lib/tauri/commands';
+import { setTabScrollback, setTabRestoreContext, getPtyInfo } from '$lib/tauri/commands';
+import { getCompiledPatterns } from '$lib/utils/promptPattern';
 
 /**
  * Per-terminal state collected from OSC escape sequences.
@@ -165,6 +166,66 @@ function createTerminalsStore() {
       if (instance && query) {
         instance.searchAddon.findPrevious(query);
       }
+    },
+
+    /**
+     * Save restore context (cwd, SSH, remote cwd) for all terminals.
+     * Called during shutdown when restore_session preference is enabled.
+     */
+    async saveAllRestoreContext(promptPatterns: string[]): Promise<void> {
+      const compiledPatterns = getCompiledPatterns(promptPatterns);
+
+      const saves: Promise<void>[] = [];
+      for (const [, instance] of instances) {
+        saves.push((async () => {
+          let cwd: string | null = null;
+          let sshCommand: string | null = null;
+          let remoteCwd: string | null = null;
+
+          try {
+            const info = await getPtyInfo(instance.ptyId);
+            cwd = info.cwd;
+            sshCommand = info.foreground_command;
+          } catch {
+            // PTY may already be gone
+          }
+
+          // Determine remote cwd using same logic as split cloning
+          const osc7Cwd = instance.osc.cwd;
+          if (sshCommand) {
+            const isOsc7Stale = osc7Cwd === cwd;
+            const osc7RemoteCwd = (osc7Cwd && !isOsc7Stale) ? osc7Cwd : null;
+            if (osc7RemoteCwd) {
+              remoteCwd = osc7RemoteCwd;
+            } else {
+              // Fall back to prompt pattern extraction
+              const buffer = instance.terminal.buffer.active;
+              const cursorLine = buffer.baseY + buffer.cursorY;
+              for (let i = cursorLine; i >= Math.max(0, cursorLine - 5); i--) {
+                const line = buffer.getLine(i);
+                if (!line) continue;
+                const text = line.translateToString(true).trim();
+                if (!text) continue;
+                for (const re of compiledPatterns) {
+                  const match = text.match(re);
+                  if (match?.[1]) { remoteCwd = match[1]; break; }
+                }
+                if (remoteCwd) break;
+              }
+            }
+          } else {
+            // No SSH: OSC 7 supplements lsof cwd
+            cwd = cwd ?? osc7Cwd;
+          }
+
+          await setTabRestoreContext(
+            instance.workspaceId, instance.paneId, instance.tabId,
+            cwd, sshCommand, remoteCwd,
+          );
+        })());
+      }
+
+      await Promise.allSettled(saves);
     },
 
     async saveAllScrollback(): Promise<void> {

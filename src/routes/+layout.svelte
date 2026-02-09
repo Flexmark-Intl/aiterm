@@ -36,6 +36,15 @@
       unlistenClose = await appWindow.onCloseRequested(async (event) => {
         event.preventDefault();
 
+        // Save restore context (cwd/SSH) before scrollback so PTYs are still alive
+        if (preferencesStore.restoreSession) {
+          try {
+            await terminalsStore.saveAllRestoreContext(preferencesStore.promptPatterns);
+          } catch (e) {
+            console.error('saveAllRestoreContext failed:', e);
+          }
+        }
+
         await terminalsStore.saveAllScrollback();
 
         try {

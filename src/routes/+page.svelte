@@ -23,11 +23,9 @@
 </script>
 
 <div class="app">
-  <div class="titlebar" data-tauri-drag-region>
-    <div class="titlebar-spacer"></div>
-    <img src="/logo-light.png" alt="aiTerm" class="titlebar-logo" />
-  </div>
-
+  {#if import.meta.env.DEV}
+    <span class="dev-badge">DEV</span>
+  {/if}
   <div class="app-body">
     {#if loading}
       <div class="loading">
@@ -70,6 +68,9 @@
                   tabId={tab.id}
                   visible={tab.id === pane.active_tab_id}
                   initialScrollback={tab.scrollback}
+                  restoreCwd={tab.restore_cwd}
+                  restoreSshCommand={tab.restore_ssh_command}
+                  restoreRemoteCwd={tab.restore_remote_cwd}
                 />
               {/each}
             {/each}
@@ -93,25 +94,18 @@
     overflow: hidden;
   }
 
-  .titlebar {
-    position: relative;
-    height: 38px;
-    min-height: 38px;
-    background: var(--bg-medium);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-bottom: 1px solid var(--bg-light);
-    -webkit-app-region: drag;
-  }
-
-  .titlebar-spacer {
-    width: 78px; /* Space for traffic lights */
-  }
-
-  .titlebar-logo {
-    height: 16px;
-    opacity: 0.7;
+  .dev-badge {
+    position: fixed;
+    top: 6px;
+    right: 10px;
+    z-index: 9999;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--bg-dark);
+    background: var(--accent);
+    padding: 1px 6px;
+    border-radius: 3px;
+    letter-spacing: 0.5px;
     pointer-events: none;
   }
 

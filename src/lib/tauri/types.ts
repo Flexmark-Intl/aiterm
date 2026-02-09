@@ -4,6 +4,9 @@ export interface Tab {
   pty_id: string | null;
   scrollback: string | null;
   custom_name: boolean;
+  restore_cwd: string | null;
+  restore_ssh_command: string | null;
+  restore_remote_cwd: string | null;
 }
 
 export interface Pane {
@@ -55,6 +58,7 @@ export interface Preferences {
   theme: string;
   shell_title_integration: boolean;
   custom_themes: import('$lib/themes').Theme[];
+  restore_session: boolean;
 }
 
 export interface AppData {

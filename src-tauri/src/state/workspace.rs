@@ -164,6 +164,15 @@ pub struct Tab {
     /// True when the user has explicitly renamed this tab (disables OSC title).
     #[serde(default)]
     pub custom_name: bool,
+    /// Persisted restore context: local cwd from last session.
+    #[serde(default)]
+    pub restore_cwd: Option<String>,
+    /// Persisted restore context: SSH command from last session.
+    #[serde(default)]
+    pub restore_ssh_command: Option<String>,
+    /// Persisted restore context: remote cwd from last session.
+    #[serde(default)]
+    pub restore_remote_cwd: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -288,6 +297,8 @@ pub struct Preferences {
     pub shell_title_integration: bool,
     #[serde(default)]
     pub custom_themes: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub restore_session: bool,
 }
 
 impl Default for Preferences {
@@ -307,6 +318,7 @@ impl Default for Preferences {
             theme: default_theme(),
             shell_title_integration: false,
             custom_themes: Vec::new(),
+            restore_session: false,
         }
     }
 }
@@ -319,6 +331,9 @@ impl Tab {
             pty_id: None,
             scrollback: None,
             custom_name: false,
+            restore_cwd: None,
+            restore_ssh_command: None,
+            restore_remote_cwd: None,
         }
     }
 }

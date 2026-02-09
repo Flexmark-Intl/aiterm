@@ -278,7 +278,7 @@
   }
 </script>
 
-<div class="tabs-bar" bind:this={tabsBarEl}>
+<div class="tabs-bar" bind:this={tabsBarEl} data-tauri-drag-region>
   {#each pane.tabs as tab, index (tab.id)}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
@@ -341,6 +341,7 @@
     border-bottom: 1px solid var(--bg-light);
     padding: 0 4px;
     gap: 2px;
+    -webkit-app-region: drag;
   }
 
   .tab {
@@ -353,6 +354,7 @@
     max-width: 180px;
     height: 26px;
     transition: background 0.1s, padding-right 0.15s ease;
+    -webkit-app-region: no-drag;
   }
 
   .tab:hover {
@@ -478,6 +480,7 @@
     border-radius: 4px;
     color: var(--fg-dim);
     font-size: 14px;
+    -webkit-app-region: no-drag;
   }
 
   .new-tab-btn:hover {

@@ -7,6 +7,7 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
 use crate::state::{AppState, PtyCommand, PtyHandle};
+use crate::state::persistence::app_data_slug;
 
 pub fn spawn_pty(
     app_handle: &AppHandle,
@@ -61,7 +62,7 @@ pub fn spawn_pty(
     // Set up per-tab history file (sanitize tab_id to prevent path traversal)
     let safe_tab_id = tab_id.replace(['/', '\\', '.'], "");
     if let Some(data_dir) = dirs::data_dir() {
-        let history_dir = data_dir.join("com.aiterm.app").join("history");
+        let history_dir = data_dir.join(app_data_slug()).join("history");
         // Create history directory if it doesn't exist
         let _ = std::fs::create_dir_all(&history_dir);
 
@@ -355,7 +356,7 @@ fn get_foreground_command(shell_pid: u32) -> Option<String> {
 /// real config and add a precmd hook to set the terminal title.
 fn setup_zsh_integration() -> Result<std::path::PathBuf, String> {
     let data_dir = dirs::data_dir().ok_or("No data directory")?;
-    let zsh_dir = data_dir.join("com.aiterm.app").join("shell-integration").join("zsh");
+    let zsh_dir = data_dir.join(app_data_slug()).join("shell-integration").join("zsh");
     std::fs::create_dir_all(&zsh_dir).map_err(|e| e.to_string())?;
 
     let zshenv_content = r#"# aiTerm shell integration - do not edit

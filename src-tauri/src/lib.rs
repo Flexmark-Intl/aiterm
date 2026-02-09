@@ -5,6 +5,7 @@ mod state;
 use state::{load_state, AppState};
 use state::persistence::migrate_app_data;
 use std::sync::Arc;
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -24,6 +25,14 @@ pub fn run() {
             .with_state_flags(tauri_plugin_window_state::StateFlags::all())
             .build())
         .manage(app_state)
+        .setup(|app| {
+            if cfg!(debug_assertions) {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.set_title("aiTerm (Dev)");
+                }
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::terminal::spawn_terminal,
             commands::terminal::write_terminal,
@@ -54,6 +63,7 @@ pub fn run() {
             commands::workspace::get_preferences,
             commands::workspace::set_preferences,
             commands::workspace::copy_tab_history,
+            commands::workspace::set_tab_restore_context,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
