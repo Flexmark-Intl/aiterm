@@ -48,6 +48,7 @@ pub fn run() {
             commands::workspace::set_sidebar_collapsed,
             commands::workspace::set_split_ratio,
             commands::workspace::set_tab_scrollback,
+            commands::workspace::reorder_tabs,
             commands::workspace::debug_log,
             commands::workspace::sync_state,
             commands::workspace::get_preferences,

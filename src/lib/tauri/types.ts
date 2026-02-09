@@ -53,6 +53,7 @@ export interface Preferences {
   clone_ssh: boolean;
   clone_history: boolean;
   theme: string;
+  shell_title_integration: boolean;
 }
 
 export interface AppData {

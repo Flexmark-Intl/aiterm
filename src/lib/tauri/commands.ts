@@ -100,6 +100,10 @@ export async function setTabScrollback(workspaceId: string, paneId: string, tabI
   return invoke('set_tab_scrollback', { workspaceId, paneId, tabId, scrollback });
 }
 
+export async function reorderTabs(workspaceId: string, paneId: string, tabIds: string[]): Promise<void> {
+  return invoke('reorder_tabs', { workspaceId, paneId, tabIds });
+}
+
 export async function getPreferences(): Promise<Preferences> {
   return invoke('get_preferences');
 }

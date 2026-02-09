@@ -176,7 +176,7 @@ function createWorkspacesStore() {
       const sourceTab = sourcePane?.tabs.find(t => t.id === sourceTabId);
       const newTabId = newPane.tabs[0]?.id;
       if (sourceTab && newTabId) {
-        await commands.renameTab(workspaceId, newPane.id, newTabId, sourceTab.name);
+        await commands.renameTab(workspaceId, newPane.id, newTabId, sourceTab.name, sourceTab.custom_name);
       }
       if (newTabId) {
         if (preferencesStore.cloneHistory) {
@@ -303,6 +303,27 @@ function createWorkspacesStore() {
         }
         return w;
       });
+    },
+
+    async reorderTabs(workspaceId: string, paneId: string, tabIds: string[]) {
+      workspaces = workspaces.map(w => {
+        if (w.id === workspaceId) {
+          return {
+            ...w,
+            panes: w.panes.map(p => {
+              if (p.id === paneId) {
+                const reordered = tabIds
+                  .map(id => p.tabs.find(t => t.id === id))
+                  .filter((t): t is Tab => t !== undefined);
+                return { ...p, tabs: reordered };
+              }
+              return p;
+            })
+          };
+        }
+        return w;
+      });
+      await commands.reorderTabs(workspaceId, paneId, tabIds);
     },
 
     async renameTab(workspaceId: string, paneId: string, tabId: string, name: string, customName?: boolean) {

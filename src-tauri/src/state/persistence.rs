@@ -73,6 +73,22 @@ fn load_from_backup() -> AppData {
 }
 
 pub fn migrate_app_data(data: &mut AppData) {
+    // Migrate tabs: any tab with a non-default name that lacks custom_name flag
+    // must have been renamed before the flag was introduced
+    for workspace in &mut data.workspaces {
+        for pane in &mut workspace.panes {
+            for tab in &mut pane.tabs {
+                if !tab.custom_name && tab.name != "Terminal" {
+                    tab.custom_name = true;
+                    eprintln!(
+                        "[migrate] Set custom_name=true for tab '{}' (id={})",
+                        tab.name, tab.id
+                    );
+                }
+            }
+        }
+    }
+
     let direction = match data.layout.as_ref() {
         Some(Layout::Vertical) => SplitDirection::Vertical,
         _ => SplitDirection::Horizontal,

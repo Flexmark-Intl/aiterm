@@ -83,6 +83,36 @@ pub fn spawn_pty(
         }
     }
 
+    // Shell title integration: configure shell to emit OSC 0/2 on each prompt
+    let shell_title_integration = state.app_data.read().preferences.shell_title_integration;
+    if shell_title_integration {
+        match shell_name {
+            "bash" => {
+                cmd.env(
+                    "PROMPT_COMMAND",
+                    r#"printf "\033]0;%s@%s:%s\007" "${USER}" "${HOSTNAME%%.*}" "${PWD/#$HOME/~}""#,
+                );
+            }
+            "zsh" => {
+                if let Ok(integration_dir) = setup_zsh_integration() {
+                    let real_zdotdir = std::env::var("ZDOTDIR")
+                        .unwrap_or_else(|_| {
+                            dirs::home_dir()
+                                .map(|h| h.to_string_lossy().to_string())
+                                .unwrap_or_default()
+                        });
+                    cmd.env("AITERM_REAL_ZDOTDIR", &real_zdotdir);
+                    cmd.env("ZDOTDIR", integration_dir.to_string_lossy().to_string());
+                }
+            }
+            "fish" => {
+                cmd.arg("-C");
+                cmd.arg(r#"function fish_title; printf '%s@%s:%s' $USER (prompt_hostname) (prompt_pwd); end"#);
+            }
+            _ => {}
+        }
+    }
+
     // Set working directory — use provided cwd (from split) or fall back to home
     if let Some(ref dir) = cwd {
         let path = std::path::Path::new(dir);
@@ -319,4 +349,41 @@ fn get_foreground_command(shell_pid: u32) -> Option<String> {
     }
 
     ssh_cmd
+}
+
+/// Create zsh integration directory with shim files that source the user's
+/// real config and add a precmd hook to set the terminal title.
+fn setup_zsh_integration() -> Result<std::path::PathBuf, String> {
+    let data_dir = dirs::data_dir().ok_or("No data directory")?;
+    let zsh_dir = data_dir.join("com.aiterm.app").join("shell-integration").join("zsh");
+    std::fs::create_dir_all(&zsh_dir).map_err(|e| e.to_string())?;
+
+    let zshenv_content = r#"# aiTerm shell integration - do not edit
+if [[ -n "$AITERM_REAL_ZDOTDIR" ]]; then
+  [[ -f "$AITERM_REAL_ZDOTDIR/.zshenv" ]] && source "$AITERM_REAL_ZDOTDIR/.zshenv"
+else
+  [[ -f "$HOME/.zshenv" ]] && source "$HOME/.zshenv"
+fi
+"#;
+
+    let zshrc_content = r#"# aiTerm shell integration - do not edit
+if [[ -n "$AITERM_REAL_ZDOTDIR" ]]; then
+  ZDOTDIR="$AITERM_REAL_ZDOTDIR"
+  [[ -f "$ZDOTDIR/.zshrc" ]] && source "$ZDOTDIR/.zshrc"
+else
+  ZDOTDIR="$HOME"
+  [[ -f "$HOME/.zshrc" ]] && source "$HOME/.zshrc"
+fi
+
+_aiterm_title_precmd() {
+  printf '\033]0;%s@%s:%s\007' "${USER}" "${HOST%%.*}" "${PWD/#$HOME/~}"
+}
+autoload -Uz add-zsh-hook
+add-zsh-hook precmd _aiterm_title_precmd
+"#;
+
+    std::fs::write(zsh_dir.join(".zshenv"), zshenv_content).map_err(|e| e.to_string())?;
+    std::fs::write(zsh_dir.join(".zshrc"), zshrc_content).map_err(|e| e.to_string())?;
+
+    Ok(zsh_dir)
 }

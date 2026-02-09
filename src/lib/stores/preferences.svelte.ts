@@ -14,6 +14,7 @@ function createPreferencesStore() {
   let cloneSsh = $state(true);
   let cloneHistory = $state(true);
   let theme = $state('tokyo-night');
+  let shellTitleIntegration = $state(false);
 
   return {
     get fontSize() { return fontSize; },
@@ -28,6 +29,7 @@ function createPreferencesStore() {
     get cloneSsh() { return cloneSsh; },
     get cloneHistory() { return cloneHistory; },
     get theme() { return theme; },
+    get shellTitleIntegration() { return shellTitleIntegration; },
 
     async load() {
       const prefs = await commands.getPreferences();
@@ -43,6 +45,7 @@ function createPreferencesStore() {
       cloneSsh = prefs.clone_ssh;
       cloneHistory = prefs.clone_history;
       theme = prefs.theme;
+      shellTitleIntegration = prefs.shell_title_integration;
     },
 
     async setFontSize(value: number) {
@@ -105,6 +108,11 @@ function createPreferencesStore() {
       await this.save();
     },
 
+    async setShellTitleIntegration(value: boolean) {
+      shellTitleIntegration = value;
+      await this.save();
+    },
+
     async save() {
       const prefs: Preferences = {
         font_size: fontSize,
@@ -119,6 +127,7 @@ function createPreferencesStore() {
         clone_ssh: cloneSsh,
         clone_history: cloneHistory,
         theme,
+        shell_title_integration: shellTitleIntegration,
       };
       await commands.setPreferences(prefs);
     }

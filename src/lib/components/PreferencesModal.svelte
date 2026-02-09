@@ -173,6 +173,28 @@
                 <span class="toggle-knob"></span>
               </button>
             </div>
+
+            <h3 class="section-heading" style="margin-top: 20px;">Shell Integration</h3>
+
+            <div class="setting" style="align-items: flex-start;">
+              <div>
+                <label for="shell-title">Auto-set Tab Title</label>
+                <p class="setting-hint">
+                  Updates tab title with user@host:path on each prompt.
+                  Applies to new terminals only.
+                </p>
+              </div>
+              <button
+                id="shell-title"
+                class="toggle"
+                class:active={preferencesStore.shellTitleIntegration}
+                onclick={() => preferencesStore.setShellTitleIntegration(!preferencesStore.shellTitleIntegration)}
+                aria-pressed={preferencesStore.shellTitleIntegration}
+                aria-label="Toggle shell title integration"
+              >
+                <span class="toggle-knob"></span>
+              </button>
+            </div>
           {:else if activeSection === 'ui'}
             <div class="setting">
               <label for="auto-save">Auto-save Interval</label>
@@ -410,6 +432,14 @@
 
   .setting:last-child {
     margin-bottom: 0;
+  }
+
+  .setting-hint {
+    font-size: 11px;
+    color: var(--fg-dim);
+    margin: 2px 0 0 0;
+    line-height: 1.4;
+    max-width: 260px;
   }
 
   .setting > label,

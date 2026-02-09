@@ -34,10 +34,15 @@
         <img src="/logo-light.png" alt="aiTerm" class="loading-logo" />
       </div>
     {:else}
-      {#if !workspacesStore.sidebarCollapsed}
+      <div
+        class="sidebar-wrapper"
+        class:collapsed={workspacesStore.sidebarCollapsed}
+        style="width: {workspacesStore.sidebarCollapsed ? 0 : workspacesStore.sidebarWidth + 4}px"
+      >
         <WorkspaceSidebar width={workspacesStore.sidebarWidth} />
         <Resizer direction="horizontal" onresize={handleSidebarResize} onresizeend={handleSidebarResizeEnd} />
-      {:else}
+      </div>
+      {#if workspacesStore.sidebarCollapsed}
         <button class="sidebar-expand" onclick={() => workspacesStore.toggleSidebar()} title="Expand sidebar (⌘B)">
           <span class="expand-icon">&#x203A;</span>
         </button>
@@ -126,6 +131,17 @@
   .loading-logo {
     height: 48px;
     opacity: 0.5;
+  }
+
+  .sidebar-wrapper {
+    flex-shrink: 0;
+    display: flex;
+    overflow: hidden;
+    transition: width 0.2s ease;
+  }
+
+  .sidebar-wrapper.collapsed {
+    width: 0 !important;
   }
 
   .main-content {

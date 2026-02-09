@@ -21,7 +21,7 @@
   let oscTitles = $state<Map<string, string>>(new Map());
 
   const unsubOsc = terminalsStore.onOscChange((tabId: string, osc: OscState) => {
-    if (osc.title && pane.tabs.some(t => t.id === tabId)) {
+    if (osc.title && pane.tabs.some(t => t.id === tabId && !t.custom_name)) {
       oscTitles = new Map(oscTitles);
       oscTitles.set(tabId, osc.title);
     }
@@ -79,15 +79,122 @@
   async function handleTabClick(tabId: string) {
     await workspacesStore.setActiveTab(workspaceId, pane.id, tabId);
   }
+
+  // Pointer-based drag reordering (HTML5 drag-and-drop is unreliable in Tauri WKWebView)
+  let dragTabId = $state<string | null>(null);
+  let dropTargetIndex = $state<number | null>(null);
+  let dropSide = $state<'before' | 'after'>('before');
+
+  const DRAG_THRESHOLD = 5;
+  let dragStartX = 0;
+  let dragStartY = 0;
+  let pendingDragTabId: string | null = null;
+  let ghost: HTMLElement | null = null;
+  let tabsBarEl: HTMLElement;
+
+  function handlePointerDown(e: PointerEvent, tabId: string) {
+    // Only primary button, skip if editing
+    if (e.button !== 0 || editingId === tabId) return;
+    pendingDragTabId = tabId;
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  }
+
+  function handlePointerMove(e: PointerEvent) {
+    if (!pendingDragTabId && !dragTabId) return;
+
+    // Check threshold before starting drag
+    if (pendingDragTabId && !dragTabId) {
+      const dx = e.clientX - dragStartX;
+      const dy = e.clientY - dragStartY;
+      if (Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return;
+      dragTabId = pendingDragTabId;
+      pendingDragTabId = null;
+      createGhost(e);
+    }
+
+    if (!dragTabId || !ghost) return;
+
+    // Move ghost
+    ghost.style.left = `${e.clientX}px`;
+    ghost.style.top = `${e.clientY}px`;
+
+    // Hit-test tab elements to find drop target
+    const tabEls = tabsBarEl.querySelectorAll<HTMLElement>('.tab');
+    let foundTarget = false;
+    for (let i = 0; i < tabEls.length; i++) {
+      const rect = tabEls[i].getBoundingClientRect();
+      if (e.clientX >= rect.left && e.clientX <= rect.right &&
+          e.clientY >= rect.top && e.clientY <= rect.bottom) {
+        const midX = rect.left + rect.width / 2;
+        dropSide = e.clientX < midX ? 'before' : 'after';
+        dropTargetIndex = i;
+        foundTarget = true;
+        break;
+      }
+    }
+    if (!foundTarget) {
+      dropTargetIndex = null;
+    }
+  }
+
+  function handlePointerUp(e: PointerEvent) {
+    (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+
+    if (dragTabId && dropTargetIndex !== null) {
+      const fromIndex = pane.tabs.findIndex(t => t.id === dragTabId);
+      if (fromIndex !== -1) {
+        let toIndex = dropSide === 'after' ? dropTargetIndex + 1 : dropTargetIndex;
+        if (fromIndex < toIndex) toIndex--;
+        if (fromIndex !== toIndex) {
+          const ids = pane.tabs.map(t => t.id);
+          const [moved] = ids.splice(fromIndex, 1);
+          ids.splice(toIndex, 0, moved);
+          workspacesStore.reorderTabs(workspaceId, pane.id, ids);
+        }
+      }
+    }
+
+    clearDragState();
+  }
+
+  function createGhost(e: PointerEvent) {
+    const sourceTab = tabsBarEl.querySelector<HTMLElement>(`.tab[data-tab-id="${dragTabId}"]`);
+    if (!sourceTab) return;
+    ghost = sourceTab.cloneNode(true) as HTMLElement;
+    ghost.classList.add('drag-ghost');
+    ghost.style.left = `${e.clientX}px`;
+    ghost.style.top = `${e.clientY}px`;
+    document.body.appendChild(ghost);
+  }
+
+  function clearDragState() {
+    dragTabId = null;
+    dropTargetIndex = null;
+    pendingDragTabId = null;
+    if (ghost) {
+      ghost.remove();
+      ghost = null;
+    }
+  }
 </script>
 
-<div class="tabs-bar">
+<div class="tabs-bar" bind:this={tabsBarEl}>
   {#each pane.tabs as tab, index (tab.id)}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       class="tab"
       class:active={tab.id === pane.active_tab_id}
-      onclick={() => handleTabClick(tab.id)}
+      class:dragging={dragTabId === tab.id}
+      class:drop-before={dropTargetIndex === index && dropSide === 'before' && dragTabId !== tab.id}
+      class:drop-after={dropTargetIndex === index && dropSide === 'after' && dragTabId !== tab.id}
+      data-tab-id={tab.id}
+      onclick={() => { if (!dragTabId) handleTabClick(tab.id); }}
       ondblclick={(e) => startEditing(tab.id, tab.name, e)}
+      onpointerdown={(e) => handlePointerDown(e, tab.id)}
+      onpointermove={handlePointerMove}
+      onpointerup={handlePointerUp}
       role="tab"
       tabindex="0"
       aria-selected={tab.id === pane.active_tab_id}
@@ -159,6 +266,37 @@
     background: var(--bg-dark);
   }
 
+  .tab.dragging {
+    opacity: 0.3;
+  }
+
+  .tab.drop-before {
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
+
+  .tab.drop-after {
+    box-shadow: inset -2px 0 0 var(--accent);
+  }
+
+  :global(.drag-ghost) {
+    position: fixed;
+    pointer-events: none;
+    z-index: 10000;
+    opacity: 0.5;
+    transform: translate(-50%, -50%);
+    background: var(--bg-dark);
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    padding: 2px 8px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    font-size: 12px;
+    color: var(--fg);
+    white-space: nowrap;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  }
+
   .activity-dot {
     width: 6px;
     height: 6px;
@@ -189,7 +327,7 @@
 
   .tab:hover .tab-actions {
     opacity: 1;
-    width: auto;
+    width: 22px;
     margin-left: 6px;
   }
 

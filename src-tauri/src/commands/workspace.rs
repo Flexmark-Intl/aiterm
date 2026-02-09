@@ -354,6 +354,31 @@ pub fn set_tab_scrollback(
 }
 
 #[tauri::command]
+pub fn reorder_tabs(
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+    pane_id: String,
+    tab_ids: Vec<String>,
+) -> Result<(), String> {
+    let data_clone = {
+        let mut app_data = state.app_data.write();
+        if let Some(workspace) = app_data.workspaces.iter_mut().find(|w| w.id == workspace_id) {
+            if let Some(pane) = workspace.panes.iter_mut().find(|p| p.id == pane_id) {
+                let mut reordered = Vec::with_capacity(tab_ids.len());
+                for id in &tab_ids {
+                    if let Some(tab) = pane.tabs.iter().find(|t| &t.id == id) {
+                        reordered.push(tab.clone());
+                    }
+                }
+                pane.tabs = reordered;
+            }
+        }
+        app_data.clone()
+    };
+    save_state(&data_clone)
+}
+
+#[tauri::command]
 pub fn get_preferences(state: State<'_, Arc<AppState>>) -> Preferences {
     state.app_data.read().preferences.clone()
 }

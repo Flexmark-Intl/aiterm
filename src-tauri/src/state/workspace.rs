@@ -284,6 +284,8 @@ pub struct Preferences {
     pub clone_history: bool,
     #[serde(default = "default_theme")]
     pub theme: String,
+    #[serde(default)]
+    pub shell_title_integration: bool,
 }
 
 impl Default for Preferences {
@@ -301,6 +303,7 @@ impl Default for Preferences {
             clone_ssh: true,
             clone_history: true,
             theme: default_theme(),
+            shell_title_integration: false,
         }
     }
 }
