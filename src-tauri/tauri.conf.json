@@ -21,7 +21,8 @@
         "resizable": true,
         "fullscreen": false,
         "titleBarStyle": "Transparent",
-        "hiddenTitle": true
+        "hiddenTitle": true,
+        "backgroundColor": "#1a1b26"
       }
     ],
     "security": {

@@ -84,17 +84,22 @@
   let dragTabId = $state<string | null>(null);
   let dropTargetIndex = $state<number | null>(null);
   let dropSide = $state<'before' | 'after'>('before');
+  let dropWorkspaceId: string | null = null;
 
   const DRAG_THRESHOLD = 5;
   let dragStartX = 0;
   let dragStartY = 0;
+  let lastPointerX = 0;
+  let lastPointerY = 0;
   let pendingDragTabId: string | null = null;
   let ghost: HTMLElement | null = null;
+  let cursorBadge: HTMLElement | null = null;
   let tabsBarEl: HTMLElement;
 
   function handlePointerDown(e: PointerEvent, tabId: string) {
-    // Only primary button, skip if editing
+    // Only primary button, skip if editing or clicking close button
     if (e.button !== 0 || editingId === tabId) return;
+    if ((e.target as HTMLElement).closest('.close-btn')) return;
     pendingDragTabId = tabId;
     dragStartX = e.clientX;
     dragStartY = e.clientY;
@@ -122,7 +127,7 @@
 
     // Hit-test tab elements to find drop target
     const tabEls = tabsBarEl.querySelectorAll<HTMLElement>('.tab');
-    let foundTarget = false;
+    let foundTabTarget = false;
     for (let i = 0; i < tabEls.length; i++) {
       const rect = tabEls[i].getBoundingClientRect();
       if (e.clientX >= rect.left && e.clientX <= rect.right &&
@@ -130,17 +135,90 @@
         const midX = rect.left + rect.width / 2;
         dropSide = e.clientX < midX ? 'before' : 'after';
         dropTargetIndex = i;
-        foundTarget = true;
+        foundTabTarget = true;
         break;
       }
     }
-    if (!foundTarget) {
+    if (!foundTabTarget) {
       dropTargetIndex = null;
     }
+
+    // Hit-test workspace sidebar elements
+    const wsEls = document.querySelectorAll<HTMLElement>('[data-workspace-id]');
+    let foundWsId: string | null = null;
+    for (const wsEl of wsEls) {
+      const rect = wsEl.getBoundingClientRect();
+      if (e.clientX >= rect.left && e.clientX <= rect.right &&
+          e.clientY >= rect.top && e.clientY <= rect.bottom) {
+        const wsId = wsEl.getAttribute('data-workspace-id');
+        if (wsId && wsId !== workspaceId) {
+          foundWsId = wsId;
+        }
+        break;
+      }
+    }
+
+    // Update drop-target class on workspace elements
+    if (foundWsId !== dropWorkspaceId) {
+      // Remove old highlight
+      if (dropWorkspaceId) {
+        const oldEl = document.querySelector(`[data-workspace-id="${dropWorkspaceId}"]`);
+        oldEl?.classList.remove('drop-target');
+      }
+      // Add new highlight
+      if (foundWsId) {
+        const newEl = document.querySelector(`[data-workspace-id="${foundWsId}"]`);
+        newEl?.classList.add('drop-target');
+        // Clear tab drop target when over a workspace
+        dropTargetIndex = null;
+      }
+      dropWorkspaceId = foundWsId;
+    }
+
+    lastPointerX = e.clientX;
+    lastPointerY = e.clientY;
+    updateCursorBadge(e.altKey);
+  }
+
+  function updateCursorBadge(altKey: boolean) {
+    if (!cursorBadge) return;
+    cursorBadge.style.left = `${lastPointerX + 16}px`;
+    cursorBadge.style.top = `${lastPointerY + 16}px`;
+    if (dropWorkspaceId && altKey) {
+      cursorBadge.style.display = 'flex';
+    } else {
+      cursorBadge.style.display = 'none';
+    }
+  }
+
+  function handleDragKeyDown(e: KeyboardEvent) {
+    if (e.key === 'Escape') {
+      clearDragState();
+      return;
+    }
+    if (e.key === 'Alt') updateCursorBadge(true);
+  }
+
+  function handleDragKeyUp(e: KeyboardEvent) {
+    if (e.key === 'Alt') updateCursorBadge(false);
   }
 
   function handlePointerUp(e: PointerEvent) {
     (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+
+    if (dragTabId && dropWorkspaceId) {
+      // Drop onto a workspace — copy (Alt/Option) or move
+      const tabId = dragTabId;
+      const targetWsId = dropWorkspaceId;
+      const isCopy = e.altKey;
+      clearDragState();
+      if (isCopy) {
+        workspacesStore.copyTabToWorkspace(workspaceId, pane.id, tabId, targetWsId);
+      } else {
+        workspacesStore.moveTabToWorkspace(workspaceId, pane.id, tabId, targetWsId);
+      }
+      return;
+    }
 
     if (dragTabId && dropTargetIndex !== null) {
       const fromIndex = pane.tabs.findIndex(t => t.id === dragTabId);
@@ -167,15 +245,35 @@
     ghost.style.left = `${e.clientX}px`;
     ghost.style.top = `${e.clientY}px`;
     document.body.appendChild(ghost);
+    // Cursor badge (macOS-style "+" near pointer)
+    cursorBadge = document.createElement('div');
+    cursorBadge.className = 'drag-cursor-badge';
+    cursorBadge.textContent = '+';
+    cursorBadge.style.display = 'none';
+    document.body.appendChild(cursorBadge);
+    // Key listeners for Escape cancel and Option badge
+    document.addEventListener('keydown', handleDragKeyDown);
+    document.addEventListener('keyup', handleDragKeyUp);
   }
 
   function clearDragState() {
+    document.removeEventListener('keydown', handleDragKeyDown);
+    document.removeEventListener('keyup', handleDragKeyUp);
     dragTabId = null;
     dropTargetIndex = null;
     pendingDragTabId = null;
+    if (dropWorkspaceId) {
+      const el = document.querySelector(`[data-workspace-id="${dropWorkspaceId}"]`);
+      el?.classList.remove('drop-target');
+      dropWorkspaceId = null;
+    }
     if (ghost) {
       ghost.remove();
       ghost = null;
+    }
+    if (cursorBadge) {
+      cursorBadge.remove();
+      cursorBadge = null;
     }
   }
 </script>
@@ -295,6 +393,25 @@
     color: var(--fg);
     white-space: nowrap;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  }
+
+  :global(.drag-cursor-badge) {
+    position: fixed;
+    pointer-events: none;
+    z-index: 10001;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--green, #9ece6a);
+    color: #1a1b26;
+    font-size: 13px;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+    font-family: -apple-system, system-ui, sans-serif;
   }
 
   .activity-dot {
