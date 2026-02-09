@@ -16,7 +16,7 @@ export interface PtyInfo {
  * command from an SSH command retrieved from the process tree, so it doesn't
  * accumulate on each split/restore cycle.
  */
-function cleanSshCommand(cmd: string): string {
+export function cleanSshCommand(cmd: string): string {
   if (!cmd.match(/^ssh\s/)) return cmd;
   // Remove our injected remote command (unquoted form from ps output)
   let cleaned = cmd.replace(/\s+cd\s+.*?&&\s+exec\s+\$?SHELL\s+-l\s*$/, '');
@@ -24,7 +24,18 @@ function cleanSshCommand(cmd: string): string {
   cleaned = cleaned.replace(/\s+'cd\s+.*?&&\s+exec\s+\$?SHELL\s+-l'\s*$/, '');
   // Remove -t flags (buildSshCommand re-adds it)
   cleaned = cleaned.replace(/\s+-t(?=\s|$)/g, '');
-  return cleaned;
+  // Deduplicate single-letter flags (e.g. -x -C -x -C → -x -C)
+  const parts = cleaned.split(/\s+/);
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+  for (const part of parts) {
+    if (/^-[a-zA-Z]$/.test(part)) {
+      if (seen.has(part)) continue;
+      seen.add(part);
+    }
+    deduped.push(part);
+  }
+  return deduped.join(' ');
 }
 
 export async function getPtyInfo(ptyId: string): Promise<PtyInfo> {
@@ -45,6 +56,10 @@ export async function resizeTerminal(ptyId: string, cols: number, rows: number):
 
 export async function killTerminal(ptyId: string): Promise<void> {
   return invoke('kill_terminal', { ptyId });
+}
+
+export async function readClipboardFilePaths(): Promise<string[]> {
+  return invoke('read_clipboard_file_paths');
 }
 
 // Workspace commands

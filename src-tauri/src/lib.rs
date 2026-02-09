@@ -49,6 +49,7 @@ pub fn run() {
         .plugin(build_log_plugin().build())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_window_state::Builder::new()
             .with_state_flags(tauri_plugin_window_state::StateFlags::all())
             .build())
@@ -113,6 +114,7 @@ pub fn run() {
             commands::terminal::resize_terminal,
             commands::terminal::kill_terminal,
             commands::terminal::get_pty_info,
+            commands::terminal::read_clipboard_file_paths,
             commands::workspace::get_app_data,
             commands::workspace::create_workspace,
             commands::workspace::delete_workspace,

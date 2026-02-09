@@ -4,6 +4,52 @@ use tauri::{AppHandle, State};
 use crate::pty;
 use crate::state::AppState;
 
+/// Read file paths from the system clipboard (macOS NSPasteboard).
+/// Returns an empty vec if the clipboard doesn't contain file URLs.
+#[tauri::command]
+pub fn read_clipboard_file_paths() -> Vec<String> {
+    #[cfg(target_os = "macos")]
+    {
+        read_file_paths_macos()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        vec![]
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn read_file_paths_macos() -> Vec<String> {
+    use std::process::Command;
+
+    // Use JXA (JavaScript for Automation) to read file URLs from NSPasteboard.
+    // Iterates pasteboardItems and reads the public.file-url type from each.
+    let script = concat!(
+        "ObjC.import('AppKit');",
+        "var pb=$.NSPasteboard.generalPasteboard;",
+        "var items=pb.pasteboardItems;",
+        "var p=[];",
+        "for(var i=0;i<items.count;i++){",
+        "var u=items.objectAtIndex(i).stringForType('public.file-url');",
+        "if(u){p.push($.NSURL.URLWithString(u).path.js)}}",
+        "p.join('\\n')"
+    );
+
+    let Ok(output) = Command::new("osascript")
+        .args(["-l", "JavaScript", "-e", script])
+        .output()
+    else {
+        return vec![];
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if stdout.is_empty() {
+        vec![]
+    } else {
+        stdout.lines().map(String::from).collect()
+    }
+}
+
 #[tauri::command]
 pub fn spawn_terminal(
     app_handle: AppHandle,

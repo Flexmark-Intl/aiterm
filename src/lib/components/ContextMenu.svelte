@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
+
   interface MenuItem {
     label: string;
     shortcut?: string;
@@ -34,33 +36,44 @@
     onclose();
   }
 
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') {
-      onclose();
+  // Window-level listeners for robust dismissal (avoids pointer-events
+  // inheritance issues when rendered inside pointer-events:none containers)
+  onMount(() => {
+    function onMousedown(e: MouseEvent) {
+      if (menuEl && !menuEl.contains(e.target as Node)) {
+        onclose();
+      }
     }
-  }
-
-  function handleBackdropClick(e: MouseEvent) {
-    if (e.target === e.currentTarget) {
-      onclose();
+    function onKeydown(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onclose();
+      }
     }
-  }
+    function onContextmenu(e: MouseEvent) {
+      if (menuEl && !menuEl.contains(e.target as Node)) {
+        e.preventDefault();
+        onclose();
+      }
+    }
+    window.addEventListener('mousedown', onMousedown, true);
+    window.addEventListener('keydown', onKeydown, true);
+    window.addEventListener('contextmenu', onContextmenu, true);
+    return () => {
+      window.removeEventListener('mousedown', onMousedown, true);
+      window.removeEventListener('keydown', onKeydown, true);
+      window.removeEventListener('contextmenu', onContextmenu, true);
+    };
+  });
 </script>
 
-<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-  class="backdrop"
-  onmousedown={handleBackdropClick}
-  oncontextmenu={(e) => { e.preventDefault(); handleBackdropClick(e); }}
-  onkeydown={handleKeydown}
+  class="context-menu"
+  bind:this={menuEl}
+  style="left: {adjustedPos.x}px; top: {adjustedPos.y}px"
+  role="menu"
+  tabindex="-1"
 >
-  <div
-    class="context-menu"
-    bind:this={menuEl}
-    style="left: {adjustedPos.x}px; top: {adjustedPos.y}px"
-    role="menu"
-    tabindex="-1"
-  >
     {#each items as item}
       {#if item.separator}
         <div class="separator"></div>
@@ -80,17 +93,12 @@
       {/if}
     {/each}
   </div>
-</div>
 
 <style>
-  .backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 1000;
-  }
-
   .context-menu {
     position: fixed;
+    z-index: 1000;
+    pointer-events: auto;
     background: var(--bg-medium);
     border: 1px solid var(--bg-light);
     border-radius: 6px;

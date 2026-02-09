@@ -210,31 +210,25 @@ pub fn rename_tab(
     name: String,
     custom_name: Option<bool>,
 ) -> Result<(), String> {
-    let data_clone = {
-        let mut app_data = state.app_data.write();
-        if let Some(workspace) = app_data.workspaces.iter_mut().find(|w| w.id == workspace_id) {
-            if let Some(pane) = workspace.panes.iter_mut().find(|p| p.id == pane_id) {
-                if let Some(tab) = pane.tabs.iter_mut().find(|t| t.id == tab_id) {
-                    tab.name = name;
-                    if let Some(cn) = custom_name {
-                        tab.custom_name = cn;
-                    }
+    let mut app_data = state.app_data.write();
+    if let Some(workspace) = app_data.workspaces.iter_mut().find(|w| w.id == workspace_id) {
+        if let Some(pane) = workspace.panes.iter_mut().find(|p| p.id == pane_id) {
+            if let Some(tab) = pane.tabs.iter_mut().find(|t| t.id == tab_id) {
+                tab.name = name;
+                if let Some(cn) = custom_name {
+                    tab.custom_name = cn;
                 }
             }
         }
-        app_data.clone()
-    };
-    save_state(&data_clone)
+    }
+    Ok(())
 }
 
 #[tauri::command]
 pub fn set_active_workspace(state: State<'_, Arc<AppState>>, workspace_id: String) -> Result<(), String> {
-    let data_clone = {
-        let mut app_data = state.app_data.write();
-        app_data.active_workspace_id = Some(workspace_id);
-        app_data.clone()
-    };
-    save_state(&data_clone)
+    let mut app_data = state.app_data.write();
+    app_data.active_workspace_id = Some(workspace_id);
+    Ok(())
 }
 
 #[tauri::command]
@@ -243,14 +237,11 @@ pub fn set_active_pane(
     workspace_id: String,
     pane_id: String,
 ) -> Result<(), String> {
-    let data_clone = {
-        let mut app_data = state.app_data.write();
-        if let Some(workspace) = app_data.workspaces.iter_mut().find(|w| w.id == workspace_id) {
-            workspace.active_pane_id = Some(pane_id);
-        }
-        app_data.clone()
-    };
-    save_state(&data_clone)
+    let mut app_data = state.app_data.write();
+    if let Some(workspace) = app_data.workspaces.iter_mut().find(|w| w.id == workspace_id) {
+        workspace.active_pane_id = Some(pane_id);
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -260,16 +251,13 @@ pub fn set_active_tab(
     pane_id: String,
     tab_id: String,
 ) -> Result<(), String> {
-    let data_clone = {
-        let mut app_data = state.app_data.write();
-        if let Some(workspace) = app_data.workspaces.iter_mut().find(|w| w.id == workspace_id) {
-            if let Some(pane) = workspace.panes.iter_mut().find(|p| p.id == pane_id) {
-                pane.active_tab_id = Some(tab_id);
-            }
+    let mut app_data = state.app_data.write();
+    if let Some(workspace) = app_data.workspaces.iter_mut().find(|w| w.id == workspace_id) {
+        if let Some(pane) = workspace.panes.iter_mut().find(|p| p.id == pane_id) {
+            pane.active_tab_id = Some(tab_id);
         }
-        app_data.clone()
-    };
-    save_state(&data_clone)
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -280,38 +268,29 @@ pub fn set_tab_pty_id(
     tab_id: String,
     pty_id: String,
 ) -> Result<(), String> {
-    let data_clone = {
-        let mut app_data = state.app_data.write();
-        if let Some(workspace) = app_data.workspaces.iter_mut().find(|w| w.id == workspace_id) {
-            if let Some(pane) = workspace.panes.iter_mut().find(|p| p.id == pane_id) {
-                if let Some(tab) = pane.tabs.iter_mut().find(|t| t.id == tab_id) {
-                    tab.pty_id = Some(pty_id);
-                }
+    let mut app_data = state.app_data.write();
+    if let Some(workspace) = app_data.workspaces.iter_mut().find(|w| w.id == workspace_id) {
+        if let Some(pane) = workspace.panes.iter_mut().find(|p| p.id == pane_id) {
+            if let Some(tab) = pane.tabs.iter_mut().find(|t| t.id == tab_id) {
+                tab.pty_id = Some(pty_id);
             }
         }
-        app_data.clone()
-    };
-    save_state(&data_clone)
+    }
+    Ok(())
 }
 
 #[tauri::command]
 pub fn set_sidebar_width(state: State<'_, Arc<AppState>>, width: u32) -> Result<(), String> {
-    let data_clone = {
-        let mut app_data = state.app_data.write();
-        app_data.sidebar_width = width;
-        app_data.clone()
-    };
-    save_state(&data_clone)
+    let mut app_data = state.app_data.write();
+    app_data.sidebar_width = width;
+    Ok(())
 }
 
 #[tauri::command]
 pub fn set_sidebar_collapsed(state: State<'_, Arc<AppState>>, collapsed: bool) -> Result<(), String> {
-    let data_clone = {
-        let mut app_data = state.app_data.write();
-        app_data.sidebar_collapsed = collapsed;
-        app_data.clone()
-    };
-    save_state(&data_clone)
+    let mut app_data = state.app_data.write();
+    app_data.sidebar_collapsed = collapsed;
+    Ok(())
 }
 
 #[tauri::command]
@@ -321,16 +300,13 @@ pub fn set_split_ratio(
     split_id: String,
     ratio: f64,
 ) -> Result<(), String> {
-    let data_clone = {
-        let mut app_data = state.app_data.write();
-        if let Some(workspace) = app_data.workspaces.iter_mut().find(|w| w.id == workspace_id) {
-            if let Some(ref root) = workspace.split_root {
-                workspace.split_root = Some(root.set_ratio(&split_id, ratio.clamp(0.1, 0.9)));
-            }
+    let mut app_data = state.app_data.write();
+    if let Some(workspace) = app_data.workspaces.iter_mut().find(|w| w.id == workspace_id) {
+        if let Some(ref root) = workspace.split_root {
+            workspace.split_root = Some(root.set_ratio(&split_id, ratio.clamp(0.1, 0.9)));
         }
-        app_data.clone()
-    };
-    save_state(&data_clone)
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -341,18 +317,15 @@ pub fn set_tab_scrollback(
     tab_id: String,
     scrollback: Option<String>,
 ) -> Result<(), String> {
-    let data_clone = {
-        let mut app_data = state.app_data.write();
-        if let Some(workspace) = app_data.workspaces.iter_mut().find(|w| w.id == workspace_id) {
-            if let Some(pane) = workspace.panes.iter_mut().find(|p| p.id == pane_id) {
-                if let Some(tab) = pane.tabs.iter_mut().find(|t| t.id == tab_id) {
-                    tab.scrollback = scrollback;
-                }
+    let mut app_data = state.app_data.write();
+    if let Some(workspace) = app_data.workspaces.iter_mut().find(|w| w.id == workspace_id) {
+        if let Some(pane) = workspace.panes.iter_mut().find(|p| p.id == pane_id) {
+            if let Some(tab) = pane.tabs.iter_mut().find(|t| t.id == tab_id) {
+                tab.scrollback = scrollback;
             }
         }
-        app_data.clone()
-    };
-    save_state(&data_clone)
+    }
+    Ok(())
 }
 
 #[tauri::command]

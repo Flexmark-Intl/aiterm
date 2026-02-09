@@ -9,6 +9,8 @@
     "core:event:allow-listen",
     "core:event:allow-emit",
     "shell:allow-open",
+    "clipboard-manager:allow-read-text",
+    "clipboard-manager:allow-write-text",
     "log:default"
   ]
 }

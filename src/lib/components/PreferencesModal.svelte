@@ -67,6 +67,50 @@
     preferencesStore.setTheme(newTheme.id);
   }
 
+  // Drag state
+  let isDragging = $state(false);
+  let dragStartX = $state(0);
+  let dragStartY = $state(0);
+  let posX = $state(0);
+  let posY = $state(0);
+
+  function handleDragStart(e: MouseEvent) {
+    if ((e.target as HTMLElement).closest('.close-btn')) return;
+    isDragging = true;
+    dragStartX = e.clientX - posX;
+    dragStartY = e.clientY - posY;
+    e.preventDefault();
+  }
+
+  $effect(() => {
+    if (!isDragging) return;
+
+    function onMouseMove(e: MouseEvent) {
+      posX = e.clientX - dragStartX;
+      posY = e.clientY - dragStartY;
+    }
+
+    function onMouseUp() {
+      isDragging = false;
+    }
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+  });
+
+  // Reset position when modal opens
+  $effect(() => {
+    if (open) {
+      posX = 0;
+      posY = 0;
+    }
+  });
+
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
       onclose();
@@ -89,8 +133,9 @@
     aria-modal="true"
     tabindex="-1"
   >
-    <div class="modal">
-      <div class="header">
+    <div class="modal" style:transform="translate({posX}px, {posY}px)">
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="header" onmousedown={handleDragStart} class:dragging={isDragging}>
         <h2>Preferences</h2>
         <button class="close-btn" onclick={onclose}>&times;</button>
       </div>
@@ -393,8 +438,9 @@
     inset: 0;
     background: rgba(0, 0, 0, 0.6);
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: center;
+    padding-top: 60px;
     z-index: 1000;
   }
 
@@ -416,6 +462,12 @@
     padding: 16px 20px;
     border-bottom: 1px solid var(--bg-light);
     flex-shrink: 0;
+    cursor: grab;
+    user-select: none;
+  }
+
+  .header.dragging {
+    cursor: grabbing;
   }
 
   h2 {

@@ -8,7 +8,8 @@
   import { SerializeAddon } from '@xterm/addon-serialize';
   import { SearchAddon } from '@xterm/addon-search';
   import '@xterm/xterm/css/xterm.css';
-  import { spawnTerminal, writeTerminal, resizeTerminal, killTerminal, setTabScrollback, getPtyInfo, setTabRestoreContext } from '$lib/tauri/commands';
+  import { spawnTerminal, writeTerminal, resizeTerminal, killTerminal, setTabScrollback, getPtyInfo, setTabRestoreContext, cleanSshCommand, readClipboardFilePaths } from '$lib/tauri/commands';
+  import { readText as clipboardReadText, writeText as clipboardWriteText } from '@tauri-apps/plugin-clipboard-manager';
   import { terminalsStore } from '$lib/stores/terminals.svelte';
   import { workspacesStore } from '$lib/stores/workspaces.svelte';
   import { preferencesStore } from '$lib/stores/preferences.svelte';
@@ -39,6 +40,9 @@
   let ptyId: string;
   let unlistenOutput: UnlistenFn;
   let unlistenClose: UnlistenFn;
+  let unlistenDragOver: UnlistenFn;
+  let unlistenDragDrop: UnlistenFn;
+  let unlistenDragLeave: UnlistenFn;
   let resizeObserver: ResizeObserver;
   let initialized = $state(false);
   let trackActivity = false;
@@ -54,6 +58,32 @@
     }
   }
   let contextMenu = $state<{ x: number; y: number } | null>(null);
+  let isDragOver = $state(false);
+
+  // Escape a file path for pasting into a terminal (backslash-escape shell metacharacters)
+  function escapePathForTerminal(p: string): string {
+    return p.replace(/([^a-zA-Z0-9_\-.,/:@+])/g, '\\$1');
+  }
+
+  // Paste from clipboard using native Tauri APIs (bypasses WKWebView paste popup).
+  // Checks for file paths first (Finder copy), then falls back to text.
+  async function pasteFromClipboard() {
+    // Check for file URLs first (Finder Cmd+C puts filename as text too,
+    // but we want the full path from NSPasteboard)
+    const paths = await readClipboardFilePaths();
+    if (paths.length > 0) {
+      const escaped = paths.map(escapePathForTerminal).join(' ');
+      const bytes = Array.from(new TextEncoder().encode(escaped));
+      await writeTerminal(ptyId, bytes);
+      return;
+    }
+
+    const text = await clipboardReadText();
+    if (text) {
+      const bytes = Array.from(new TextEncoder().encode(text));
+      await writeTerminal(ptyId, bytes);
+    }
+  }
 
   // Escape a path for use inside single quotes.
   // Handles ~ by leaving it unquoted so the shell expands it.
@@ -214,7 +244,7 @@
     // Fall back to persisted restore context from last session
     const splitCtx = terminalsStore.consumeSplitContext(tabId);
     const ctx = splitCtx ?? (restoreCwd || restoreSshCommand
-      ? { cwd: restoreCwd ?? null, sshCommand: restoreSshCommand ?? null, remoteCwd: restoreRemoteCwd ?? null }
+      ? { cwd: restoreCwd ?? null, sshCommand: restoreSshCommand ? cleanSshCommand(restoreSshCommand) : null, remoteCwd: restoreRemoteCwd ?? null }
       : null);
 
     // Spawn PTY with tab-specific history, optionally inheriting cwd
@@ -249,7 +279,7 @@
       if (e.metaKey && e.key === 'c') {
         e.preventDefault();
         if (terminal.hasSelection()) {
-          navigator.clipboard.writeText(terminal.getSelection());
+          clipboardWriteText(terminal.getSelection()).catch(e => logError(String(e)));
           terminal.clearSelection();
         } else {
           writeTerminal(ptyId, [0x03]).catch(e => logError(String(e)));
@@ -259,12 +289,7 @@
 
       if (e.metaKey && e.key === 'v') {
         e.preventDefault();
-        navigator.clipboard.readText().then((text) => {
-          if (text) {
-            const bytes = Array.from(new TextEncoder().encode(text));
-            writeTerminal(ptyId, bytes).catch(e => logError(String(e)));
-          }
-        });
+        pasteFromClipboard().catch(e => logError(String(e)));
         return false;
       }
 
@@ -291,6 +316,37 @@
     });
     resizeObserver.observe(containerRef);
 
+    // Drag & drop file support: listen for Tauri window-level drag events
+    unlistenDragOver = await listen<{ position: { x: number; y: number } }>('tauri://drag-over', (event) => {
+      if (!visible || !containerRef?.isConnected) { isDragOver = false; return; }
+      const { position } = event.payload;
+      const rect = containerRef.getBoundingClientRect();
+      isDragOver = (
+        position.x >= rect.left && position.x <= rect.right &&
+        position.y >= rect.top && position.y <= rect.bottom
+      );
+    });
+
+    unlistenDragDrop = await listen<{ paths: string[]; position: { x: number; y: number } }>('tauri://drag-drop', (event) => {
+      isDragOver = false;
+      if (!visible || !containerRef?.isConnected) return;
+      const { paths, position } = event.payload;
+      const rect = containerRef.getBoundingClientRect();
+      if (
+        position.x >= rect.left && position.x <= rect.right &&
+        position.y >= rect.top && position.y <= rect.bottom
+      ) {
+        const escaped = paths.map(escapePathForTerminal).join(' ');
+        const bytes = Array.from(new TextEncoder().encode(escaped));
+        writeTerminal(ptyId, bytes).catch(e => logError(String(e)));
+        terminal.focus();
+      }
+    });
+
+    unlistenDragLeave = await listen('tauri://drag-leave', () => {
+      isDragOver = false;
+    });
+
     initialized = true;
     terminal.focus();
     // Delay activity tracking so initial shell prompt doesn't trigger indicator
@@ -305,6 +361,9 @@
     window.removeEventListener('terminal-slot-ready', handleSlotReady);
     if (unlistenOutput) unlistenOutput();
     if (unlistenClose) unlistenClose();
+    if (unlistenDragOver) unlistenDragOver();
+    if (unlistenDragDrop) unlistenDragDrop();
+    if (unlistenDragLeave) unlistenDragLeave();
     if (resizeObserver) resizeObserver.disconnect();
     if (terminal) terminal.dispose();
     if (ptyId) {
@@ -434,19 +493,13 @@
         disabled: !hasSelection,
         action: async () => {
           const text = terminal.getSelection();
-          if (text) await navigator.clipboard.writeText(text);
+          if (text) await clipboardWriteText(text);
         },
       },
       {
         label: 'Paste',
         shortcut: '⌘V',
-        action: async () => {
-          const text = await navigator.clipboard.readText();
-          if (text) {
-            const bytes = Array.from(new TextEncoder().encode(text));
-            await writeTerminal(ptyId, bytes);
-          }
-        },
+        action: () => pasteFromClipboard(),
       },
       {
         label: 'Select All',
@@ -473,7 +526,13 @@
   class:hidden={!visible}
   bind:this={containerRef}
   oncontextmenu={handleContextMenu}
-></div>
+>
+  {#if isDragOver}
+    <div class="drop-overlay">
+      <span>Drop to paste path</span>
+    </div>
+  {/if}
+</div>
 
 {#if contextMenu}
   <ContextMenu
@@ -486,10 +545,33 @@
 
 <style>
   .terminal-container {
+    position: relative;
     flex: 1;
     padding: 4px;
     background: var(--bg-dark);
     overflow: hidden;
+  }
+
+  .drop-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(122, 162, 247, 0.08);
+    border: 2px dashed var(--accent);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  .drop-overlay span {
+    background: var(--bg-medium);
+    padding: 8px 16px;
+    border-radius: 6px;
+    color: var(--accent);
+    font-size: 13px;
+    font-weight: 500;
   }
 
   .terminal-container.hidden {
