@@ -47,6 +47,7 @@
   let resizeObserver: ResizeObserver;
   let initialized = $state(false);
   let trackActivity = false;
+  let visibilityGraceUntil = 0; // timestamp — suppress activity until this time
 
   // Fit terminal with one fewer row for bottom breathing room
   function fitWithPadding() {
@@ -231,7 +232,7 @@
     unlistenOutput = await listen<number[]>(`pty-output-${ptyId}`, (event) => {
       const data = new Uint8Array(event.payload);
       terminal.write(data);
-      if (!visible && trackActivity) {
+      if (!visible && trackActivity && Date.now() > visibilityGraceUntil) {
         activityStore.markActive(tabId);
       }
     });
@@ -371,6 +372,14 @@
       killTerminal(ptyId).catch(e => logError(String(e)));
     }
     terminalsStore.unregister(tabId);
+  });
+
+  // Suppress false activity when terminal transitions to hidden —
+  // residual output (SSH restore, prompt redraws) can arrive briefly after switch.
+  $effect(() => {
+    if (!visible && initialized) {
+      visibilityGraceUntil = Date.now() + 1000;
+    }
   });
 
   $effect(() => {

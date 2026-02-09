@@ -3,8 +3,17 @@
   import { getVersion } from '@tauri-apps/api/app';
   import { workspacesStore } from '$lib/stores/workspaces.svelte';
   import { terminalsStore } from '$lib/stores/terminals.svelte';
+  import { activityStore } from '$lib/stores/activity.svelte';
   import * as commands from '$lib/tauri/commands';
   import { modSymbol } from '$lib/utils/platform';
+
+  function workspaceHasActivity(workspaceId: string): boolean {
+    if (workspaceId === workspacesStore.activeWorkspaceId) return false;
+    const ws = workspacesStore.workspaces.find(w => w.id === workspaceId);
+    if (!ws) return false;
+    const tabIds = ws.panes.flatMap(p => p.tabs.map(t => t.id));
+    return activityStore.hasAnyActivity(tabIds);
+  }
 
   let appVersion = $state('');
   getVersion().then(v => { appVersion = v; });
@@ -102,7 +111,13 @@
             autofocus
           />
         {:else}
-          <span class="workspace-indicator">{workspace.id === workspacesStore.activeWorkspaceId ? '>' : ' '}</span>
+          <span class="workspace-indicator">
+            {#if workspace.id === workspacesStore.activeWorkspaceId}
+              >
+            {:else if workspaceHasActivity(workspace.id)}
+              <span class="activity-dot"></span>
+            {/if}
+          </span>
           <span class="workspace-name">{workspace.name}</span>
           <button
             class="delete-btn"
@@ -230,6 +245,17 @@
     color: var(--accent);
     font-weight: bold;
     width: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .activity-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--green, #9ece6a);
+    flex-shrink: 0;
   }
 
   .workspace-name {

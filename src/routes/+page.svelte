@@ -62,11 +62,13 @@
         {#if workspacesStore.activeWorkspace}
           {@const workspace = workspacesStore.activeWorkspace}
           {#if workspace.split_root}
-            <SplitContainer
-              node={workspace.split_root}
-              workspaceId={workspace.id}
-              panes={workspace.panes}
-            />
+            {#key workspace.id}
+              <SplitContainer
+                node={workspace.split_root}
+                workspaceId={workspace.id}
+                panes={workspace.panes}
+              />
+            {/key}
           {/if}
         {:else}
           <div class="empty-state">
