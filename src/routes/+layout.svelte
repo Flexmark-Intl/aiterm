@@ -9,6 +9,8 @@
   import PreferencesModal from '$lib/components/PreferencesModal.svelte';
   import { preferencesStore } from '$lib/stores/preferences.svelte';
   import { getTheme, applyUiTheme } from '$lib/themes';
+  import { error as logError, info as logInfo } from '@tauri-apps/plugin-log';
+  import { attachConsole } from '@tauri-apps/plugin-log';
 
   interface Props {
     children: import('svelte').Snippet;
@@ -25,35 +27,34 @@
   });
 
   onMount(() => {
-    // Load preferences
-    preferencesStore.load().catch((e: unknown) => console.error('Failed to load preferences:', e));
+    // Attach console for dev mode (Rust logs appear in browser devtools)
+    let detachConsole: (() => void) | undefined;
+    attachConsole().then(detach => { detachConsole = detach; });
 
-    // Handle window close - save all scrollback before closing
+    // Load preferences
+    preferencesStore.load().catch((e: unknown) => logError(`Failed to load preferences: ${e}`));
+
+    // Handle window close - save all scrollback before closing.
     const appWindow = getCurrentWindow();
     let unlistenClose: (() => void) | undefined;
 
     (async () => {
       unlistenClose = await appWindow.onCloseRequested(async (event) => {
         event.preventDefault();
-
-        // Save restore context (cwd/SSH) before scrollback so PTYs are still alive
-        if (preferencesStore.restoreSession) {
-          try {
-            await terminalsStore.saveAllRestoreContext(preferencesStore.promptPatterns);
-          } catch (e) {
-            console.error('saveAllRestoreContext failed:', e);
-          }
-        }
+        logInfo('onCloseRequested fired — saving state before shutdown');
 
         await terminalsStore.saveAllScrollback();
+        logInfo('Scrollback saved');
 
         try {
           await invoke('sync_state');
+          logInfo('State synced');
         } catch (e) {
-          console.error('sync_state failed:', e);
+          logError(`sync_state failed: ${e}`);
         }
 
-        await appWindow.destroy();
+        logInfo('Shutdown complete — exiting app');
+        await invoke('exit_app');
       });
     })();
 
@@ -244,6 +245,7 @@
     return () => {
       window.removeEventListener('keydown', handleKeydown, true);
       unlistenClose?.();
+      detachConsole?.();
     };
   });
 </script>

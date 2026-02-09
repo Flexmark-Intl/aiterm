@@ -8,13 +8,15 @@
   import { SerializeAddon } from '@xterm/addon-serialize';
   import { SearchAddon } from '@xterm/addon-search';
   import '@xterm/xterm/css/xterm.css';
-  import { spawnTerminal, writeTerminal, resizeTerminal, killTerminal, setTabScrollback } from '$lib/tauri/commands';
+  import { spawnTerminal, writeTerminal, resizeTerminal, killTerminal, setTabScrollback, getPtyInfo, setTabRestoreContext } from '$lib/tauri/commands';
   import { terminalsStore } from '$lib/stores/terminals.svelte';
   import { workspacesStore } from '$lib/stores/workspaces.svelte';
   import { preferencesStore } from '$lib/stores/preferences.svelte';
   import { activityStore } from '$lib/stores/activity.svelte';
   import ContextMenu from '$lib/components/ContextMenu.svelte';
   import { getTheme } from '$lib/themes';
+  import { getCompiledPatterns } from '$lib/utils/promptPattern';
+  import { error as logError } from '@tauri-apps/plugin-log';
 
   interface Props {
     workspaceId: string;
@@ -94,7 +96,7 @@
         requestAnimationFrame(() => {
           fitWithPadding();
           const { cols, rows } = terminal;
-          resizeTerminal(ptyId, cols, rows).catch(console.error);
+          resizeTerminal(ptyId, cols, rows).catch(e => logError(String(e)));
         });
       }
     }
@@ -219,7 +221,7 @@
     try {
       await spawnTerminal(ptyId, tabId, cols, rows, ctx?.cwd);
     } catch (e) {
-      console.error('Failed to spawn PTY:', e);
+      logError(`Failed to spawn PTY: ${e}`);
     }
     await workspacesStore.setTabPtyId(workspaceId, paneId, tabId, ptyId);
 
@@ -232,7 +234,7 @@
           const bytes = Array.from(new TextEncoder().encode(cmd + '\n'));
           await writeTerminal(ptyId, bytes);
         } catch (e) {
-          console.error('Failed to replay SSH command:', e);
+          logError(`Failed to replay SSH command: ${e}`);
         }
       }, 500);
     }
@@ -250,7 +252,7 @@
           navigator.clipboard.writeText(terminal.getSelection());
           terminal.clearSelection();
         } else {
-          writeTerminal(ptyId, [0x03]).catch(console.error);
+          writeTerminal(ptyId, [0x03]).catch(e => logError(String(e)));
         }
         return false;
       }
@@ -260,7 +262,7 @@
         navigator.clipboard.readText().then((text) => {
           if (text) {
             const bytes = Array.from(new TextEncoder().encode(text));
-            writeTerminal(ptyId, bytes).catch(console.error);
+            writeTerminal(ptyId, bytes).catch(e => logError(String(e)));
           }
         });
         return false;
@@ -275,7 +277,7 @@
       try {
         await writeTerminal(ptyId, bytes);
       } catch (e) {
-        console.error('Failed to write to PTY:', e);
+        logError(`Failed to write to PTY: ${e}`);
       }
     });
 
@@ -284,7 +286,7 @@
       if (visible && containerRef?.isConnected) {
         fitWithPadding();
         const { cols, rows } = terminal;
-        resizeTerminal(ptyId, cols, rows).catch(console.error);
+        resizeTerminal(ptyId, cols, rows).catch(e => logError(String(e)));
       }
     });
     resizeObserver.observe(containerRef);
@@ -306,7 +308,7 @@
     if (resizeObserver) resizeObserver.disconnect();
     if (terminal) terminal.dispose();
     if (ptyId) {
-      killTerminal(ptyId).catch(console.error);
+      killTerminal(ptyId).catch(e => logError(String(e)));
     }
     terminalsStore.unregister(tabId);
   });
@@ -343,7 +345,7 @@
       if (fitAddon && visible) {
         fitWithPadding();
         const { cols, rows } = terminal;
-        resizeTerminal(ptyId, cols, rows).catch(console.error);
+        resizeTerminal(ptyId, cols, rows).catch(e => logError(String(e)));
       }
     });
   });
@@ -364,7 +366,48 @@
           const scrollback = serializeAddon.serialize();
           await setTabScrollback(workspaceId, paneId, tabId, scrollback);
         } catch (e) {
-          console.error('Failed to auto-save scrollback:', e);
+          logError(`Failed to auto-save scrollback: ${e}`);
+        }
+
+        // Also save restore context (cwd/SSH) if enabled
+        if (preferencesStore.restoreSession) {
+          try {
+            const info = await getPtyInfo(ptyId);
+            let cwd = info.cwd;
+            const sshCommand = info.foreground_command;
+            let remoteCwd: string | null = null;
+
+            const osc7Cwd = terminalsStore.getOsc(tabId)?.cwd ?? null;
+            if (sshCommand) {
+              const isOsc7Stale = osc7Cwd === cwd;
+              const osc7RemoteCwd = (osc7Cwd && !isOsc7Stale) ? osc7Cwd : null;
+              if (osc7RemoteCwd) {
+                remoteCwd = osc7RemoteCwd;
+              } else {
+                // Fall back to prompt pattern extraction
+                const patterns = getCompiledPatterns(preferencesStore.promptPatterns);
+                const buffer = terminal.buffer.active;
+                const cursorLine = buffer.baseY + buffer.cursorY;
+                for (let i = cursorLine; i >= Math.max(0, cursorLine - 5); i--) {
+                  const line = buffer.getLine(i);
+                  if (!line) continue;
+                  const text = line.translateToString(true).trim();
+                  if (!text) continue;
+                  for (const re of patterns) {
+                    const match = text.match(re);
+                    if (match?.[1]) { remoteCwd = match[1]; break; }
+                  }
+                  if (remoteCwd) break;
+                }
+              }
+            } else {
+              cwd = cwd ?? osc7Cwd;
+            }
+
+            await setTabRestoreContext(workspaceId, paneId, tabId, cwd, sshCommand, remoteCwd);
+          } catch {
+            // PTY may be gone — ignore
+          }
         }
       }, interval * 1000);
     }

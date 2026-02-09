@@ -18,7 +18,7 @@ pub fn spawn_pty(
     rows: u16,
     cwd: Option<String>,
 ) -> Result<(), String> {
-    eprintln!("spawn_pty called: pty_id={}, tab_id={}, cols={}, rows={}", pty_id, tab_id, cols, rows);
+    log::info!("spawn_pty: pty_id={}, tab_id={}, cols={}, rows={}", pty_id, tab_id, cols, rows);
     let pty_system = native_pty_system();
 
     let pair = pty_system
@@ -130,7 +130,7 @@ pub fn spawn_pty(
     }
 
     let mut child = pair.slave.spawn_command(cmd).map_err(|e| {
-        eprintln!("Failed to spawn command: {}", e);
+        log::error!("Failed to spawn command: {}", e);
         e.to_string()
     })?;
 

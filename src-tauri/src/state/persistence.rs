@@ -25,14 +25,14 @@ fn get_temp_path() -> Option<PathBuf> {
 
 pub fn load_state() -> AppData {
     let Some(path) = get_state_path() else {
-        eprintln!("[load_state] No data directory found");
+        log::warn!("No data directory found");
         return AppData::default();
     };
 
-    eprintln!("[load_state] Loading from {:?}", path);
+    log::info!("Loading state from {:?}", path);
 
     if !path.exists() {
-        eprintln!("[load_state] File does not exist, using defaults");
+        log::info!("State file does not exist, using defaults");
         return AppData::default();
     }
 
@@ -40,12 +40,12 @@ pub fn load_state() -> AppData {
         Ok(contents) => match serde_json::from_str::<AppData>(&contents) {
             Ok(data) => data,
             Err(e) => {
-                eprintln!("[load_state] Failed to parse state file: {}. Trying backup.", e);
+                log::error!("Failed to parse state file: {}. Trying backup.", e);
                 load_from_backup()
             }
         },
         Err(e) => {
-            eprintln!("[load_state] Failed to read file: {}. Trying backup.", e);
+            log::error!("Failed to read state file: {}. Trying backup.", e);
             load_from_backup()
         }
     }
@@ -53,28 +53,28 @@ pub fn load_state() -> AppData {
 
 fn load_from_backup() -> AppData {
     let Some(backup_path) = get_backup_path() else {
-        eprintln!("[load_state] No backup path available, using defaults");
+        log::warn!("No backup path available, using defaults");
         return AppData::default();
     };
 
     if !backup_path.exists() {
-        eprintln!("[load_state] No backup file found, using defaults");
+        log::info!("No backup file found, using defaults");
         return AppData::default();
     }
 
     match fs::read_to_string(&backup_path) {
         Ok(contents) => match serde_json::from_str::<AppData>(&contents) {
             Ok(data) => {
-                eprintln!("[load_state] Successfully loaded from backup");
+                log::info!("Successfully loaded from backup");
                 data
             }
             Err(e) => {
-                eprintln!("[load_state] Backup also corrupt: {}. Using defaults.", e);
+                log::error!("Backup also corrupt: {}. Using defaults.", e);
                 AppData::default()
             }
         },
         Err(e) => {
-            eprintln!("[load_state] Failed to read backup: {}. Using defaults.", e);
+            log::error!("Failed to read backup: {}. Using defaults.", e);
             AppData::default()
         }
     }
@@ -88,8 +88,8 @@ pub fn migrate_app_data(data: &mut AppData) {
             for tab in &mut pane.tabs {
                 if !tab.custom_name && tab.name != "Terminal" {
                     tab.custom_name = true;
-                    eprintln!(
-                        "[migrate] Set custom_name=true for tab '{}' (id={})",
+                    log::info!(
+                        "Migration: set custom_name=true for tab '{}' (id={})",
                         tab.name, tab.id
                     );
                 }
@@ -128,8 +128,8 @@ pub fn migrate_app_data(data: &mut AppData) {
                 }
                 workspace.split_root = Some(node);
             }
-            eprintln!(
-                "[migrate] Converted {} flat panes to split tree for workspace '{}'",
+            log::info!(
+                "Migration: converted {} flat panes to split tree for workspace '{}'",
                 workspace.panes.len(),
                 workspace.name
             );
@@ -154,7 +154,7 @@ pub fn save_state(data: &AppData) -> Result<(), String> {
     // Copy current state to backup (if it exists)
     if path.exists() {
         if let Err(e) = fs::copy(&path, &backup_path) {
-            eprintln!("[save_state] Warning: failed to create backup: {}", e);
+            log::warn!("Failed to create backup: {}", e);
         }
     }
 

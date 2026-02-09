@@ -200,10 +200,21 @@ Priority: OSC 7 (if not stale) → prompt pattern heuristic.
 - **OSC 7** (cwd): Parses `file://hostname/path` URL, stores both cwd and cwdHost
 - **Listener API**: `onOscChange(fn)` for reactive subscriptions (used by TerminalTabs)
 
+## Dev/Production Isolation
+
+Dev and production builds use **separate data directories** so they can run simultaneously without state corruption:
+
+- **Dev** (`tauri dev`): `~/Library/Application Support/com.aiterm.dev/`
+- **Production** (`tauri build`): `~/Library/Application Support/com.aiterm.app/`
+
+Controlled by `cfg!(debug_assertions)` in `state/persistence.rs` → `app_data_slug()`. The window title is set to "aiTerm (Dev)" in debug builds, and the sidebar shows a DEV badge via `+layout.svelte` exposing an `isDevMode` flag.
+
+**Do not** hardcode `com.aiterm.app` anywhere — always use `app_data_slug()` in Rust. State files, backups, and temp files all derive their paths from this slug.
+
 ## Important Conventions
 
 - **Keyboard shortcuts**: Defined in `+layout.svelte` handleKeydown
-- **Persistence**: State saved to `~/.aiterm/state.json`
+- **Persistence**: State saved to `<data_dir>/<app_slug>/aiterm-state.json` (see Dev/Production Isolation above)
 - **Terminal lifecycle**: Created in TerminalPane onMount, PTY spawned immediately
 - **Scrollback**: Saved on destroy, periodically (based on preferences), and on app close
 
@@ -260,10 +271,55 @@ Priority: OSC 7 (if not stale) → prompt pattern heuristic.
 
 ## Debugging
 
-- **Rust logs**: Use `eprintln!()` or `log::*` macros, visible in terminal running `tauri dev`
-- **Frontend logs**: `console.log()` visible in DevTools (Cmd+Option+I in dev mode)
-- **Debug command**: `invoke('debug_log', { message })` logs to Rust stderr
-- **State file**: Check `~/.aiterm/state.json` for persisted state
+### Logging
+
+Uses `tauri-plugin-log` — all logs go to a log file, stdout, and (in dev) browser devtools via `attachConsole()`. Rust and frontend share the same log file.
+
+**Rust** — use `log` crate macros (no `use` needed, `log` is a dependency):
+```rust
+log::info!("Loading state from {:?}", path);
+log::warn!("Backup failed: {}", e);
+log::error!("Fatal: {}", e);
+log::debug!("Verbose detail");  // only appears in dev builds
+```
+
+**Frontend** — import from `@tauri-apps/plugin-log`:
+```typescript
+import { error, info, warn, debug } from '@tauri-apps/plugin-log';
+error(`Failed to spawn PTY: ${e}`);
+info('State loaded');
+```
+
+Do **not** use `eprintln!()` or `console.error()` — they bypass the log file and are invisible in production.
+
+### Log file locations
+
+| OS | Dev | Prod |
+|----|-----|------|
+| **macOS** | `~/Library/Logs/com.aiterm.app/aiterm-dev.log` | `~/Library/Logs/com.aiterm.app/aiterm.log` |
+| **Linux** | `~/.config/aiterm/logs/aiterm-dev.log` | `~/.config/aiterm/logs/aiterm.log` |
+| **Windows** | `%APPDATA%\aiterm\logs\aiterm-dev.log` | `%APPDATA%\aiterm\logs\aiterm.log` |
+
+### Reading logs during development
+
+Logs also stream to stdout (the terminal running `npm run tauri dev`). To tail the log file directly:
+
+```bash
+# macOS
+tail -f ~/Library/Logs/com.aiterm.app/aiterm-dev.log
+
+# Linux
+tail -f ~/.config/aiterm/logs/aiterm-dev.log
+
+# Windows (PowerShell)
+Get-Content "$env:APPDATA\aiterm\logs\aiterm-dev.log" -Wait
+```
+
+In dev builds, Rust-side logs also appear in the browser devtools console (via the `Webview` target + `attachConsole()` in `+layout.svelte`).
+
+### State file
+
+Check `~/Library/Application Support/com.aiterm.dev/aiterm-state.json` (dev) or `com.aiterm.app/` (prod)
 
 ## Common Pitfalls
 

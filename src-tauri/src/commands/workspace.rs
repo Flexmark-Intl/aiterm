@@ -6,16 +6,17 @@ use crate::state::persistence::app_data_slug;
 use crate::state::workspace::SplitDirection;
 
 #[tauri::command]
-pub fn debug_log(message: String) {
-    eprintln!("[JS] {}", message);
+pub fn exit_app(app: tauri::AppHandle) {
+    log::info!("exit_app called — terminating process");
+    app.exit(0);
 }
 
 #[tauri::command]
 pub fn sync_state(state: State<'_, Arc<AppState>>) -> Result<(), String> {
-    eprintln!("[sync_state] Forcing state sync to disk");
+    log::info!("Forcing state sync to disk");
     let data_clone = state.app_data.read().clone();
     save_state(&data_clone)?;
-    eprintln!("[sync_state] State saved successfully");
+    log::info!("State saved successfully");
     Ok(())
 }
 

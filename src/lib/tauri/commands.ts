@@ -11,8 +11,28 @@ export interface PtyInfo {
   foreground_command: string | null;
 }
 
+/**
+ * Strip previously-injected "-t" flag and "cd ... && exec $SHELL -l" remote
+ * command from an SSH command retrieved from the process tree, so it doesn't
+ * accumulate on each split/restore cycle.
+ */
+function cleanSshCommand(cmd: string): string {
+  if (!cmd.match(/^ssh\s/)) return cmd;
+  // Remove our injected remote command (unquoted form from ps output)
+  let cleaned = cmd.replace(/\s+cd\s+.*?&&\s+exec\s+\$?SHELL\s+-l\s*$/, '');
+  // Also handle the single-quoted form
+  cleaned = cleaned.replace(/\s+'cd\s+.*?&&\s+exec\s+\$?SHELL\s+-l'\s*$/, '');
+  // Remove -t flags (buildSshCommand re-adds it)
+  cleaned = cleaned.replace(/\s+-t(?=\s|$)/g, '');
+  return cleaned;
+}
+
 export async function getPtyInfo(ptyId: string): Promise<PtyInfo> {
-  return invoke('get_pty_info', { ptyId });
+  const info: PtyInfo = await invoke('get_pty_info', { ptyId });
+  if (info.foreground_command) {
+    info.foreground_command = cleanSshCommand(info.foreground_command);
+  }
+  return info;
 }
 
 export async function writeTerminal(ptyId: string, data: number[]): Promise<void> {

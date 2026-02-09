@@ -5,6 +5,7 @@ import { terminalsStore } from '$lib/stores/terminals.svelte';
 import { preferencesStore } from '$lib/stores/preferences.svelte';
 import { activityStore } from '$lib/stores/activity.svelte';
 import { getCompiledPatterns } from '$lib/utils/promptPattern';
+import { error as logError } from '@tauri-apps/plugin-log';
 
 /**
  * Extract the remote cwd from the terminal prompt using user-configured patterns.
@@ -149,7 +150,7 @@ function createWorkspacesStore() {
           try {
             scrollback = instance.serializeAddon.serialize();
           } catch (e) {
-            console.error('Failed to serialize scrollback for split:', e);
+            logError(`Failed to serialize scrollback for split: ${e}`);
           }
         }
 
@@ -184,7 +185,7 @@ function createWorkspacesStore() {
           try {
             await commands.copyTabHistory(sourceTabId, newTabId);
           } catch (e) {
-            console.error('Failed to copy tab history:', e);
+            logError(`Failed to copy tab history: ${e}`);
           }
         }
 
@@ -419,7 +420,7 @@ function createWorkspacesStore() {
           try {
             scrollback = instance.serializeAddon.serialize();
           } catch (e) {
-            console.error('Failed to serialize scrollback:', e);
+            logError(`Failed to serialize scrollback: ${e}`);
           }
         }
 
@@ -500,7 +501,7 @@ function createWorkspacesStore() {
         try {
           await commands.copyTabHistory(sourceTabId, newTab.id);
         } catch (e) {
-          console.error('Failed to copy tab history:', e);
+          logError(`Failed to copy tab history: ${e}`);
         }
       }
 

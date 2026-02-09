@@ -149,6 +149,25 @@
 
             <ThemeEditor theme={selectedTheme} />
           {:else if activeSection === 'terminal'}
+            <div class="setting" style="align-items: flex-start;">
+              <div>
+                <label for="restore-session">Restore on Relaunch</label>
+                <p class="setting-hint">
+                  Restore working directory and SSH sessions when the app restarts.
+                </p>
+              </div>
+              <button
+                id="restore-session"
+                class="toggle"
+                class:active={preferencesStore.restoreSession}
+                onclick={() => preferencesStore.setRestoreSession(!preferencesStore.restoreSession)}
+                aria-pressed={preferencesStore.restoreSession}
+                aria-label="Toggle session restore on relaunch"
+              >
+                <span class="toggle-knob"></span>
+              </button>
+            </div>
+
             <div class="setting">
               <label for="font-size">Font Size</label>
               <div class="number-input-wrapper">
@@ -259,26 +278,6 @@
               </select>
             </div>
           {:else if activeSection === 'panels'}
-            <h3 class="section-heading">Session Restore</h3>
-            <div class="setting" style="align-items: flex-start;">
-              <div>
-                <label for="restore-session">Restore on Relaunch</label>
-                <p class="setting-hint">
-                  Restore working directory and SSH sessions when the app restarts.
-                </p>
-              </div>
-              <button
-                id="restore-session"
-                class="toggle"
-                class:active={preferencesStore.restoreSession}
-                onclick={() => preferencesStore.setRestoreSession(!preferencesStore.restoreSession)}
-                aria-pressed={preferencesStore.restoreSession}
-                aria-label="Toggle session restore on relaunch"
-              >
-                <span class="toggle-knob"></span>
-              </button>
-            </div>
-
             <h3 class="section-heading">Duplication</h3>
             <p class="section-desc">
               What to clone when splitting a pane (<kbd>Cmd+D</kbd>).
