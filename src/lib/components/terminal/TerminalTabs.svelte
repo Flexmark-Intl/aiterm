@@ -5,6 +5,7 @@
   import { activityStore } from '$lib/stores/activity.svelte';
   import { terminalsStore } from '$lib/stores/terminals.svelte';
   import type { OscState } from '$lib/stores/terminals.svelte';
+  import { modLabel } from '$lib/utils/platform';
 
   interface Props {
     workspaceId: string;
@@ -63,16 +64,22 @@
     await workspacesStore.createTab(workspaceId, pane.id, `Terminal ${count}`);
   }
 
+  async function handleDuplicateTab(tabId: string, e: MouseEvent) {
+    e.stopPropagation();
+    await workspacesStore.duplicateTab(workspaceId, pane.id, tabId);
+  }
+
   async function handleCloseTab(tabId: string, e: MouseEvent) {
     e.stopPropagation();
+    const ws = workspacesStore.activeWorkspace;
     if (pane.tabs.length > 1) {
       await workspacesStore.deleteTab(workspaceId, pane.id, tabId);
+    } else if (ws && ws.panes.length > 1) {
+      // Last tab in pane — close the pane
+      await workspacesStore.deletePane(workspaceId, pane.id);
     } else {
-      // Last tab - close the pane
-      const ws = workspacesStore.activeWorkspace;
-      if (ws && ws.panes.length > 1) {
-        await workspacesStore.deletePane(workspaceId, pane.id);
-      }
+      // Last tab in last pane — close tab, pane shows empty state
+      await workspacesStore.deleteTab(workspaceId, pane.id, tabId);
     }
   }
 
@@ -99,7 +106,7 @@
   function handlePointerDown(e: PointerEvent, tabId: string) {
     // Only primary button, skip if editing or clicking close button
     if (e.button !== 0 || editingId === tabId) return;
-    if ((e.target as HTMLElement).closest('.close-btn')) return;
+    if ((e.target as HTMLElement).closest('.close-btn') || (e.target as HTMLElement).closest('.duplicate-btn')) return;
     pendingDragTabId = tabId;
     dragStartX = e.clientX;
     dragStartY = e.clientY;
@@ -284,6 +291,7 @@
     <div
       class="tab"
       class:active={tab.id === pane.active_tab_id}
+      class:activity={tab.id !== pane.active_tab_id && activityStore.hasActivity(tab.id)}
       class:dragging={dragTabId === tab.id}
       class:drop-before={dropTargetIndex === index && dropSide === 'before' && dragTabId !== tab.id}
       class:drop-after={dropTargetIndex === index && dropSide === 'after' && dragTabId !== tab.id}
@@ -316,9 +324,19 @@
         <span class="tab-name">{displayName(tab)}</span>
         <div class="tab-actions">
           <button
+            class="tab-btn duplicate-btn"
+            onclick={(e) => handleDuplicateTab(tab.id, e)}
+            title="Duplicate tab ({modLabel}+Shift+T)"
+          >
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+              <rect x="3" y="3" width="6" height="6" rx="1" />
+              <path d="M7 3V1.5A.5.5 0 006.5 1H1.5a.5.5 0 00-.5.5v5a.5.5 0 00.5.5H3" />
+            </svg>
+          </button>
+          <button
             class="tab-btn close-btn"
             onclick={(e) => handleCloseTab(tab.id, e)}
-            title="Close tab (Cmd+W)"
+            title="Close tab ({modLabel}+W)"
           >
             &times;
           </button>
@@ -327,7 +345,7 @@
     </div>
   {/each}
 
-  <button class="new-tab-btn" onclick={handleNewTab} title="New tab (Cmd+T)">
+  <button class="new-tab-btn" onclick={handleNewTab} title="New tab ({modLabel}+T)">
     +
   </button>
 </div>
@@ -349,11 +367,12 @@
     align-items: center;
     gap: 0;
     padding: 2px 8px;
+    border: 1px solid var(--tab-border);
     border-radius: 4px;
     cursor: pointer;
     max-width: 180px;
     height: 26px;
-    transition: background 0.1s, padding-right 0.15s ease;
+    transition: background 0.1s, padding-right 0.15s ease, border-color 0.1s;
     -webkit-app-region: no-drag;
   }
 
@@ -364,6 +383,11 @@
 
   .tab.active {
     background: var(--bg-dark);
+    border-color: var(--tab-border-active);
+  }
+
+  .tab.activity {
+    border-color: var(--tab-border-activity);
   }
 
   .tab.dragging {
@@ -446,7 +470,7 @@
 
   .tab:hover .tab-actions {
     opacity: 1;
-    width: 22px;
+    width: 44px;
     margin-left: 6px;
   }
 

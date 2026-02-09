@@ -2,7 +2,7 @@
   "$schema": "https://schemas.tauri.app/capability.schema.json",
   "identifier": "default",
   "description": "Default capability for aiTerm",
-  "windows": ["main"],
+  "windows": ["*"],
   "permissions": [
     "core:default",
     "core:event:default",
@@ -11,6 +11,8 @@
     "shell:allow-open",
     "clipboard-manager:allow-read-text",
     "clipboard-manager:allow-write-text",
+    "core:window:allow-destroy",
+    "core:window:allow-close",
     "log:default"
   ]
 }

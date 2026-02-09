@@ -37,6 +37,12 @@
     { key: 'ui.accent_hover', label: 'Accent Hover' },
   ];
 
+  const tabColors: ColorEntry[] = [
+    { key: 'ui.tab_border', label: 'Tab Border' },
+    { key: 'ui.tab_border_active', label: 'Active Border' },
+    { key: 'ui.tab_border_activity', label: 'Activity Border' },
+  ];
+
   const uiSemanticColors: ColorEntry[] = [
     { key: 'ui.green', label: 'Green' },
     { key: 'ui.red', label: 'Red' },
@@ -183,6 +189,30 @@
         <h4>Accent</h4>
         <div class="color-grid">
           {#each accentColors as c (c.key)}
+            <div class="color-item">
+              <span class="color-label">{c.label}</span>
+              <div class="color-inputs">
+                <input
+                  type="color"
+                  value={getColor(theme, c.key)}
+                  oninput={(e) => handleColorChange(c.key, e.currentTarget.value)}
+                />
+                <input
+                  type="text"
+                  class="hex-input"
+                  value={getColor(theme, c.key)}
+                  onchange={(e) => handleColorChange(c.key, e.currentTarget.value)}
+                />
+              </div>
+            </div>
+          {/each}
+        </div>
+      </div>
+
+      <div class="color-section">
+        <h4>Tabs</h4>
+        <div class="color-grid">
+          {#each tabColors as c (c.key)}
             <div class="color-item">
               <span class="color-label">{c.label}</span>
               <div class="color-inputs">

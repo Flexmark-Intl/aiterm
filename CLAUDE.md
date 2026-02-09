@@ -227,7 +227,7 @@ Controlled by `cfg!(debug_assertions)` in `state/persistence.rs` → `app_data_s
 | Cmd+1-9 | Switch to tab |
 | Cmd+Shift+[ | Previous tab |
 | Cmd+Shift+] | Next tab |
-| Cmd+Shift+T | New pane |
+| Cmd+Shift+T | Duplicate tab |
 | Cmd+N | New workspace |
 | Cmd+, | Preferences |
 | Cmd+/ | Help |

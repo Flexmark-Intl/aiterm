@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use super::workspace::{AppData, Layout, SplitDirection, SplitNode};
+use super::workspace::{AppData, Layout, SplitDirection, SplitNode, WindowData};
 
 pub fn app_data_slug() -> &'static str {
     if cfg!(debug_assertions) {
@@ -81,18 +81,17 @@ fn load_from_backup() -> AppData {
 }
 
 pub fn migrate_app_data(data: &mut AppData) {
-    // Migrate tabs: any tab with a non-default name that lacks custom_name flag
-    // must have been renamed before the flag was introduced
-    for workspace in &mut data.workspaces {
-        for pane in &mut workspace.panes {
-            for tab in &mut pane.tabs {
-                if !tab.custom_name && tab.name != "Terminal" {
-                    tab.custom_name = true;
-                    log::info!(
-                        "Migration: set custom_name=true for tab '{}' (id={})",
-                        tab.name, tab.id
-                    );
-                }
+    // Migrate from old single-window format to multi-window format
+    if data.windows.is_empty() {
+        if let Some(old_workspaces) = data.workspaces.take() {
+            if !old_workspaces.is_empty() {
+                let mut win = WindowData::new("main".to_string());
+                win.workspaces = old_workspaces;
+                win.active_workspace_id = data.active_workspace_id.take();
+                win.sidebar_width = data.sidebar_width.unwrap_or(180);
+                win.sidebar_collapsed = data.sidebar_collapsed.unwrap_or(false);
+                data.windows.push(win);
+                log::info!("Migration: moved old workspaces into WindowData 'main'");
             }
         }
     }
@@ -102,37 +101,53 @@ pub fn migrate_app_data(data: &mut AppData) {
         _ => SplitDirection::Horizontal,
     };
 
-    for workspace in &mut data.workspaces {
-        if workspace.split_root.is_none() && !workspace.panes.is_empty() {
-            if workspace.panes.len() == 1 {
-                workspace.split_root = Some(SplitNode::Leaf {
-                    pane_id: workspace.panes[0].id.clone(),
-                });
-            } else {
-                // Build left-leaning chain: [A, B, C] -> Split(Split(A, B), C)
-                let mut node = SplitNode::Leaf {
-                    pane_id: workspace.panes[0].id.clone(),
-                };
-                for pane in &workspace.panes[1..] {
-                    node = SplitNode::Split {
-                        id: uuid::Uuid::new_v4().to_string(),
-                        direction: direction.clone(),
-                        ratio: 0.5,
-                        children: Box::new((
-                            node,
-                            SplitNode::Leaf {
-                                pane_id: pane.id.clone(),
-                            },
-                        )),
-                    };
+    // Per-window / per-workspace migrations
+    for window in &mut data.windows {
+        for workspace in &mut window.workspaces {
+            // Migrate tabs: any tab with a non-default name that lacks custom_name flag
+            for pane in &mut workspace.panes {
+                for tab in &mut pane.tabs {
+                    if !tab.custom_name && tab.name != "Terminal" {
+                        tab.custom_name = true;
+                        log::info!(
+                            "Migration: set custom_name=true for tab '{}' (id={})",
+                            tab.name, tab.id
+                        );
+                    }
                 }
-                workspace.split_root = Some(node);
             }
-            log::info!(
-                "Migration: converted {} flat panes to split tree for workspace '{}'",
-                workspace.panes.len(),
-                workspace.name
-            );
+
+            // Migrate split_root from flat pane list
+            if workspace.split_root.is_none() && !workspace.panes.is_empty() {
+                if workspace.panes.len() == 1 {
+                    workspace.split_root = Some(SplitNode::Leaf {
+                        pane_id: workspace.panes[0].id.clone(),
+                    });
+                } else {
+                    let mut node = SplitNode::Leaf {
+                        pane_id: workspace.panes[0].id.clone(),
+                    };
+                    for pane in &workspace.panes[1..] {
+                        node = SplitNode::Split {
+                            id: uuid::Uuid::new_v4().to_string(),
+                            direction: direction.clone(),
+                            ratio: 0.5,
+                            children: Box::new((
+                                node,
+                                SplitNode::Leaf {
+                                    pane_id: pane.id.clone(),
+                                },
+                            )),
+                        };
+                    }
+                    workspace.split_root = Some(node);
+                }
+                log::info!(
+                    "Migration: converted {} flat panes to split tree for workspace '{}'",
+                    workspace.panes.len(),
+                    workspace.name
+                );
+            }
         }
     }
 }

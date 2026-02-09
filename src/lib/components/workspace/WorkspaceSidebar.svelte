@@ -2,6 +2,9 @@
   import { tick } from 'svelte';
   import { getVersion } from '@tauri-apps/api/app';
   import { workspacesStore } from '$lib/stores/workspaces.svelte';
+  import { terminalsStore } from '$lib/stores/terminals.svelte';
+  import * as commands from '$lib/tauri/commands';
+  import { modSymbol } from '$lib/utils/platform';
 
   let appVersion = $state('');
   getVersion().then(v => { appVersion = v; });
@@ -49,6 +52,11 @@
     e.stopPropagation();
     if (workspacesStore.workspaces.length > 1) {
       await workspacesStore.deleteWorkspace(id);
+    } else {
+      // Last workspace: kill terminals and show empty state
+      await terminalsStore.killAllTerminals();
+      await commands.resetWindow();
+      workspacesStore.reset();
     }
   }
 </script>
@@ -65,7 +73,7 @@
   </div>
   <div class="sidebar-header">
     <span class="title">WORKSPACES</span>
-    <button class="collapse-btn" onclick={() => workspacesStore.toggleSidebar()} title="Collapse sidebar (⌘B)">
+    <button class="collapse-btn" onclick={() => workspacesStore.toggleSidebar()} title="Collapse sidebar ({modSymbol}B)">
       &#x2039;
     </button>
   </div>
@@ -96,15 +104,13 @@
         {:else}
           <span class="workspace-indicator">{workspace.id === workspacesStore.activeWorkspaceId ? '>' : ' '}</span>
           <span class="workspace-name">{workspace.name}</span>
-          {#if workspacesStore.workspaces.length > 1}
-            <button
-              class="delete-btn"
-              onclick={(e) => handleDeleteWorkspace(workspace.id, e)}
-              title="Delete workspace"
-            >
-              &times;
-            </button>
-          {/if}
+          <button
+            class="delete-btn"
+            onclick={(e) => handleDeleteWorkspace(workspace.id, e)}
+            title="Close workspace"
+          >
+            &times;
+          </button>
         {/if}
       </div>
     {/each}
@@ -234,11 +240,17 @@
   }
 
   .delete-btn {
-    opacity: 0;
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border-radius: 3px;
+    font-size: 13px;
     color: var(--fg-dim);
+    opacity: 0;
+    flex-shrink: 0;
   }
 
   .workspace-item:hover .delete-btn {
@@ -246,7 +258,7 @@
   }
 
   .delete-btn:hover {
-    background: var(--red);
+    background: var(--bg-dark);
     color: var(--fg);
   }
 

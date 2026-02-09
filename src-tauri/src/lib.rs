@@ -2,11 +2,12 @@ mod commands;
 mod pty;
 mod state;
 
-use state::{load_state, AppState};
+use state::{load_state, AppState, WindowData, Workspace};
 use state::persistence::migrate_app_data;
 use std::sync::Arc;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use tauri::menu::{MenuBuilder, MenuItem, SubmenuBuilder};
+use tauri::webview::WebviewWindowBuilder;
 use tauri_plugin_log::{Target, TargetKind, RotationStrategy, TimezoneStrategy};
 use log::LevelFilter;
 
@@ -43,6 +44,22 @@ pub fn run() {
         let mut data = app_state.app_data.write();
         *data = load_state();
         migrate_app_data(&mut data);
+
+        // Ensure at least one window exists (fresh install)
+        if data.windows.is_empty() {
+            let mut win = WindowData::new("main".to_string());
+            let ws = Workspace::new("Default".to_string());
+            win.active_workspace_id = Some(ws.id.clone());
+            win.workspaces.push(ws);
+            data.windows.push(win);
+        }
+
+        // Ensure the first window has label "main" (Tauri creates this from tauri.conf.json)
+        if let Some(first) = data.windows.first_mut() {
+            if first.label != "main" {
+                first.label = "main".to_string();
+            }
+        }
     }
 
     tauri::Builder::default()
@@ -58,17 +75,49 @@ pub fn run() {
             }
             ws.build()
         })
-        .manage(app_state)
-        .setup(|app| {
+        .manage(app_state.clone())
+        .setup(move |app| {
             if cfg!(debug_assertions) {
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.set_title("aiTerm (Dev)");
                 }
             }
 
-            // Custom app menu: replace default Quit (which calls exit(0) on macOS,
-            // bypassing onCloseRequested) with a custom item that triggers window.close().
+            // Restore additional windows beyond "main"
+            let extra_windows: Vec<String> = {
+                let data = app_state.app_data.read();
+                data.windows.iter()
+                    .skip(1) // skip "main" — already created by Tauri
+                    .map(|w| w.label.clone())
+                    .collect()
+            };
+
+            for label in extra_windows {
+                let url = if cfg!(debug_assertions) {
+                    tauri::WebviewUrl::External("http://localhost:1420".parse().unwrap())
+                } else {
+                    tauri::WebviewUrl::App("index.html".into())
+                };
+                let title = if cfg!(debug_assertions) { "aiTerm (Dev)" } else { "aiTerm" };
+
+                if let Err(e) = WebviewWindowBuilder::new(app, &label, url)
+                    .title(title)
+                    .inner_size(1200.0, 800.0)
+                    .min_inner_size(800.0, 600.0)
+                    .resizable(true)
+                    .fullscreen(false)
+                    .title_bar_style(tauri::TitleBarStyle::Transparent)
+                    .hidden_title(true)
+                    .build()
+                {
+                    log::error!("Failed to restore window '{}': {}", label, e);
+                }
+            }
+
+            // Custom app menu
             let quit_item = MenuItem::with_id(app, "quit", "Quit aiTerm", true, Some("CmdOrCtrl+Q"))?;
+            let new_window_item = MenuItem::with_id(app, "new_window", "New Window", true, Some("CmdOrCtrl+N"))?;
+            let duplicate_window_item = MenuItem::with_id(app, "duplicate_window", "Duplicate Window", true, Some("CmdOrCtrl+Shift+N"))?;
 
             let app_menu = SubmenuBuilder::new(app, "aiTerm")
                 .about(None)
@@ -80,6 +129,11 @@ pub fn run() {
                 .show_all()
                 .separator()
                 .item(&quit_item)
+                .build()?;
+
+            let file_menu = SubmenuBuilder::new(app, "File")
+                .item(&new_window_item)
+                .item(&duplicate_window_item)
                 .build()?;
 
             let edit_menu = SubmenuBuilder::new(app, "Edit")
@@ -98,16 +152,25 @@ pub fn run() {
                 .build()?;
 
             let menu = MenuBuilder::new(app)
-                .items(&[&app_menu, &edit_menu, &window_menu])
+                .items(&[&app_menu, &file_menu, &edit_menu, &window_menu])
                 .build()?;
 
             app.set_menu(menu)?;
 
             app.on_menu_event(|app_handle, event| {
-                if event.id().as_ref() == "quit" {
-                    if let Some(window) = app_handle.get_webview_window("main") {
-                        let _ = window.close();
+                match event.id().as_ref() {
+                    "quit" => {
+                        // Emit event so each window can save scrollback before exit.
+                        // Don't close windows directly — that triggers closeWindow()
+                        // which removes window data from state.
+                        let _ = app_handle.emit("quit-requested", ());
                     }
+                    "new_window" | "duplicate_window" => {
+                        // These are handled by frontend keyboard shortcuts.
+                        // The menu accelerators trigger the keydown event which
+                        // the frontend handles.
+                    }
+                    _ => {}
                 }
             });
 
@@ -145,6 +208,12 @@ pub fn run() {
             commands::workspace::set_preferences,
             commands::workspace::copy_tab_history,
             commands::workspace::set_tab_restore_context,
+            commands::window::get_window_data,
+            commands::window::create_window,
+            commands::window::duplicate_window,
+            commands::window::close_window,
+            commands::window::reset_window,
+            commands::window::get_window_count,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

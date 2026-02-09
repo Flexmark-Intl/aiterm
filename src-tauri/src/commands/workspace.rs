@@ -1,7 +1,7 @@
 use std::sync::Arc;
-use tauri::State;
+use tauri::{Emitter, State};
 
-use crate::state::{save_state, AppData, AppState, Pane, Preferences, Tab, Workspace};
+use crate::state::{save_state, AppState, Pane, Preferences, Tab, Workspace};
 use crate::state::persistence::app_data_slug;
 use crate::state::workspace::SplitDirection;
 
@@ -21,17 +21,19 @@ pub fn sync_state(state: State<'_, Arc<AppState>>) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn get_app_data(state: State<'_, Arc<AppState>>) -> AppData {
+pub fn get_app_data(state: State<'_, Arc<AppState>>) -> crate::state::AppData {
     state.app_data.read().clone()
 }
 
 #[tauri::command]
-pub fn create_workspace(state: State<'_, Arc<AppState>>, name: String) -> Result<Workspace, String> {
+pub fn create_workspace(window: tauri::Window, state: State<'_, Arc<AppState>>, name: String) -> Result<Workspace, String> {
+    let label = window.label().to_string();
     let workspace = Workspace::new(name);
     let data_clone = {
         let mut app_data = state.app_data.write();
-        app_data.workspaces.push(workspace.clone());
-        app_data.active_workspace_id = Some(workspace.id.clone());
+        let win = app_data.window_mut(&label).ok_or("Window not found")?;
+        win.workspaces.push(workspace.clone());
+        win.active_workspace_id = Some(workspace.id.clone());
         app_data.clone()
     };
     save_state(&data_clone)?;
@@ -39,13 +41,14 @@ pub fn create_workspace(state: State<'_, Arc<AppState>>, name: String) -> Result
 }
 
 #[tauri::command]
-pub fn delete_workspace(state: State<'_, Arc<AppState>>, workspace_id: String) -> Result<(), String> {
+pub fn delete_workspace(window: tauri::Window, state: State<'_, Arc<AppState>>, workspace_id: String) -> Result<(), String> {
+    let label = window.label().to_string();
     let data_clone = {
         let mut app_data = state.app_data.write();
-        app_data.workspaces.retain(|w| w.id != workspace_id);
-
-        if app_data.active_workspace_id.as_ref() == Some(&workspace_id) {
-            app_data.active_workspace_id = app_data.workspaces.first().map(|w| w.id.clone());
+        let win = app_data.window_mut(&label).ok_or("Window not found")?;
+        win.workspaces.retain(|w| w.id != workspace_id);
+        if win.active_workspace_id.as_ref() == Some(&workspace_id) {
+            win.active_workspace_id = win.workspaces.first().map(|w| w.id.clone());
         }
         app_data.clone()
     };
@@ -54,13 +57,16 @@ pub fn delete_workspace(state: State<'_, Arc<AppState>>, workspace_id: String) -
 
 #[tauri::command]
 pub fn rename_workspace(
+    window: tauri::Window,
     state: State<'_, Arc<AppState>>,
     workspace_id: String,
     name: String,
 ) -> Result<(), String> {
+    let label = window.label().to_string();
     let data_clone = {
         let mut app_data = state.app_data.write();
-        if let Some(workspace) = app_data.workspaces.iter_mut().find(|w| w.id == workspace_id) {
+        let win = app_data.window_mut(&label).ok_or("Window not found")?;
+        if let Some(workspace) = win.workspaces.iter_mut().find(|w| w.id == workspace_id) {
             workspace.name = name;
         }
         app_data.clone()
@@ -70,14 +76,15 @@ pub fn rename_workspace(
 
 #[tauri::command]
 pub fn split_pane(
+    window: tauri::Window,
     state: State<'_, Arc<AppState>>,
     workspace_id: String,
     target_pane_id: String,
     direction: SplitDirection,
     scrollback: Option<String>,
 ) -> Result<Pane, String> {
+    let label = window.label().to_string();
     let mut new_pane = Pane::new("Terminal".to_string());
-    // Pre-populate the new tab's scrollback so it's available on first render
     if let Some(ref sb) = scrollback {
         if let Some(tab) = new_pane.tabs.first_mut() {
             tab.scrollback = Some(sb.clone());
@@ -85,7 +92,8 @@ pub fn split_pane(
     }
     let data_clone = {
         let mut app_data = state.app_data.write();
-        if let Some(workspace) = app_data.workspaces.iter_mut().find(|w| w.id == workspace_id) {
+        let win = app_data.window_mut(&label).ok_or("Window not found")?;
+        if let Some(workspace) = win.workspaces.iter_mut().find(|w| w.id == workspace_id) {
             if let Some(ref root) = workspace.split_root {
                 workspace.split_root =
                     Some(root.split_pane(&target_pane_id, &new_pane.id, direction));
@@ -103,20 +111,20 @@ pub fn split_pane(
 
 #[tauri::command]
 pub fn delete_pane(
+    window: tauri::Window,
     state: State<'_, Arc<AppState>>,
     workspace_id: String,
     pane_id: String,
 ) -> Result<(), String> {
+    let label = window.label().to_string();
     let data_clone = {
         let mut app_data = state.app_data.write();
-        if let Some(workspace) = app_data.workspaces.iter_mut().find(|w| w.id == workspace_id) {
-            // Remove from split tree
+        let win = app_data.window_mut(&label).ok_or("Window not found")?;
+        if let Some(workspace) = win.workspaces.iter_mut().find(|w| w.id == workspace_id) {
             if let Some(ref root) = workspace.split_root {
                 workspace.split_root = root.remove_pane(&pane_id);
             }
-            // Remove from flat list
             workspace.panes.retain(|p| p.id != pane_id);
-
             if workspace.active_pane_id.as_ref() == Some(&pane_id) {
                 workspace.active_pane_id = workspace.panes.first().map(|p| p.id.clone());
             }
@@ -128,14 +136,17 @@ pub fn delete_pane(
 
 #[tauri::command]
 pub fn rename_pane(
+    window: tauri::Window,
     state: State<'_, Arc<AppState>>,
     workspace_id: String,
     pane_id: String,
     name: String,
 ) -> Result<(), String> {
+    let label = window.label().to_string();
     let data_clone = {
         let mut app_data = state.app_data.write();
-        if let Some(workspace) = app_data.workspaces.iter_mut().find(|w| w.id == workspace_id) {
+        let win = app_data.window_mut(&label).ok_or("Window not found")?;
+        if let Some(workspace) = win.workspaces.iter_mut().find(|w| w.id == workspace_id) {
             if let Some(pane) = workspace.panes.iter_mut().find(|p| p.id == pane_id) {
                 pane.name = name;
             }
@@ -147,15 +158,18 @@ pub fn rename_pane(
 
 #[tauri::command]
 pub fn create_tab(
+    window: tauri::Window,
     state: State<'_, Arc<AppState>>,
     workspace_id: String,
     pane_id: String,
     name: String,
 ) -> Result<Tab, String> {
+    let label = window.label().to_string();
     let tab = Tab::new(name);
     let data_clone = {
         let mut app_data = state.app_data.write();
-        if let Some(workspace) = app_data.workspaces.iter_mut().find(|w| w.id == workspace_id) {
+        let win = app_data.window_mut(&label).ok_or("Window not found")?;
+        if let Some(workspace) = win.workspaces.iter_mut().find(|w| w.id == workspace_id) {
             if let Some(pane) = workspace.panes.iter_mut().find(|p| p.id == pane_id) {
                 pane.tabs.push(tab.clone());
                 pane.active_tab_id = Some(tab.id.clone());
@@ -173,14 +187,17 @@ pub fn create_tab(
 
 #[tauri::command]
 pub fn delete_tab(
+    window: tauri::Window,
     state: State<'_, Arc<AppState>>,
     workspace_id: String,
     pane_id: String,
     tab_id: String,
 ) -> Result<(), String> {
+    let label = window.label().to_string();
     let data_clone = {
         let mut app_data = state.app_data.write();
-        if let Some(workspace) = app_data.workspaces.iter_mut().find(|w| w.id == workspace_id) {
+        let win = app_data.window_mut(&label).ok_or("Window not found")?;
+        if let Some(workspace) = win.workspaces.iter_mut().find(|w| w.id == workspace_id) {
             if let Some(pane) = workspace.panes.iter_mut().find(|p| p.id == pane_id) {
                 if pane.active_tab_id.as_ref() == Some(&tab_id) {
                     let old_index = pane.tabs.iter().position(|t| t.id == tab_id).unwrap_or(0);
@@ -203,6 +220,7 @@ pub fn delete_tab(
 
 #[tauri::command]
 pub fn rename_tab(
+    window: tauri::Window,
     state: State<'_, Arc<AppState>>,
     workspace_id: String,
     pane_id: String,
@@ -210,8 +228,10 @@ pub fn rename_tab(
     name: String,
     custom_name: Option<bool>,
 ) -> Result<(), String> {
+    let label = window.label().to_string();
     let mut app_data = state.app_data.write();
-    if let Some(workspace) = app_data.workspaces.iter_mut().find(|w| w.id == workspace_id) {
+    let win = app_data.window_mut(&label).ok_or("Window not found")?;
+    if let Some(workspace) = win.workspaces.iter_mut().find(|w| w.id == workspace_id) {
         if let Some(pane) = workspace.panes.iter_mut().find(|p| p.id == pane_id) {
             if let Some(tab) = pane.tabs.iter_mut().find(|t| t.id == tab_id) {
                 tab.name = name;
@@ -225,20 +245,25 @@ pub fn rename_tab(
 }
 
 #[tauri::command]
-pub fn set_active_workspace(state: State<'_, Arc<AppState>>, workspace_id: String) -> Result<(), String> {
+pub fn set_active_workspace(window: tauri::Window, state: State<'_, Arc<AppState>>, workspace_id: String) -> Result<(), String> {
+    let label = window.label().to_string();
     let mut app_data = state.app_data.write();
-    app_data.active_workspace_id = Some(workspace_id);
+    let win = app_data.window_mut(&label).ok_or("Window not found")?;
+    win.active_workspace_id = Some(workspace_id);
     Ok(())
 }
 
 #[tauri::command]
 pub fn set_active_pane(
+    window: tauri::Window,
     state: State<'_, Arc<AppState>>,
     workspace_id: String,
     pane_id: String,
 ) -> Result<(), String> {
+    let label = window.label().to_string();
     let mut app_data = state.app_data.write();
-    if let Some(workspace) = app_data.workspaces.iter_mut().find(|w| w.id == workspace_id) {
+    let win = app_data.window_mut(&label).ok_or("Window not found")?;
+    if let Some(workspace) = win.workspaces.iter_mut().find(|w| w.id == workspace_id) {
         workspace.active_pane_id = Some(pane_id);
     }
     Ok(())
@@ -246,13 +271,16 @@ pub fn set_active_pane(
 
 #[tauri::command]
 pub fn set_active_tab(
+    window: tauri::Window,
     state: State<'_, Arc<AppState>>,
     workspace_id: String,
     pane_id: String,
     tab_id: String,
 ) -> Result<(), String> {
+    let label = window.label().to_string();
     let mut app_data = state.app_data.write();
-    if let Some(workspace) = app_data.workspaces.iter_mut().find(|w| w.id == workspace_id) {
+    let win = app_data.window_mut(&label).ok_or("Window not found")?;
+    if let Some(workspace) = win.workspaces.iter_mut().find(|w| w.id == workspace_id) {
         if let Some(pane) = workspace.panes.iter_mut().find(|p| p.id == pane_id) {
             pane.active_tab_id = Some(tab_id);
         }
@@ -262,14 +290,17 @@ pub fn set_active_tab(
 
 #[tauri::command]
 pub fn set_tab_pty_id(
+    window: tauri::Window,
     state: State<'_, Arc<AppState>>,
     workspace_id: String,
     pane_id: String,
     tab_id: String,
     pty_id: String,
 ) -> Result<(), String> {
+    let label = window.label().to_string();
     let mut app_data = state.app_data.write();
-    if let Some(workspace) = app_data.workspaces.iter_mut().find(|w| w.id == workspace_id) {
+    let win = app_data.window_mut(&label).ok_or("Window not found")?;
+    if let Some(workspace) = win.workspaces.iter_mut().find(|w| w.id == workspace_id) {
         if let Some(pane) = workspace.panes.iter_mut().find(|p| p.id == pane_id) {
             if let Some(tab) = pane.tabs.iter_mut().find(|t| t.id == tab_id) {
                 tab.pty_id = Some(pty_id);
@@ -280,28 +311,35 @@ pub fn set_tab_pty_id(
 }
 
 #[tauri::command]
-pub fn set_sidebar_width(state: State<'_, Arc<AppState>>, width: u32) -> Result<(), String> {
+pub fn set_sidebar_width(window: tauri::Window, state: State<'_, Arc<AppState>>, width: u32) -> Result<(), String> {
+    let label = window.label().to_string();
     let mut app_data = state.app_data.write();
-    app_data.sidebar_width = width;
+    let win = app_data.window_mut(&label).ok_or("Window not found")?;
+    win.sidebar_width = width;
     Ok(())
 }
 
 #[tauri::command]
-pub fn set_sidebar_collapsed(state: State<'_, Arc<AppState>>, collapsed: bool) -> Result<(), String> {
+pub fn set_sidebar_collapsed(window: tauri::Window, state: State<'_, Arc<AppState>>, collapsed: bool) -> Result<(), String> {
+    let label = window.label().to_string();
     let mut app_data = state.app_data.write();
-    app_data.sidebar_collapsed = collapsed;
+    let win = app_data.window_mut(&label).ok_or("Window not found")?;
+    win.sidebar_collapsed = collapsed;
     Ok(())
 }
 
 #[tauri::command]
 pub fn set_split_ratio(
+    window: tauri::Window,
     state: State<'_, Arc<AppState>>,
     workspace_id: String,
     split_id: String,
     ratio: f64,
 ) -> Result<(), String> {
+    let label = window.label().to_string();
     let mut app_data = state.app_data.write();
-    if let Some(workspace) = app_data.workspaces.iter_mut().find(|w| w.id == workspace_id) {
+    let win = app_data.window_mut(&label).ok_or("Window not found")?;
+    if let Some(workspace) = win.workspaces.iter_mut().find(|w| w.id == workspace_id) {
         if let Some(ref root) = workspace.split_root {
             workspace.split_root = Some(root.set_ratio(&split_id, ratio.clamp(0.1, 0.9)));
         }
@@ -311,14 +349,17 @@ pub fn set_split_ratio(
 
 #[tauri::command]
 pub fn set_tab_scrollback(
+    window: tauri::Window,
     state: State<'_, Arc<AppState>>,
     workspace_id: String,
     pane_id: String,
     tab_id: String,
     scrollback: Option<String>,
 ) -> Result<(), String> {
+    let label = window.label().to_string();
     let mut app_data = state.app_data.write();
-    if let Some(workspace) = app_data.workspaces.iter_mut().find(|w| w.id == workspace_id) {
+    let win = app_data.window_mut(&label).ok_or("Window not found")?;
+    if let Some(workspace) = win.workspaces.iter_mut().find(|w| w.id == workspace_id) {
         if let Some(pane) = workspace.panes.iter_mut().find(|p| p.id == pane_id) {
             if let Some(tab) = pane.tabs.iter_mut().find(|t| t.id == tab_id) {
                 tab.scrollback = scrollback;
@@ -330,14 +371,17 @@ pub fn set_tab_scrollback(
 
 #[tauri::command]
 pub fn reorder_tabs(
+    window: tauri::Window,
     state: State<'_, Arc<AppState>>,
     workspace_id: String,
     pane_id: String,
     tab_ids: Vec<String>,
 ) -> Result<(), String> {
+    let label = window.label().to_string();
     let data_clone = {
         let mut app_data = state.app_data.write();
-        if let Some(workspace) = app_data.workspaces.iter_mut().find(|w| w.id == workspace_id) {
+        let win = app_data.window_mut(&label).ok_or("Window not found")?;
+        if let Some(workspace) = win.workspaces.iter_mut().find(|w| w.id == workspace_id) {
             if let Some(pane) = workspace.panes.iter_mut().find(|p| p.id == pane_id) {
                 let mut reordered = Vec::with_capacity(tab_ids.len());
                 for id in &tab_ids {
@@ -359,17 +403,21 @@ pub fn get_preferences(state: State<'_, Arc<AppState>>) -> Preferences {
 }
 
 #[tauri::command]
-pub fn set_preferences(state: State<'_, Arc<AppState>>, preferences: Preferences) -> Result<(), String> {
+pub fn set_preferences(app: tauri::AppHandle, state: State<'_, Arc<AppState>>, preferences: Preferences) -> Result<(), String> {
     let data_clone = {
         let mut app_data = state.app_data.write();
-        app_data.preferences = preferences;
+        app_data.preferences = preferences.clone();
         app_data.clone()
     };
-    save_state(&data_clone)
+    save_state(&data_clone)?;
+    // Broadcast to all windows so other windows pick up the change
+    let _ = app.emit("preferences-changed", &preferences);
+    Ok(())
 }
 
 #[tauri::command]
 pub fn set_tab_restore_context(
+    window: tauri::Window,
     state: State<'_, Arc<AppState>>,
     workspace_id: String,
     pane_id: String,
@@ -378,8 +426,10 @@ pub fn set_tab_restore_context(
     ssh_command: Option<String>,
     remote_cwd: Option<String>,
 ) -> Result<(), String> {
+    let label = window.label().to_string();
     let mut app_data = state.app_data.write();
-    if let Some(workspace) = app_data.workspaces.iter_mut().find(|w| w.id == workspace_id) {
+    let win = app_data.window_mut(&label).ok_or("Window not found")?;
+    if let Some(workspace) = win.workspaces.iter_mut().find(|w| w.id == workspace_id) {
         if let Some(pane) = workspace.panes.iter_mut().find(|p| p.id == pane_id) {
             if let Some(tab) = pane.tabs.iter_mut().find(|t| t.id == tab_id) {
                 tab.restore_cwd = cwd;
@@ -388,7 +438,6 @@ pub fn set_tab_restore_context(
             }
         }
     }
-    // Don't save_state here — caller will sync_state after all tabs are updated
     Ok(())
 }
 
@@ -397,7 +446,6 @@ pub fn copy_tab_history(source_tab_id: String, dest_tab_id: String) -> Result<()
     let data_dir = dirs::data_dir().ok_or("No data directory")?;
     let history_dir = data_dir.join(app_data_slug()).join("history");
 
-    // Sanitize tab IDs the same way as spawn_pty
     let safe_source = source_tab_id.replace(['/', '\\', '.'], "");
     let safe_dest = dest_tab_id.replace(['/', '\\', '.'], "");
 

@@ -1,7 +1,7 @@
 import type { Terminal } from '@xterm/xterm';
 import type { SerializeAddon } from '@xterm/addon-serialize';
 import type { SearchAddon } from '@xterm/addon-search';
-import { setTabScrollback } from '$lib/tauri/commands';
+import { setTabScrollback, killTerminal } from '$lib/tauri/commands';
 import { error as logError } from '@tauri-apps/plugin-log';
 
 /**
@@ -166,6 +166,13 @@ function createTerminalsStore() {
       if (instance && query) {
         instance.searchAddon.findPrevious(query);
       }
+    },
+
+    async killAllTerminals(): Promise<void> {
+      const ptyIds = [...instances.values()].map(i => i.ptyId);
+      await Promise.allSettled(
+        ptyIds.map(id => killTerminal(id).catch(e => logError(`killAll: ${id} failed: ${e}`)))
+      );
     },
 
     async saveAllScrollback(): Promise<void> {

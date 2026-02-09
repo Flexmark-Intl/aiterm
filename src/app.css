@@ -13,6 +13,10 @@
   --cyan: #7dcfff;
   --magenta: #bb9af7;
 
+  --tab-border: transparent;
+  --tab-border-active: transparent;
+  --tab-border-activity: transparent;
+
   --header-height: 38px;
   --tab-height: 32px;
 }

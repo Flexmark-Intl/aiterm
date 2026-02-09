@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { modLabel, altLabel } from '$lib/utils/platform';
+
   interface Props {
     open: boolean;
     onclose: () => void;
@@ -37,34 +39,41 @@
       <div class="content">
         <section>
           <h3>Tabs</h3>
-          <div class="shortcut"><kbd>Cmd</kbd> + <kbd>T</kbd> <span>New tab</span></div>
-          <div class="shortcut"><kbd>Cmd</kbd> + <kbd>W</kbd> <span>Close tab</span></div>
-          <div class="shortcut"><kbd>Cmd</kbd> + <kbd>1-9</kbd> <span>Switch to tab</span></div>
-          <div class="shortcut"><kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>[</kbd> <span>Previous tab</span></div>
-          <div class="shortcut"><kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>]</kbd> <span>Next tab</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>T</kbd> <span>New tab</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>W</kbd> <span>Close tab</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>1-9</kbd> <span>Switch to tab</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>[</kbd> <span>Previous tab</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>]</kbd> <span>Next tab</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>T</kbd> <span>Duplicate tab</span></div>
         </section>
 
         <section>
           <h3>Panes</h3>
-          <div class="shortcut"><kbd>Cmd</kbd> + <kbd>D</kbd> <span>Split right</span></div>
-          <div class="shortcut"><kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>D</kbd> <span>Split down</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>D</kbd> <span>Split right</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>D</kbd> <span>Split down</span></div>
+        </section>
+
+        <section>
+          <h3>Windows</h3>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>N</kbd> <span>New window</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>N</kbd> <span>Duplicate window</span></div>
         </section>
 
         <section>
           <h3>Workspaces</h3>
-          <div class="shortcut"><kbd>Cmd</kbd> + <kbd>N</kbd> <span>New workspace</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>{altLabel}</kbd> + <kbd>N</kbd> <span>New workspace</span></div>
         </section>
 
         <section>
           <h3>General</h3>
-          <div class="shortcut"><kbd>Cmd</kbd> + <kbd>F</kbd> <span>Find in terminal</span></div>
-          <div class="shortcut"><kbd>Cmd</kbd> + <kbd>K</kbd> <span>Clear terminal + scrollback</span></div>
-          <div class="shortcut"><kbd>Cmd</kbd> + <kbd>+</kbd> <span>Zoom in</span></div>
-          <div class="shortcut"><kbd>Cmd</kbd> + <kbd>-</kbd> <span>Zoom out</span></div>
-          <div class="shortcut"><kbd>Cmd</kbd> + <kbd>0</kbd> <span>Reset zoom</span></div>
-          <div class="shortcut"><kbd>Cmd</kbd> + <kbd>,</kbd> <span>Preferences</span></div>
-          <div class="shortcut"><kbd>Cmd</kbd> + <kbd>/</kbd> <span>Show this help</span></div>
-          <div class="shortcut"><kbd>Cmd</kbd> + <kbd>Q</kbd> <span>Quit</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>F</kbd> <span>Find in terminal</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>K</kbd> <span>Clear terminal + scrollback</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>+</kbd> <span>Zoom in</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>-</kbd> <span>Zoom out</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>0</kbd> <span>Reset zoom</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>,</kbd> <span>Preferences</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>/</kbd> <span>Show this help</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Q</kbd> <span>Quit</span></div>
         </section>
 
         <section>

@@ -3,6 +3,7 @@
   import { onMount } from 'svelte';
   import { invoke } from '@tauri-apps/api/core';
   import { getCurrentWindow } from '@tauri-apps/api/window';
+  import { listen } from '@tauri-apps/api/event';
   import { workspacesStore } from '$lib/stores/workspaces.svelte';
   import { terminalsStore } from '$lib/stores/terminals.svelte';
   import HelpModal from '$lib/components/HelpModal.svelte';
@@ -11,6 +12,9 @@
   import { getTheme, applyUiTheme } from '$lib/themes';
   import { error as logError, info as logInfo } from '@tauri-apps/plugin-log';
   import { attachConsole } from '@tauri-apps/plugin-log';
+  import * as commands from '$lib/tauri/commands';
+  import type { Preferences } from '$lib/tauri/types';
+  import { isModKey } from '$lib/utils/platform';
 
   interface Props {
     children: import('svelte').Snippet;
@@ -34,32 +38,77 @@
     // Load preferences
     preferencesStore.load().catch((e: unknown) => logError(`Failed to load preferences: ${e}`));
 
-    // Handle window close - save all scrollback before closing.
+    // Listen for cross-window preference changes
+    let unlistenPrefs: (() => void) | undefined;
+    listen<Preferences>('preferences-changed', (event) => {
+      preferencesStore.applyFromBackend(event.payload);
+    }).then(unlisten => { unlistenPrefs = unlisten; });
+
+    // Listen for app-wide quit (Cmd+Q / Quit menu).
+    // All windows save scrollback, then exit — no window data is removed.
+    let unlistenQuit: (() => void) | undefined;
+    listen('quit-requested', async () => {
+      logInfo('quit-requested — saving scrollback before exit');
+      await terminalsStore.saveAllScrollback();
+      try {
+        await invoke('sync_state');
+      } catch (e) {
+        logError(`sync_state failed: ${e}`);
+      }
+      await invoke('exit_app');
+    }).then(unlisten => { unlistenQuit = unlisten; });
+
+    // Handle single-window close (traffic light / Cmd+W on last tab+pane).
     const appWindow = getCurrentWindow();
     let unlistenClose: (() => void) | undefined;
 
     (async () => {
       unlistenClose = await appWindow.onCloseRequested(async (event) => {
         event.preventDefault();
-        logInfo('onCloseRequested fired — saving state before shutdown');
+        logInfo('onCloseRequested fired — closing window');
 
-        await terminalsStore.saveAllScrollback();
-        logInfo('Scrollback saved');
+        const count = await commands.getWindowCount();
 
-        try {
-          await invoke('sync_state');
-          logInfo('State synced');
-        } catch (e) {
-          logError(`sync_state failed: ${e}`);
+        if (count <= 1) {
+          // Last window: kill terminals and show empty state
+          logInfo('Last window — showing empty state');
+          await terminalsStore.killAllTerminals();
+          await commands.resetWindow();
+          workspacesStore.reset();
+        } else {
+          // Not last window: kill PTYs, remove window data, destroy
+          logInfo('Closing window (not last)');
+          await terminalsStore.killAllTerminals();
+          await commands.closeWindow();
+          try {
+            await invoke('sync_state');
+          } catch (e) {
+            logError(`sync_state failed: ${e}`);
+          }
+          try {
+            await appWindow.destroy();
+          } catch (e) {
+            logError(`destroy() failed: ${e}`);
+          }
         }
-
-        logInfo('Shutdown complete — exiting app');
-        await invoke('exit_app');
       });
     })();
 
     function handleKeydown(e: KeyboardEvent) {
-      const isMeta = e.metaKey;
+      const isMeta = isModKey(e);
+
+      // Cmd+Shift+T - Duplicate tab
+      if (isMeta && e.shiftKey && e.key.toLowerCase() === 't') {
+        e.preventDefault();
+        e.stopPropagation();
+        const ws = workspacesStore.activeWorkspace;
+        const pane = workspacesStore.activePane;
+        const tab = workspacesStore.activeTab;
+        if (ws && pane && tab) {
+          workspacesStore.duplicateTab(ws.id, pane.id, tab.id);
+        }
+        return;
+      }
 
       // Cmd+T - New tab
       if (isMeta && !e.shiftKey && e.key.toLowerCase() === 't') {
@@ -100,8 +149,24 @@
         return;
       }
 
-      // Cmd+N - New workspace
-      if (isMeta && e.key.toLowerCase() === 'n') {
+      // Cmd+Shift+N - Duplicate window
+      if (isMeta && e.shiftKey && e.key.toLowerCase() === 'n') {
+        e.preventDefault();
+        e.stopPropagation();
+        workspacesStore.duplicateWindow();
+        return;
+      }
+
+      // Cmd+N - New window
+      if (isMeta && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'n') {
+        e.preventDefault();
+        e.stopPropagation();
+        commands.createNewWindow();
+        return;
+      }
+
+      // Cmd+Opt+N - New workspace (use e.code because Opt+N produces ˜ on macOS)
+      if (isMeta && e.altKey && e.code === 'KeyN') {
         e.preventDefault();
         e.stopPropagation();
         const count = workspacesStore.workspaces.length + 1;
@@ -121,6 +186,9 @@
             workspacesStore.deleteTab(ws.id, pane.id, tab.id);
           } else if (ws.panes.length > 1) {
             workspacesStore.deletePane(ws.id, pane.id);
+          } else {
+            // Last tab in last pane — close tab, pane shows empty state
+            workspacesStore.deleteTab(ws.id, pane.id, tab.id);
           }
         }
         return;
@@ -245,6 +313,8 @@
     return () => {
       window.removeEventListener('keydown', handleKeydown, true);
       unlistenClose?.();
+      unlistenQuit?.();
+      unlistenPrefs?.();
       detachConsole?.();
     };
   });

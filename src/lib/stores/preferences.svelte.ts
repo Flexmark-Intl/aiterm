@@ -144,6 +144,24 @@ function createPreferencesStore() {
       await this.save();
     },
 
+    applyFromBackend(prefs: Preferences) {
+      fontSize = prefs.font_size;
+      fontFamily = prefs.font_family;
+      cursorStyle = prefs.cursor_style;
+      cursorBlink = prefs.cursor_blink;
+      autoSaveInterval = prefs.auto_save_interval;
+      scrollbackLimit = prefs.scrollback_limit;
+      promptPatterns = prefs.prompt_patterns;
+      cloneCwd = prefs.clone_cwd;
+      cloneScrollback = prefs.clone_scrollback;
+      cloneSsh = prefs.clone_ssh;
+      cloneHistory = prefs.clone_history;
+      theme = prefs.theme;
+      shellTitleIntegration = prefs.shell_title_integration;
+      customThemes = prefs.custom_themes ?? [];
+      restoreSession = prefs.restore_session ?? false;
+    },
+
     async save() {
       const prefs: Preferences = {
         font_size: fontSize,

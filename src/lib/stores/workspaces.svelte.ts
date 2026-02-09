@@ -44,6 +44,36 @@ function updateRatioInTree(node: SplitNode, splitId: string, ratio: number): Spl
   };
 }
 
+/**
+ * Compute a deduplicated name for a duplicated custom-named tab.
+ * Strips trailing " N" to get the base, finds the highest existing index
+ * among all tab names in the workspace, and returns "base N+1".
+ */
+function nextDuplicateName(sourceName: string, existingNames: string[]): string {
+  const baseMatch = sourceName.match(/^(.+?)\s+(\d+)$/);
+  const baseName = baseMatch ? baseMatch[1] : sourceName;
+
+  let maxIndex = 0;
+  for (const name of existingNames) {
+    if (name === baseName) {
+      maxIndex = Math.max(maxIndex, 1);
+    } else {
+      const m = name.match(/^(.+?)\s+(\d+)$/);
+      if (m && m[1] === baseName) {
+        maxIndex = Math.max(maxIndex, parseInt(m[2], 10));
+      }
+    }
+  }
+
+  if (maxIndex === 0) return sourceName;
+  return `${baseName} ${maxIndex + 1}`;
+}
+
+/** Collect all tab names across all panes in a workspace. */
+function allTabNames(ws: Workspace): string[] {
+  return ws.panes.flatMap(p => p.tabs.map(t => t.name));
+}
+
 function createWorkspacesStore() {
   let workspaces = $state<Workspace[]>([]);
   let activeWorkspaceId = $state<string | null>(null);
@@ -73,8 +103,13 @@ function createWorkspacesStore() {
     get sidebarWidth() { return sidebarWidth; },
     get sidebarCollapsed() { return sidebarCollapsed; },
 
+    reset() {
+      workspaces = [];
+      activeWorkspaceId = null;
+    },
+
     async load() {
-      const data = await commands.getAppData();
+      const data = await commands.getWindowData();
       workspaces = data.workspaces;
       activeWorkspaceId = data.active_workspace_id;
       sidebarWidth = data.sidebar_width || 180;
@@ -129,7 +164,7 @@ function createWorkspacesStore() {
     async splitPane(workspaceId: string, targetPaneId: string, direction: SplitDirection) {
       const pane = await commands.splitPane(workspaceId, targetPaneId, direction);
       // Reload workspace to get updated split_root from backend
-      const data = await commands.getAppData();
+      const data = await commands.getWindowData();
       const ws = data.workspaces.find(w => w.id === workspaceId);
       if (ws) {
         workspaces = workspaces.map(w => w.id === workspaceId ? ws : w);
@@ -178,7 +213,10 @@ function createWorkspacesStore() {
       const sourceTab = sourcePane?.tabs.find(t => t.id === sourceTabId);
       const newTabId = newPane.tabs[0]?.id;
       if (sourceTab && newTabId) {
-        await commands.renameTab(workspaceId, newPane.id, newTabId, sourceTab.name, sourceTab.custom_name);
+        const tabName = sourceTab.custom_name && ws_current
+          ? nextDuplicateName(sourceTab.name, allTabNames(ws_current))
+          : sourceTab.name;
+        await commands.renameTab(workspaceId, newPane.id, newTabId, tabName, sourceTab.custom_name);
       }
       if (newTabId) {
         if (preferencesStore.cloneHistory) {
@@ -214,7 +252,7 @@ function createWorkspacesStore() {
       }
 
       // 5. Reload workspace to get updated split_root
-      const data = await commands.getAppData();
+      const data = await commands.getWindowData();
       const ws = data.workspaces.find(w => w.id === workspaceId);
       if (ws) {
         workspaces = workspaces.map(w => w.id === workspaceId ? ws : w);
@@ -225,7 +263,7 @@ function createWorkspacesStore() {
     async deletePane(workspaceId: string, paneId: string) {
       await commands.deletePane(workspaceId, paneId);
       // Reload workspace to get updated split_root from backend
-      const data = await commands.getAppData();
+      const data = await commands.getWindowData();
       const ws = data.workspaces.find(w => w.id === workspaceId);
       if (ws) {
         workspaces = workspaces.map(w => w.id === workspaceId ? ws : w);
@@ -479,7 +517,10 @@ function createWorkspacesStore() {
       const targetPane = targetWs.panes[0];
       const previousActiveTabId = targetPane.active_tab_id;
 
-      const newTab = await commands.createTab(targetWsId, targetPane.id, sourceTab.name);
+      const tabName = sourceTab.custom_name
+        ? nextDuplicateName(sourceTab.name, allTabNames(targetWs))
+        : sourceTab.name;
+      const newTab = await commands.createTab(targetWsId, targetPane.id, tabName);
 
       // Restore the previously active tab (createTab sets the new one as active)
       if (previousActiveTabId) {
@@ -493,7 +534,7 @@ function createWorkspacesStore() {
 
       // Copy custom name
       if (sourceTab.custom_name) {
-        await commands.renameTab(targetWsId, targetPane.id, newTab.id, sourceTab.name, true);
+        await commands.renameTab(targetWsId, targetPane.id, newTab.id, tabName, true);
       }
 
       // Copy history
@@ -512,7 +553,7 @@ function createWorkspacesStore() {
       activityStore.markActive(newTab.id);
 
       // Reload all workspaces
-      const data = await commands.getAppData();
+      const data = await commands.getWindowData();
       workspaces = data.workspaces;
     },
 
@@ -545,8 +586,95 @@ function createWorkspacesStore() {
       }
 
       // Reload all workspaces to reflect deletions
-      const data = await commands.getAppData();
+      const data = await commands.getWindowData();
       workspaces = data.workspaces;
+    },
+
+    async duplicateTab(workspaceId: string, paneId: string, tabId: string) {
+      const ws = workspaces.find(w => w.id === workspaceId);
+      const pane = ws?.panes.find(p => p.id === paneId);
+      const sourceTab = pane?.tabs.find(t => t.id === tabId);
+      if (!sourceTab) return;
+
+      // 1. Gather context from source terminal
+      const { instance, scrollback, cwd, sshCommand } = await this._gatherTabContext(tabId);
+
+      // 2. Compute duplicate name with incrementing index for custom names
+      const dupName = sourceTab.custom_name
+        ? nextDuplicateName(sourceTab.name, allTabNames(ws!))
+        : sourceTab.name;
+
+      // 3. Create new tab (appended at end)
+      const newTab = await commands.createTab(workspaceId, paneId, dupName);
+
+      // 4. Copy custom name if source had one
+      if (sourceTab.custom_name) {
+        await commands.renameTab(workspaceId, paneId, newTab.id, dupName, true);
+      }
+
+      // 5. Set scrollback
+      if (scrollback) {
+        await commands.setTabScrollback(workspaceId, paneId, newTab.id, scrollback);
+      }
+
+      // 6. Copy history
+      if (preferencesStore.cloneHistory) {
+        try {
+          await commands.copyTabHistory(tabId, newTab.id);
+        } catch (e) {
+          logError(`Failed to copy tab history: ${e}`);
+        }
+      }
+
+      // 7. Store split context for the new TerminalPane to consume on mount
+      this._storeSplitContext(tabId, newTab.id, cwd, sshCommand, instance);
+
+      // 8. Reorder to place new tab right after source
+      const currentIds = pane!.tabs.map(t => t.id);
+      const sourceIndex = currentIds.indexOf(tabId);
+      // newTab.id was appended at end by createTab; move it after source
+      const reordered = currentIds.filter(id => id !== newTab.id);
+      reordered.splice(sourceIndex + 1, 0, newTab.id);
+      await commands.reorderTabs(workspaceId, paneId, reordered);
+
+      // 9. Reload workspace state
+      const data = await commands.getWindowData();
+      const updatedWs = data.workspaces.find(w => w.id === workspaceId);
+      if (updatedWs) {
+        workspaces = workspaces.map(w => w.id === workspaceId ? updatedWs : w);
+      }
+    },
+
+    async duplicateWindow() {
+      // Gather context for ALL terminals in current window
+      const tabContexts: commands.TabContext[] = [];
+
+      for (const ws of workspaces) {
+        for (const pane of ws.panes) {
+          for (const tab of pane.tabs) {
+            const ctx = await this._gatherTabContext(tab.id);
+
+            // Also detect remote cwd
+            let remoteCwd: string | null = null;
+            if (ctx.sshCommand && ctx.instance) {
+              const osc7Cwd = terminalsStore.getOsc(tab.id)?.cwd ?? null;
+              const isOsc7Stale = osc7Cwd === ctx.cwd;
+              const osc7RemoteCwd = (osc7Cwd && !isOsc7Stale) ? osc7Cwd : null;
+              remoteCwd = osc7RemoteCwd ?? extractRemoteCwd(ctx.instance.terminal);
+            }
+
+            tabContexts.push({
+              tab_id: tab.id,
+              scrollback: ctx.scrollback,
+              cwd: ctx.cwd,
+              ssh_command: ctx.sshCommand,
+              remote_cwd: remoteCwd,
+            });
+          }
+        }
+      }
+
+      await commands.duplicateWindow(tabContexts);
     }
   };
 }

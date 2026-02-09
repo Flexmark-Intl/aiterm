@@ -3,6 +3,7 @@
   import type { CursorStyle } from '$lib/tauri/types';
   import { builtinThemes, getTheme, isBuiltinTheme } from '$lib/themes';
   import ThemeEditor from '$lib/components/ThemeEditor.svelte';
+  import { modLabel } from '$lib/utils/platform';
 
   interface Props {
     open: boolean;
@@ -325,7 +326,7 @@
           {:else if activeSection === 'panels'}
             <h3 class="section-heading">Duplication</h3>
             <p class="section-desc">
-              What to clone when splitting a pane (<kbd>Cmd+D</kbd>).
+              What to clone when splitting a pane (<kbd>{modLabel}+D</kbd>).
             </p>
 
             <div class="setting">

@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { AppData, Pane, Preferences, SplitDirection, Tab, Workspace } from './types';
+import type { AppData, Pane, Preferences, SplitDirection, Tab, WindowData, Workspace } from './types';
 
 // Terminal commands
 export async function spawnTerminal(ptyId: string, tabId: string, cols: number, rows: number, cwd?: string | null): Promise<void> {
@@ -160,4 +160,37 @@ export async function setTabRestoreContext(
   remoteCwd: string | null,
 ): Promise<void> {
   return invoke('set_tab_restore_context', { workspaceId, paneId, tabId, cwd, sshCommand, remoteCwd });
+}
+
+// Window commands
+export async function getWindowData(): Promise<WindowData> {
+  return invoke('get_window_data');
+}
+
+export async function createNewWindow(): Promise<string> {
+  return invoke('create_window');
+}
+
+export interface TabContext {
+  tab_id: string;
+  scrollback: string | null;
+  cwd: string | null;
+  ssh_command: string | null;
+  remote_cwd: string | null;
+}
+
+export async function duplicateWindow(tabContexts: TabContext[]): Promise<string> {
+  return invoke('duplicate_window', { tabContexts });
+}
+
+export async function closeWindow(): Promise<void> {
+  return invoke('close_window');
+}
+
+export async function resetWindow(): Promise<void> {
+  return invoke('reset_window');
+}
+
+export async function getWindowCount(): Promise<number> {
+  return invoke('get_window_count');
 }

@@ -199,19 +199,58 @@ pub struct Workspace {
     pub pane_sizes: Option<PaneSizes>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct AppData {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WindowData {
+    pub id: String,
+    pub label: String,
     pub workspaces: Vec<Workspace>,
     pub active_workspace_id: Option<String>,
-    // Old field kept for migration deserialization only
-    #[serde(default, skip_serializing)]
-    pub layout: Option<Layout>,
     #[serde(default = "default_sidebar_width")]
     pub sidebar_width: u32,
     #[serde(default)]
     pub sidebar_collapsed: bool,
+}
+
+impl WindowData {
+    pub fn new(label: String) -> Self {
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            label,
+            workspaces: Vec::new(),
+            active_workspace_id: None,
+            sidebar_width: default_sidebar_width(),
+            sidebar_collapsed: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AppData {
+    #[serde(default)]
+    pub windows: Vec<WindowData>,
+    // Old fields kept for migration deserialization only
+    #[serde(default, skip_serializing)]
+    pub workspaces: Option<Vec<Workspace>>,
+    #[serde(default, skip_serializing)]
+    pub active_workspace_id: Option<String>,
+    #[serde(default, skip_serializing)]
+    pub layout: Option<Layout>,
+    #[serde(default, skip_serializing)]
+    pub sidebar_width: Option<u32>,
+    #[serde(default, skip_serializing)]
+    pub sidebar_collapsed: Option<bool>,
     #[serde(default)]
     pub preferences: Preferences,
+}
+
+impl AppData {
+    pub fn window(&self, label: &str) -> Option<&WindowData> {
+        self.windows.iter().find(|w| w.label == label)
+    }
+
+    pub fn window_mut(&mut self, label: &str) -> Option<&mut WindowData> {
+        self.windows.iter_mut().find(|w| w.label == label)
+    }
 }
 
 fn default_sidebar_width() -> u32 {

@@ -11,6 +11,9 @@ export interface UiColors {
   yellow: string;
   cyan: string;
   magenta: string;
+  tab_border: string;
+  tab_border_active: string;
+  tab_border_activity: string;
 }
 
 export interface TerminalColors {
@@ -62,6 +65,9 @@ export const builtinThemes: Theme[] = [
       yellow: '#e0af68',
       cyan: '#7dcfff',
       magenta: '#bb9af7',
+      tab_border: 'transparent',
+      tab_border_active: 'transparent',
+      tab_border_activity: 'transparent',
     },
     terminal: {
       background: '#1a1b26',
@@ -104,6 +110,9 @@ export const builtinThemes: Theme[] = [
       yellow: '#f1fa8c',
       cyan: '#8be9fd',
       magenta: '#ff79c6',
+      tab_border: 'transparent',
+      tab_border_active: 'transparent',
+      tab_border_activity: 'transparent',
     },
     terminal: {
       background: '#282a36',
@@ -146,6 +155,9 @@ export const builtinThemes: Theme[] = [
       yellow: '#b58900',
       cyan: '#2aa198',
       magenta: '#d33682',
+      tab_border: 'transparent',
+      tab_border_active: 'transparent',
+      tab_border_activity: 'transparent',
     },
     terminal: {
       background: '#002b36',
@@ -188,6 +200,9 @@ export const builtinThemes: Theme[] = [
       yellow: '#b58900',
       cyan: '#2aa198',
       magenta: '#d33682',
+      tab_border: 'transparent',
+      tab_border_active: 'transparent',
+      tab_border_activity: 'transparent',
     },
     terminal: {
       background: '#fdf6e3',
@@ -230,6 +245,9 @@ export const builtinThemes: Theme[] = [
       yellow: '#ebcb8b',
       cyan: '#88c0d0',
       magenta: '#b48ead',
+      tab_border: 'transparent',
+      tab_border_active: 'transparent',
+      tab_border_activity: 'transparent',
     },
     terminal: {
       background: '#2e3440',
@@ -272,6 +290,9 @@ export const builtinThemes: Theme[] = [
       yellow: '#fabd2f',
       cyan: '#8ec07c',
       magenta: '#d3869b',
+      tab_border: 'transparent',
+      tab_border_active: 'transparent',
+      tab_border_activity: 'transparent',
     },
     terminal: {
       background: '#282828',
@@ -314,6 +335,9 @@ export const builtinThemes: Theme[] = [
       yellow: '#e6db74',
       cyan: '#66d9ef',
       magenta: '#ae81ff',
+      tab_border: 'transparent',
+      tab_border_active: 'transparent',
+      tab_border_activity: 'transparent',
     },
     terminal: {
       background: '#272822',
@@ -356,6 +380,9 @@ export const builtinThemes: Theme[] = [
       yellow: '#f9e2af',
       cyan: '#89dceb',
       magenta: '#cba6f7',
+      tab_border: 'transparent',
+      tab_border_active: 'transparent',
+      tab_border_activity: 'transparent',
     },
     terminal: {
       background: '#1e1e2e',
@@ -398,6 +425,9 @@ export const builtinThemes: Theme[] = [
       yellow: '#e5c07b',
       cyan: '#56b6c2',
       magenta: '#c678dd',
+      tab_border: 'transparent',
+      tab_border_active: 'transparent',
+      tab_border_activity: 'transparent',
     },
     terminal: {
       background: '#282c34',
@@ -440,6 +470,9 @@ export const builtinThemes: Theme[] = [
       yellow: '#ffd60a',
       cyan: '#64d2ff',
       magenta: '#bf5af2',
+      tab_border: '#3a3a3a',
+      tab_border_active: '#2997ff',
+      tab_border_activity: '#30d158',
     },
     terminal: {
       background: '#1e1e1e',
@@ -495,4 +528,7 @@ export function applyUiTheme(ui: UiColors): void {
   root.style.setProperty('--yellow', ui.yellow);
   root.style.setProperty('--cyan', ui.cyan);
   root.style.setProperty('--magenta', ui.magenta);
+  root.style.setProperty('--tab-border', ui.tab_border);
+  root.style.setProperty('--tab-border-active', ui.tab_border_active);
+  root.style.setProperty('--tab-border-activity', ui.tab_border_activity);
 }

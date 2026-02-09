@@ -18,6 +18,7 @@
   import { getTheme } from '$lib/themes';
   import { getCompiledPatterns } from '$lib/utils/promptPattern';
   import { error as logError } from '@tauri-apps/plugin-log';
+  import { isModKey, modSymbol } from '$lib/utils/platform';
 
   interface Props {
     workspaceId: string;
@@ -276,7 +277,7 @@
     terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
       if (e.type !== 'keydown') return true;
 
-      if (e.metaKey && e.key === 'c') {
+      if (isModKey(e) && e.key === 'c') {
         e.preventDefault();
         if (terminal.hasSelection()) {
           clipboardWriteText(terminal.getSelection()).catch(e => logError(String(e)));
@@ -287,7 +288,7 @@
         return false;
       }
 
-      if (e.metaKey && e.key === 'v') {
+      if (isModKey(e) && e.key === 'v') {
         e.preventDefault();
         pasteFromClipboard().catch(e => logError(String(e)));
         return false;
@@ -489,7 +490,7 @@
     return [
       {
         label: 'Copy',
-        shortcut: '⌘C',
+        shortcut: `${modSymbol}C`,
         disabled: !hasSelection,
         action: async () => {
           const text = terminal.getSelection();
@@ -498,12 +499,12 @@
       },
       {
         label: 'Paste',
-        shortcut: '⌘V',
+        shortcut: `${modSymbol}V`,
         action: () => pasteFromClipboard(),
       },
       {
         label: 'Select All',
-        shortcut: '⌘A',
+        shortcut: `${modSymbol}A`,
         action: () => {
           terminal.selectAll();
         },
@@ -511,7 +512,7 @@
       { label: '', separator: true, action: () => {} },
       {
         label: 'Clear',
-        shortcut: '⌘K',
+        shortcut: `${modSymbol}K`,
         action: () => {
           terminalsStore.clearTerminal(tabId);
         },

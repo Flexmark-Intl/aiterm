@@ -61,10 +61,16 @@ export interface Preferences {
   restore_session: boolean;
 }
 
-export interface AppData {
+export interface WindowData {
+  id: string;
+  label: string;
   workspaces: Workspace[];
   active_workspace_id: string | null;
   sidebar_width: number;
   sidebar_collapsed: boolean;
+}
+
+export interface AppData {
+  windows: WindowData[];
   preferences: Preferences;
 }

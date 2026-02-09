@@ -5,6 +5,7 @@
   import SplitContainer from '$lib/components/pane/SplitContainer.svelte';
   import TerminalPane from '$lib/components/terminal/TerminalPane.svelte';
   import Resizer from '$lib/components/Resizer.svelte';
+  import { modLabel, modSymbol, altLabel } from '$lib/utils/platform';
 
   let loading = $state(true);
 
@@ -41,7 +42,7 @@
         <Resizer direction="horizontal" onresize={handleSidebarResize} onresizeend={handleSidebarResizeEnd} />
       </div>
       {#if workspacesStore.sidebarCollapsed}
-        <button class="sidebar-expand" onclick={() => workspacesStore.toggleSidebar()} title="Expand sidebar (⌘B)">
+        <button class="sidebar-expand" onclick={() => workspacesStore.toggleSidebar()} title="Expand sidebar ({modSymbol}B)">
           <span class="expand-icon">&#x203A;</span>
         </button>
       {/if}
@@ -78,7 +79,7 @@
         {:else}
           <div class="empty-state">
             <p>No workspace selected</p>
-            <p>Press <kbd>Cmd+N</kbd> to create a new workspace</p>
+            <p>Press <kbd>{modLabel}+{altLabel}+N</kbd> to create a new workspace</p>
           </div>
         {/if}
       </main>

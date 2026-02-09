@@ -4,6 +4,7 @@
   import { workspacesStore } from '$lib/stores/workspaces.svelte';
   import TerminalTabs from '$lib/components/terminal/TerminalTabs.svelte';
   import SearchBar from '$lib/components/terminal/SearchBar.svelte';
+  import { modLabel } from '$lib/utils/platform';
 
   interface Props {
     workspaceId: string;
@@ -54,6 +55,10 @@
     }
   }
 
+  async function handleNewTerminal() {
+    await workspacesStore.createTab(workspaceId, pane.id, 'Terminal 1');
+  }
+
   async function handleClosePane(e: MouseEvent) {
     e.stopPropagation();
     const ws = workspacesStore.activeWorkspace;
@@ -99,20 +104,30 @@
     </div>
   {/if}
 
-  <TerminalTabs {workspaceId} {pane} />
+  {#if pane.tabs.length > 0}
+    <TerminalTabs {workspaceId} {pane} />
 
-  <div class="terminal-area">
-    {#if pane.active_tab_id}
-      <SearchBar tabId={pane.active_tab_id} />
-    {/if}
-    {#each pane.tabs as tab (tab.id)}
-      <div
-        class="terminal-slot"
-        class:hidden-tab={tab.id !== pane.active_tab_id}
-        data-terminal-slot={tab.id}
-      ></div>
-    {/each}
-  </div>
+    <div class="terminal-area">
+      {#if pane.active_tab_id}
+        <SearchBar tabId={pane.active_tab_id} />
+      {/if}
+      {#each pane.tabs as tab (tab.id)}
+        <div
+          class="terminal-slot"
+          class:hidden-tab={tab.id !== pane.active_tab_id}
+          data-terminal-slot={tab.id}
+        ></div>
+      {/each}
+    </div>
+  {:else}
+    <div class="empty-pane">
+      <img src="/logo-light.png" alt="aiTerm" class="empty-logo" />
+      <button class="new-terminal-btn" onclick={handleNewTerminal}>
+        New Terminal
+      </button>
+      <span class="empty-hint"><kbd>{modLabel}</kbd> + <kbd>T</kbd></span>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -201,5 +216,48 @@
     opacity: 0;
     pointer-events: none;
     z-index: -1;
+  }
+
+  .empty-pane {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    background: var(--bg-dark);
+  }
+
+  .empty-logo {
+    height: 48px;
+    opacity: 0.3;
+  }
+
+  .new-terminal-btn {
+    padding: 8px 20px;
+    border-radius: 6px;
+    background: var(--accent);
+    color: var(--bg-dark);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+
+  .new-terminal-btn:hover {
+    opacity: 0.85;
+  }
+
+  .empty-hint {
+    font-size: 12px;
+    color: var(--fg-dim);
+  }
+
+  .empty-hint kbd {
+    padding: 1px 5px;
+    background: var(--bg-medium);
+    border-radius: 3px;
+    font-family: inherit;
+    font-size: 11px;
   }
 </style>
