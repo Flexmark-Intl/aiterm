@@ -202,6 +202,8 @@ pub fn run() {
             commands::workspace::set_split_ratio,
             commands::workspace::set_tab_scrollback,
             commands::workspace::reorder_tabs,
+            commands::workspace::reorder_workspaces,
+            commands::workspace::duplicate_workspace,
             commands::workspace::exit_app,
             commands::workspace::sync_state,
             commands::workspace::get_preferences,

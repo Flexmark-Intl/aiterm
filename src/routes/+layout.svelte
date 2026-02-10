@@ -184,6 +184,18 @@
         return;
       }
 
+      // Cmd+Opt+Shift+N - Duplicate workspace
+      if (isMeta && e.altKey && e.shiftKey && e.code === 'KeyN') {
+        e.preventDefault();
+        e.stopPropagation();
+        const ws = workspacesStore.activeWorkspace;
+        if (ws) {
+          const idx = workspacesStore.workspaces.findIndex(w => w.id === ws.id);
+          workspacesStore.duplicateWorkspace(ws.id, idx + 1);
+        }
+        return;
+      }
+
       // Cmd+Opt+N - New workspace (use e.code because Opt+N produces ˜ on macOS)
       if (isMeta && e.altKey && e.code === 'KeyN') {
         e.preventDefault();

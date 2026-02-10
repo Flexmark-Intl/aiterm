@@ -192,7 +192,18 @@ fn build_window(app: &tauri::AppHandle, label: &str) -> Result<(), String> {
 }
 
 fn clone_workspace_with_new_ids(ws: &Workspace, tab_contexts: &[TabContext]) -> Workspace {
+    let (cloned, _) = clone_workspace_with_id_mapping(ws, tab_contexts);
+    cloned
+}
+
+/// Clone a workspace with new UUIDs for all entities.
+/// Returns the cloned workspace and a mapping of old_tab_id -> new_tab_id.
+pub(crate) fn clone_workspace_with_id_mapping(
+    ws: &Workspace,
+    tab_contexts: &[TabContext],
+) -> (Workspace, std::collections::HashMap<String, String>) {
     let mut id_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut tab_id_map: std::collections::HashMap<String, String> = std::collections::HashMap::new();
 
     let new_ws_id = uuid::Uuid::new_v4().to_string();
     id_map.insert(ws.id.clone(), new_ws_id.clone());
@@ -204,6 +215,7 @@ fn clone_workspace_with_new_ids(ws: &Workspace, tab_contexts: &[TabContext]) -> 
         let new_tabs: Vec<Tab> = pane.tabs.iter().map(|tab| {
             let new_tab_id = uuid::Uuid::new_v4().to_string();
             id_map.insert(tab.id.clone(), new_tab_id.clone());
+            tab_id_map.insert(tab.id.clone(), new_tab_id.clone());
 
             // Find matching context from the source window
             let ctx = tab_contexts.iter().find(|c| c.tab_id == tab.id);
@@ -238,14 +250,16 @@ fn clone_workspace_with_new_ids(ws: &Workspace, tab_contexts: &[TabContext]) -> 
 
     let new_split_root = ws.split_root.as_ref().map(|root| clone_split_node(root, &id_map));
 
-    Workspace {
+    let cloned = Workspace {
         id: new_ws_id,
         name: ws.name.clone(),
         panes: new_panes,
         active_pane_id: new_active_pane,
         split_root: new_split_root,
         pane_sizes: None,
-    }
+    };
+
+    (cloned, tab_id_map)
 }
 
 fn clone_split_node(node: &SplitNode, id_map: &std::collections::HashMap<String, String>) -> SplitNode {

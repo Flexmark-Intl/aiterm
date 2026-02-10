@@ -142,10 +142,13 @@ function createWorkspacesStore() {
     },
 
     async deleteWorkspace(workspaceId: string) {
+      const oldIndex = workspaces.findIndex(w => w.id === workspaceId);
       await commands.deleteWorkspace(workspaceId);
       workspaces = workspaces.filter(w => w.id !== workspaceId);
       if (activeWorkspaceId === workspaceId) {
-        activeWorkspaceId = workspaces[0]?.id ?? null;
+        // Activate adjacent: prefer previous, fall back to next
+        const adjacentIndex = Math.min(oldIndex, workspaces.length - 1);
+        activeWorkspaceId = workspaces[adjacentIndex]?.id ?? null;
       }
     },
 
@@ -586,6 +589,65 @@ function createWorkspacesStore() {
       }
 
       // Reload all workspaces to reflect deletions
+      const data = await commands.getWindowData();
+      workspaces = data.workspaces;
+    },
+
+    async reorderWorkspaces(workspaceIds: string[]) {
+      const reordered = workspaceIds
+        .map(id => workspaces.find(w => w.id === id))
+        .filter((w): w is Workspace => w !== undefined);
+      workspaces = reordered;
+      await commands.reorderWorkspaces(workspaceIds);
+    },
+
+    async duplicateWorkspace(sourceWorkspaceId: string, insertIndex: number) {
+      const ws = workspaces.find(w => w.id === sourceWorkspaceId);
+      if (!ws) return;
+
+      // 1. Gather context for all tabs in source workspace
+      const tabContexts: commands.TabContext[] = [];
+      for (const pane of ws.panes) {
+        for (const tab of pane.tabs) {
+          const ctx = await this._gatherTabContext(tab.id);
+
+          let remoteCwd: string | null = null;
+          if (ctx.sshCommand && ctx.instance) {
+            const osc7Cwd = terminalsStore.getOsc(tab.id)?.cwd ?? null;
+            const isOsc7Stale = osc7Cwd === ctx.cwd;
+            const osc7RemoteCwd = (osc7Cwd && !isOsc7Stale) ? osc7Cwd : null;
+            remoteCwd = osc7RemoteCwd ?? extractRemoteCwd(ctx.instance.terminal);
+          }
+
+          tabContexts.push({
+            tab_id: tab.id,
+            scrollback: ctx.scrollback,
+            cwd: ctx.cwd,
+            ssh_command: ctx.sshCommand,
+            remote_cwd: remoteCwd,
+          });
+        }
+      }
+
+      // 2. Duplicate on backend (deep-clones with new IDs, applies scrollback)
+      const result = await commands.duplicateWorkspaceCmd(sourceWorkspaceId, insertIndex, tabContexts);
+
+      // 3. Copy shell history for each tab pair
+      if (preferencesStore.cloneHistory) {
+        for (const [oldTabId, newTabId] of Object.entries(result.tab_id_map)) {
+          try {
+            await commands.copyTabHistory(oldTabId, newTabId);
+          } catch (e) {
+            // ignore — history may not exist
+          }
+        }
+      }
+
+      // 4. Rename duplicate workspace
+      const dupName = nextDuplicateName(ws.name, workspaces.map(w => w.name));
+      await commands.renameWorkspace(result.workspace.id, dupName);
+
+      // 5. Reload all workspaces to get consistent state
       const data = await commands.getWindowData();
       workspaces = data.workspaces;
     },

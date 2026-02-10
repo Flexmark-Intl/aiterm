@@ -68,6 +68,186 @@
       workspacesStore.reset();
     }
   }
+
+  // Pointer-based drag reordering (same pattern as TerminalTabs)
+  let dragWorkspaceId = $state<string | null>(null);
+  let dropTargetIndex = $state<number | null>(null);
+  let dropSide = $state<'before' | 'after'>('before');
+
+  const DRAG_THRESHOLD = 5;
+  let dragStartX = 0;
+  let dragStartY = 0;
+  let lastPointerX = 0;
+  let lastPointerY = 0;
+  let pendingDragWorkspaceId: string | null = null;
+  let ghost: HTMLElement | null = null;
+  let cursorBadge: HTMLElement | null = null;
+  let workspaceListEl: HTMLElement;
+  let didDrag = false;
+
+  function handlePointerDown(e: PointerEvent, workspaceId: string) {
+    if (e.button !== 0 || editingId === workspaceId) return;
+    if ((e.target as HTMLElement).closest('.delete-btn')) return;
+    pendingDragWorkspaceId = workspaceId;
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
+    didDrag = false;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  }
+
+  function handlePointerMove(e: PointerEvent) {
+    if (!pendingDragWorkspaceId && !dragWorkspaceId) return;
+
+    // Check threshold before starting drag
+    if (pendingDragWorkspaceId && !dragWorkspaceId) {
+      const dx = e.clientX - dragStartX;
+      const dy = e.clientY - dragStartY;
+      if (Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return;
+      dragWorkspaceId = pendingDragWorkspaceId;
+      pendingDragWorkspaceId = null;
+      didDrag = true;
+      createGhost(e);
+    }
+
+    if (!dragWorkspaceId || !ghost) return;
+
+    // Move ghost
+    ghost.style.left = `${e.clientX}px`;
+    ghost.style.top = `${e.clientY}px`;
+
+    // Hit-test workspace items to find drop target (vertical)
+    const wsEls = workspaceListEl.querySelectorAll<HTMLElement>('.workspace-item');
+    let foundTarget = false;
+    for (let i = 0; i < wsEls.length; i++) {
+      const rect = wsEls[i].getBoundingClientRect();
+      if (e.clientX >= rect.left && e.clientX <= rect.right &&
+          e.clientY >= rect.top && e.clientY <= rect.bottom) {
+        const midY = rect.top + rect.height / 2;
+        dropSide = e.clientY < midY ? 'before' : 'after';
+        dropTargetIndex = i;
+        foundTarget = true;
+        break;
+      }
+    }
+    // If cursor is below the last item but within the list, target "after last"
+    if (!foundTarget && wsEls.length > 0) {
+      const listRect = workspaceListEl.getBoundingClientRect();
+      const lastRect = wsEls[wsEls.length - 1].getBoundingClientRect();
+      if (e.clientX >= listRect.left && e.clientX <= listRect.right &&
+          e.clientY > lastRect.bottom && e.clientY <= listRect.bottom) {
+        dropTargetIndex = wsEls.length - 1;
+        dropSide = 'after';
+        foundTarget = true;
+      }
+    }
+    if (!foundTarget) {
+      dropTargetIndex = null;
+    }
+
+    lastPointerX = e.clientX;
+    lastPointerY = e.clientY;
+    updateCursorBadge(e.altKey);
+  }
+
+  function updateCursorBadge(altKey: boolean) {
+    if (!cursorBadge) return;
+    cursorBadge.style.left = `${lastPointerX + 16}px`;
+    cursorBadge.style.top = `${lastPointerY + 16}px`;
+    cursorBadge.style.display = altKey ? 'flex' : 'none';
+  }
+
+  function handleDragKeyDown(e: KeyboardEvent) {
+    if (e.key === 'Escape') {
+      clearDragState();
+      return;
+    }
+    if (e.key === 'Alt') updateCursorBadge(true);
+  }
+
+  function handleDragKeyUp(e: KeyboardEvent) {
+    if (e.key === 'Alt') updateCursorBadge(false);
+  }
+
+  function handlePointerUp(e: PointerEvent) {
+    (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+
+    if (dragWorkspaceId && dropTargetIndex !== null) {
+      const sourceId = dragWorkspaceId;
+      const allWs = workspacesStore.workspaces;
+      const fromIndex = allWs.findIndex(w => w.id === sourceId);
+      const isCopy = e.altKey;
+
+      // Compute the insertion position
+      let insertPos = dropSide === 'after' ? dropTargetIndex + 1 : dropTargetIndex;
+
+      clearDragState();
+
+      if (isCopy) {
+        // Duplicate workspace at the insertion position
+        workspacesStore.duplicateWorkspace(sourceId, insertPos);
+      } else if (fromIndex !== -1) {
+        // Reorder: compute new order
+        let toIndex = insertPos;
+        if (fromIndex < toIndex) toIndex--;
+        if (fromIndex !== toIndex) {
+          const ids = allWs.map(w => w.id);
+          const [moved] = ids.splice(fromIndex, 1);
+          ids.splice(toIndex, 0, moved);
+          workspacesStore.reorderWorkspaces(ids);
+        }
+      }
+      return;
+    }
+
+    clearDragState();
+  }
+
+  function createGhost(e: PointerEvent) {
+    const sourceEl = workspaceListEl.querySelector<HTMLElement>(
+      `.workspace-item[data-workspace-id="${dragWorkspaceId}"]`
+    );
+    if (!sourceEl) return;
+    ghost = sourceEl.cloneNode(true) as HTMLElement;
+    ghost.classList.add('drag-ghost');
+    ghost.style.width = `${sourceEl.offsetWidth}px`;
+    ghost.style.left = `${e.clientX}px`;
+    ghost.style.top = `${e.clientY}px`;
+    document.body.appendChild(ghost);
+    // Cursor badge (macOS-style "+" near pointer)
+    cursorBadge = document.createElement('div');
+    cursorBadge.className = 'drag-cursor-badge';
+    cursorBadge.textContent = '+';
+    cursorBadge.style.display = 'none';
+    document.body.appendChild(cursorBadge);
+    // Key listeners for Escape cancel and Option badge
+    document.addEventListener('keydown', handleDragKeyDown);
+    document.addEventListener('keyup', handleDragKeyUp);
+  }
+
+  function clearDragState() {
+    document.removeEventListener('keydown', handleDragKeyDown);
+    document.removeEventListener('keyup', handleDragKeyUp);
+    dragWorkspaceId = null;
+    dropTargetIndex = null;
+    pendingDragWorkspaceId = null;
+    if (ghost) {
+      ghost.remove();
+      ghost = null;
+    }
+    if (cursorBadge) {
+      cursorBadge.remove();
+      cursorBadge = null;
+    }
+  }
+
+  function handleItemClick(workspaceId: string) {
+    // Suppress click after a drag
+    if (didDrag) {
+      didDrag = false;
+      return;
+    }
+    workspacesStore.setActiveWorkspace(workspaceId);
+  }
 </script>
 
 <aside class="sidebar" style="width: {width}px">
@@ -87,14 +267,20 @@
     </button>
   </div>
 
-  <div class="workspace-list">
-    {#each workspacesStore.workspaces as workspace (workspace.id)}
+  <div class="workspace-list" bind:this={workspaceListEl}>
+    {#each workspacesStore.workspaces as workspace, index (workspace.id)}
       <div
         class="workspace-item"
         class:active={workspace.id === workspacesStore.activeWorkspaceId}
+        class:dragging={dragWorkspaceId === workspace.id}
+        class:drop-before={dropTargetIndex === index && dropSide === 'before' && dragWorkspaceId !== workspace.id}
+        class:drop-after={dropTargetIndex === index && dropSide === 'after' && dragWorkspaceId !== workspace.id}
         data-workspace-id={workspace.id}
-        onclick={() => workspacesStore.setActiveWorkspace(workspace.id)}
+        onclick={() => handleItemClick(workspace.id)}
         ondblclick={() => startEditing(workspace.id, workspace.name)}
+        onpointerdown={(e) => handlePointerDown(e, workspace.id)}
+        onpointermove={handlePointerMove}
+        onpointerup={handlePointerUp}
         role="button"
         tabindex="0"
         onkeydown={(e) => e.key === 'Enter' && workspacesStore.setActiveWorkspace(workspace.id)}
@@ -238,6 +424,18 @@
     background: rgba(122, 162, 247, 0.2);
     outline: 1px solid var(--accent);
     outline-offset: -1px;
+  }
+
+  .workspace-item.dragging {
+    opacity: 0.3;
+  }
+
+  .workspace-item.drop-before {
+    box-shadow: inset 0 2px 0 var(--accent);
+  }
+
+  .workspace-item.drop-after {
+    box-shadow: inset 0 -2px 0 var(--accent);
   }
 
   .workspace-indicator {

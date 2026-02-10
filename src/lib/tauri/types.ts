@@ -73,6 +73,11 @@ export interface WindowData {
   sidebar_collapsed: boolean;
 }
 
+export interface DuplicateWorkspaceResult {
+  workspace: Workspace;
+  tab_id_map: Record<string, string>;
+}
+
 export interface AppData {
   windows: WindowData[];
   preferences: Preferences;

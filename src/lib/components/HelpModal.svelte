@@ -62,6 +62,7 @@
         <section>
           <h3>Workspaces</h3>
           <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>{altLabel}</kbd> + <kbd>N</kbd> <span>New workspace</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>{altLabel}</kbd> + <kbd>Shift</kbd> + <kbd>N</kbd> <span>Duplicate workspace</span></div>
         </section>
 
         <section>
@@ -78,7 +79,10 @@
 
         <section>
           <h3>Tips</h3>
-          <p>Double-click on workspace, pane, or tab names to rename them.</p>
+          <ul class="tips">
+            <li>Double-click on workspace, pane, or tab names to rename them.</li>
+            <li>Drag workspaces or tabs to reorder. Hold <kbd>{altLabel}</kbd> while dragging to duplicate.</li>
+          </ul>
         </section>
       </div>
     </div>
@@ -177,10 +181,20 @@
     color: var(--fg);
   }
 
-  p {
+  .tips {
     margin: 0;
+    padding-left: 18px;
+    list-style: disc;
+  }
+
+  .tips li {
     font-size: 13px;
     color: var(--fg-dim);
     line-height: 1.5;
+    margin-bottom: 6px;
+  }
+
+  .tips li:last-child {
+    margin-bottom: 0;
   }
 </style>

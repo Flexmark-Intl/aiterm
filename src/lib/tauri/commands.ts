@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { AppData, Pane, Preferences, SplitDirection, Tab, WindowData, Workspace } from './types';
+import type { AppData, DuplicateWorkspaceResult, Pane, Preferences, SplitDirection, Tab, WindowData, Workspace } from './types';
 
 // Terminal commands
 export async function spawnTerminal(ptyId: string, tabId: string, cols: number, rows: number, cwd?: string | null): Promise<void> {
@@ -137,6 +137,18 @@ export async function setTabScrollback(workspaceId: string, paneId: string, tabI
 
 export async function reorderTabs(workspaceId: string, paneId: string, tabIds: string[]): Promise<void> {
   return invoke('reorder_tabs', { workspaceId, paneId, tabIds });
+}
+
+export async function reorderWorkspaces(workspaceIds: string[]): Promise<void> {
+  return invoke('reorder_workspaces', { workspaceIds });
+}
+
+export async function duplicateWorkspaceCmd(
+  workspaceId: string,
+  position: number,
+  tabContexts: TabContext[],
+): Promise<DuplicateWorkspaceResult> {
+  return invoke('duplicate_workspace', { workspaceId, position, tabContexts });
 }
 
 export async function getPreferences(): Promise<Preferences> {

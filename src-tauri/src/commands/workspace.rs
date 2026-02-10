@@ -1,9 +1,11 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::{Emitter, State};
 
 use crate::state::{save_state, AppState, Pane, Preferences, Tab, Workspace};
 use crate::state::persistence::app_data_slug;
 use crate::state::workspace::SplitDirection;
+use crate::commands::window::{TabContext, clone_workspace_with_id_mapping};
 
 #[tauri::command]
 pub fn exit_app(app: tauri::AppHandle) {
@@ -46,9 +48,12 @@ pub fn delete_workspace(window: tauri::Window, state: State<'_, Arc<AppState>>, 
     let data_clone = {
         let mut app_data = state.app_data.write();
         let win = app_data.window_mut(&label).ok_or("Window not found")?;
+        let old_index = win.workspaces.iter().position(|w| w.id == workspace_id).unwrap_or(0);
         win.workspaces.retain(|w| w.id != workspace_id);
         if win.active_workspace_id.as_ref() == Some(&workspace_id) {
-            win.active_workspace_id = win.workspaces.first().map(|w| w.id.clone());
+            // Activate adjacent: prefer previous, fall back to next
+            let adjacent = old_index.min(win.workspaces.len().saturating_sub(1));
+            win.active_workspace_id = win.workspaces.get(adjacent).map(|w| w.id.clone());
         }
         app_data.clone()
     };
@@ -439,6 +444,66 @@ pub fn set_tab_restore_context(
         }
     }
     Ok(())
+}
+
+#[tauri::command]
+pub fn reorder_workspaces(
+    window: tauri::Window,
+    state: State<'_, Arc<AppState>>,
+    workspace_ids: Vec<String>,
+) -> Result<(), String> {
+    let label = window.label().to_string();
+    let data_clone = {
+        let mut app_data = state.app_data.write();
+        let win = app_data.window_mut(&label).ok_or("Window not found")?;
+        let mut reordered = Vec::with_capacity(workspace_ids.len());
+        for id in &workspace_ids {
+            if let Some(ws) = win.workspaces.iter().find(|w| &w.id == id) {
+                reordered.push(ws.clone());
+            }
+        }
+        win.workspaces = reordered;
+        app_data.clone()
+    };
+    save_state(&data_clone)
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DuplicateWorkspaceResult {
+    pub workspace: Workspace,
+    pub tab_id_map: HashMap<String, String>,
+}
+
+#[tauri::command]
+pub fn duplicate_workspace(
+    window: tauri::Window,
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+    position: usize,
+    tab_contexts: Vec<TabContext>,
+) -> Result<DuplicateWorkspaceResult, String> {
+    let label = window.label().to_string();
+    let (data_clone, result) = {
+        let mut app_data = state.app_data.write();
+        let win = app_data.window_mut(&label).ok_or("Window not found")?;
+        let source = win.workspaces.iter()
+            .find(|w| w.id == workspace_id)
+            .ok_or("Workspace not found")?
+            .clone();
+
+        let (cloned, tab_id_map) = clone_workspace_with_id_mapping(&source, &tab_contexts);
+        let result = DuplicateWorkspaceResult {
+            workspace: cloned.clone(),
+            tab_id_map,
+        };
+
+        let insert_pos = position.min(win.workspaces.len());
+        win.workspaces.insert(insert_pos, cloned);
+
+        (app_data.clone(), result)
+    };
+    save_state(&data_clone)?;
+    Ok(result)
 }
 
 #[tauri::command]
