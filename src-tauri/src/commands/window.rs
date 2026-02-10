@@ -119,7 +119,54 @@ pub fn reset_window(window: tauri::Window, state: State<'_, Arc<AppState>>) -> R
 
 #[tauri::command]
 pub fn get_window_count(app: tauri::AppHandle) -> usize {
-    app.webview_windows().len()
+    app.webview_windows().iter()
+        .filter(|(label, _)| label.as_str() != "preferences")
+        .count()
+}
+
+#[tauri::command]
+pub fn open_preferences_window(window: tauri::Window, app: tauri::AppHandle) -> Result<(), String> {
+    // If already open, focus it
+    if let Some(win) = app.get_webview_window("preferences") {
+        let _ = win.set_focus();
+        return Ok(());
+    }
+
+    let url = if cfg!(debug_assertions) {
+        tauri::WebviewUrl::External("http://localhost:1420/preferences".parse().unwrap())
+    } else {
+        tauri::WebviewUrl::App("preferences.html".into())
+    };
+
+    let title = if cfg!(debug_assertions) { "Preferences (Dev)" } else { "Preferences" };
+
+    let pref_w: f64 = 600.0;
+    let pref_h: f64 = 500.0;
+
+    let mut builder = WebviewWindowBuilder::new(&app, "preferences", url)
+        .title(title)
+        .inner_size(pref_w, pref_h)
+        .min_inner_size(500.0, 400.0)
+        .resizable(true)
+        .fullscreen(false)
+        .hidden_title(true);
+
+    // Center on the calling window
+    if let (Ok(pos), Ok(size)) = (window.outer_position(), window.outer_size()) {
+        let scale = window.scale_factor().unwrap_or(1.0);
+        let win_x = pos.x as f64 / scale;
+        let win_y = pos.y as f64 / scale;
+        let win_w = size.width as f64 / scale;
+        let win_h = size.height as f64 / scale;
+        let x = win_x + (win_w - pref_w) / 2.0;
+        let y = win_y + (win_h - pref_h) / 2.0;
+        builder = builder.position(x, y);
+    }
+
+    builder.build()
+        .map_err(|e| format!("Failed to create preferences window: {}", e))?;
+
+    Ok(())
 }
 
 fn build_window(app: &tauri::AppHandle, label: &str) -> Result<(), String> {
@@ -137,7 +184,6 @@ fn build_window(app: &tauri::AppHandle, label: &str) -> Result<(), String> {
         .min_inner_size(800.0, 600.0)
         .resizable(true)
         .fullscreen(false)
-        .title_bar_style(tauri::TitleBarStyle::Transparent)
         .hidden_title(true)
         .build()
         .map_err(|e| format!("Failed to create window: {}", e))?;

@@ -335,6 +335,8 @@ pub struct Preferences {
     #[serde(default)]
     pub shell_title_integration: bool,
     #[serde(default)]
+    pub shell_integration: bool,
+    #[serde(default)]
     pub custom_themes: Vec<serde_json::Value>,
     #[serde(default)]
     pub restore_session: bool,
@@ -356,6 +358,7 @@ impl Default for Preferences {
             clone_history: true,
             theme: default_theme(),
             shell_title_integration: false,
+            shell_integration: false,
             custom_themes: Vec::new(),
             restore_session: false,
         }

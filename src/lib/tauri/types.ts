@@ -57,6 +57,7 @@ export interface Preferences {
   clone_history: boolean;
   theme: string;
   shell_title_integration: boolean;
+  shell_integration: boolean;
   custom_themes: import('$lib/themes').Theme[];
   restore_session: boolean;
 }

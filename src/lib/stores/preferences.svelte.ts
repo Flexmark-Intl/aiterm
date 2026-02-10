@@ -17,6 +17,7 @@ function createPreferencesStore() {
   let cloneHistory = $state(true);
   let theme = $state('tokyo-night');
   let shellTitleIntegration = $state(false);
+  let shellIntegration = $state(false);
   let customThemes = $state<Theme[]>([]);
   let restoreSession = $state(false);
 
@@ -34,6 +35,7 @@ function createPreferencesStore() {
     get cloneHistory() { return cloneHistory; },
     get theme() { return theme; },
     get shellTitleIntegration() { return shellTitleIntegration; },
+    get shellIntegration() { return shellIntegration; },
     get customThemes() { return customThemes; },
     get restoreSession() { return restoreSession; },
 
@@ -52,6 +54,7 @@ function createPreferencesStore() {
       cloneHistory = prefs.clone_history;
       theme = prefs.theme;
       shellTitleIntegration = prefs.shell_title_integration;
+      shellIntegration = prefs.shell_integration ?? false;
       customThemes = prefs.custom_themes ?? [];
       restoreSession = prefs.restore_session ?? false;
     },
@@ -121,6 +124,11 @@ function createPreferencesStore() {
       await this.save();
     },
 
+    async setShellIntegration(value: boolean) {
+      shellIntegration = value;
+      await this.save();
+    },
+
     async setRestoreSession(value: boolean) {
       restoreSession = value;
       await this.save();
@@ -158,6 +166,7 @@ function createPreferencesStore() {
       cloneHistory = prefs.clone_history;
       theme = prefs.theme;
       shellTitleIntegration = prefs.shell_title_integration;
+      shellIntegration = prefs.shell_integration ?? false;
       customThemes = prefs.custom_themes ?? [];
       restoreSession = prefs.restore_session ?? false;
     },
@@ -177,6 +186,7 @@ function createPreferencesStore() {
         clone_history: cloneHistory,
         theme,
         shell_title_integration: shellTitleIntegration,
+        shell_integration: shellIntegration,
         custom_themes: customThemes,
         restore_session: restoreSession,
       };

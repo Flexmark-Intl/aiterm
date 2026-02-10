@@ -288,10 +288,17 @@
 <div class="tabs-bar" bind:this={tabsBarEl} data-tauri-drag-region>
   {#each pane.tabs as tab, index (tab.id)}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
+    {@const shellStateRaw = activityStore.getShellState(tab.id)}
+    {@const shellState = tab.id !== pane.active_tab_id ? shellStateRaw : (shellStateRaw?.state === 'running' ? shellStateRaw : undefined)}
+    {@const hasActivity = tab.id !== pane.active_tab_id && activityStore.hasActivity(tab.id)}
     <div
       class="tab"
       class:active={tab.id === pane.active_tab_id}
-      class:activity={tab.id !== pane.active_tab_id && activityStore.hasActivity(tab.id)}
+      class:activity={!shellState && hasActivity}
+      class:completed={shellState?.state === 'completed' && shellState?.exitCode === 0}
+      class:failed={shellState?.state === 'completed' && shellState?.exitCode !== 0}
+      class:running={shellState?.state === 'running'}
+      class:prompt={shellState?.state === 'prompt'}
       class:dragging={dragTabId === tab.id}
       class:drop-before={dropTargetIndex === index && dropSide === 'before' && dragTabId !== tab.id}
       class:drop-after={dropTargetIndex === index && dropSide === 'after' && dragTabId !== tab.id}
@@ -318,7 +325,13 @@
           autofocus
         />
       {:else}
-        {#if tab.id !== pane.active_tab_id && activityStore.hasActivity(tab.id)}
+        {#if shellState?.state === 'completed'}
+          <span class="indicator" class:completed-indicator={shellState.exitCode === 0} class:failed-indicator={shellState.exitCode !== 0}>{shellState.exitCode === 0 ? '\u2713' : '\u2717'}</span>
+        {:else if shellState?.state === 'running'}
+          <span class="indicator running-indicator"></span>
+        {:else if shellState?.state === 'prompt'}
+          <span class="indicator prompt-indicator">\u203A</span>
+        {:else if hasActivity}
           <span class="activity-dot"></span>
         {/if}
         <span class="tab-name">{displayName(tab)}</span>
@@ -366,12 +379,11 @@
     display: flex;
     align-items: center;
     gap: 0;
-    padding: 2px 8px;
+    padding: 5px 10px;
     border: 1px solid var(--tab-border);
     border-radius: 4px;
     cursor: pointer;
     max-width: 180px;
-    height: 26px;
     transition: background 0.1s, padding-right 0.15s ease, border-color 0.1s;
     -webkit-app-region: no-drag;
   }
@@ -388,6 +400,22 @@
 
   .tab.activity {
     border-color: var(--tab-border-activity);
+  }
+
+  .tab.completed {
+    border-color: var(--green, #9ece6a);
+  }
+
+  .tab.failed {
+    border-color: var(--red, #f7768e);
+  }
+
+  .tab.running {
+    border-color: var(--accent);
+  }
+
+  .tab.prompt {
+    border-color: var(--yellow, #e0af68);
   }
 
   .tab.dragging {
@@ -411,8 +439,7 @@
     background: var(--bg-dark);
     border: 1px solid var(--accent);
     border-radius: 4px;
-    padding: 2px 8px;
-    height: 26px;
+    padding: 5px 10px;
     display: flex;
     align-items: center;
     font-size: 12px;
@@ -449,6 +476,39 @@
     margin-right: 4px;
   }
 
+  .indicator {
+    flex-shrink: 0;
+    margin-right: 4px;
+    font-size: 10px;
+    font-weight: bold;
+    line-height: 1;
+  }
+
+  .completed-indicator {
+    color: var(--green, #9ece6a);
+  }
+
+  .failed-indicator {
+    color: var(--red, #f7768e);
+  }
+
+  .running-indicator {
+    width: 8px;
+    height: 8px;
+    border: 1.5px solid var(--accent);
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .prompt-indicator {
+    color: var(--yellow, #e0af68);
+  }
+
   .tab-name {
     overflow: hidden;
     text-overflow: ellipsis;
@@ -459,8 +519,7 @@
   .tab-actions {
     display: flex;
     align-items: center;
-    height: calc(100% + 4px);
-    margin: -2px 0;
+    align-self: stretch;
     margin-left: 0;
     opacity: 0;
     width: 0;
@@ -479,8 +538,6 @@
     align-items: center;
     justify-content: center;
     width: 22px;
-    height: calc(100% - 4px);
-    margin: 2px 0;
     padding: 0;
     color: var(--fg-dim);
     border-radius: 3px;
@@ -501,6 +558,7 @@
 
   .new-tab-btn {
     padding: 4px 10px;
+    margin-left: 5px;
     border-radius: 4px;
     color: var(--fg-dim);
     font-size: 14px;

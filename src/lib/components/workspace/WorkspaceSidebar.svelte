@@ -71,7 +71,7 @@
 </script>
 
 <aside class="sidebar" style="width: {width}px">
-  <div class="sidebar-titlebar" data-tauri-drag-region>
+  <div class="sidebar-titlebar">
     <img src="/logo-light.png" alt="aiTerm" class="sidebar-logo" />
     {#if import.meta.env.DEV}
       <span class="dev-badge">DEV</span>
@@ -145,12 +145,9 @@
   }
 
   .sidebar-titlebar {
-    height: 38px;
-    min-height: 38px;
     display: flex;
     align-items: center;
-    padding-left: 16px;
-    -webkit-app-region: drag;
+    padding: 10px 16px;
   }
 
   .sidebar-logo {

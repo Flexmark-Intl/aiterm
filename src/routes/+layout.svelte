@@ -7,7 +7,6 @@
   import { workspacesStore } from '$lib/stores/workspaces.svelte';
   import { terminalsStore } from '$lib/stores/terminals.svelte';
   import HelpModal from '$lib/components/HelpModal.svelte';
-  import PreferencesModal from '$lib/components/PreferencesModal.svelte';
   import { preferencesStore } from '$lib/stores/preferences.svelte';
   import { getTheme, applyUiTheme } from '$lib/themes';
   import { error as logError, info as logInfo } from '@tauri-apps/plugin-log';
@@ -22,7 +21,6 @@
 
   let { children }: Props = $props();
   let showHelp = $state(false);
-  let showPreferences = $state(false);
 
   // Apply UI theme reactively (runs outside onMount so it reacts to changes)
   $effect(() => {
@@ -44,6 +42,16 @@
       preferencesStore.applyFromBackend(event.payload);
     }).then(unlisten => { unlistenPrefs = unlisten; });
 
+    const appWindow = getCurrentWindow();
+
+    // Non-terminal windows (e.g. preferences) skip terminal lifecycle and shortcuts
+    if (appWindow.label === 'preferences') {
+      return () => {
+        unlistenPrefs?.();
+        detachConsole?.();
+      };
+    }
+
     // Listen for app-wide quit (Cmd+Q / Quit menu).
     // All windows save scrollback, then exit — no window data is removed.
     let unlistenQuit: (() => void) | undefined;
@@ -59,7 +67,6 @@
     }).then(unlisten => { unlistenQuit = unlisten; });
 
     // Handle single-window close (traffic light / Cmd+W on last tab+pane).
-    const appWindow = getCurrentWindow();
     let unlistenClose: (() => void) | undefined;
 
     (async () => {
@@ -95,6 +102,16 @@
     })();
 
     function handleKeydown(e: KeyboardEvent) {
+      // Escape - close open modals
+      if (e.key === 'Escape') {
+        if (showHelp) {
+          e.preventDefault();
+          e.stopPropagation();
+          showHelp = false;
+          return;
+        }
+      }
+
       const isMeta = isModKey(e);
 
       // Cmd+Shift+T - Duplicate tab
@@ -299,11 +316,11 @@
         return;
       }
 
-      // Cmd+, - Show preferences
+      // Cmd+, - Open preferences window
       if (isMeta && e.key === ',') {
         e.preventDefault();
         e.stopPropagation();
-        showPreferences = !showPreferences;
+        commands.openPreferencesWindow();
         return;
       }
     }
@@ -323,4 +340,3 @@
 {@render children()}
 
 <HelpModal open={showHelp} onclose={() => showHelp = false} />
-<PreferencesModal open={showPreferences} onclose={() => showPreferences = false} />

@@ -106,7 +106,6 @@ pub fn run() {
                     .min_inner_size(800.0, 600.0)
                     .resizable(true)
                     .fullscreen(false)
-                    .title_bar_style(tauri::TitleBarStyle::Transparent)
                     .hidden_title(true)
                     .build()
                 {
@@ -214,6 +213,7 @@ pub fn run() {
             commands::window::close_window,
             commands::window::reset_window,
             commands::window::get_window_count,
+            commands::window::open_preferences_window,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

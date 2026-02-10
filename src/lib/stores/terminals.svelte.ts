@@ -122,9 +122,7 @@ function createTerminalsStore() {
     async clearTerminal(tabId: string) {
       const instance = instances.get(tabId);
       if (!instance) return;
-      // Full reset: clears scrollback, alternate screen artifacts, and screen content.
-      // Then clear xterm's internal scrollback buffer so serialize doesn't re-save it.
-      instance.terminal.write('\x1bc');
+      // Clear xterm's scrollback buffer while keeping the current screen (prompt) visible.
       instance.terminal.clear();
       // Serialize the now-empty state and persist it, so auto-save
       // and saveAllScrollback don't re-save stale content

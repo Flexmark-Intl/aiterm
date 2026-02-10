@@ -84,18 +84,43 @@ pub fn spawn_pty(
         }
     }
 
-    // Shell title integration: configure shell to emit OSC 0/2 on each prompt
-    let shell_title_integration = state.app_data.read().preferences.shell_title_integration;
-    if shell_title_integration {
+    // Shell integration: configure shell hooks for title and/or command completion
+    let prefs = state.app_data.read().preferences.clone();
+    let shell_title_integration = prefs.shell_title_integration;
+    let shell_integration = prefs.shell_integration;
+    if shell_title_integration || shell_integration {
         match shell_name {
             "bash" => {
-                cmd.env(
-                    "PROMPT_COMMAND",
-                    r#"printf "\033]0;%s@%s:%s\007" "${USER}" "${HOSTNAME%%.*}" "${PWD/#$HOME/~}""#,
-                );
+                if shell_integration {
+                    // Build PROMPT_COMMAND with DEBUG trap for OSC 133 B.
+                    // The trap is set once (guarded by __aiterm_trap). It fires
+                    // before each command; the __aiterm_at_prompt flag ensures B
+                    // is only emitted for the first command after a prompt.
+                    // The flag is set LAST so DEBUG doesn't see it during prompt.
+                    let title_part = if shell_title_integration {
+                        r#" printf "\033]0;%s@%s:%s\007" "${USER}" "${HOSTNAME%%.*}" "${PWD/#$HOME/~}";"#
+                    } else { "" };
+                    let prompt_cmd = format!(
+                        concat!(
+                            r#"if [ -z "$__aiterm_trap" ]; then __aiterm_trap=1;"#,
+                            r#" trap '[[ "$__aiterm_at_prompt" == 1 ]] && __aiterm_at_prompt= && printf "\033]133;B\007"' DEBUG;"#,
+                            r#" fi;"#,
+                            r#" __aiterm_ec=$?; printf '\033]133;D;%d\007' "$__aiterm_ec"; printf '\033]133;A\007';"#,
+                            r#"{}"#,
+                            r#" __aiterm_at_prompt=1"#,
+                        ),
+                        title_part,
+                    );
+                    cmd.env("PROMPT_COMMAND", prompt_cmd);
+                } else if shell_title_integration {
+                    cmd.env(
+                        "PROMPT_COMMAND",
+                        r#"printf "\033]0;%s@%s:%s\007" "${USER}" "${HOSTNAME%%.*}" "${PWD/#$HOME/~}""#,
+                    );
+                }
             }
             "zsh" => {
-                if let Ok(integration_dir) = setup_zsh_integration() {
+                if let Ok(integration_dir) = setup_zsh_integration(shell_title_integration, shell_integration) {
                     let real_zdotdir = std::env::var("ZDOTDIR")
                         .unwrap_or_else(|_| {
                             dirs::home_dir()
@@ -107,8 +132,22 @@ pub fn spawn_pty(
                 }
             }
             "fish" => {
+                let mut parts: Vec<String> = Vec::new();
+                if shell_integration {
+                    parts.push(
+                        r#"function __aiterm_osc133 --on-event fish_prompt; printf '\e]133;D;%d\a\e]133;A\a' $status; end"#.to_string()
+                    );
+                    parts.push(
+                        r#"function __aiterm_osc133_preexec --on-event fish_preexec; printf '\e]133;B\a'; end"#.to_string()
+                    );
+                }
+                if shell_title_integration {
+                    parts.push(
+                        r#"function fish_title; printf '%s@%s:%s' $USER (prompt_hostname) (prompt_pwd); end"#.to_string()
+                    );
+                }
                 cmd.arg("-C");
-                cmd.arg(r#"function fish_title; printf '%s@%s:%s' $USER (prompt_hostname) (prompt_pwd); end"#);
+                cmd.arg(parts.join("; "));
             }
             _ => {}
         }
@@ -353,8 +392,8 @@ fn get_foreground_command(shell_pid: u32) -> Option<String> {
 }
 
 /// Create zsh integration directory with shim files that source the user's
-/// real config and add a precmd hook to set the terminal title.
-fn setup_zsh_integration() -> Result<std::path::PathBuf, String> {
+/// real config and add precmd hooks for title and/or command completion.
+fn setup_zsh_integration(title: bool, shell_integration: bool) -> Result<std::path::PathBuf, String> {
     let data_dir = dirs::data_dir().ok_or("No data directory")?;
     let zsh_dir = data_dir.join(app_data_slug()).join("shell-integration").join("zsh");
     std::fs::create_dir_all(&zsh_dir).map_err(|e| e.to_string())?;
@@ -367,24 +406,37 @@ else
 fi
 "#;
 
-    let zshrc_content = r#"# aiTerm shell integration - do not edit
-if [[ -n "$AITERM_REAL_ZDOTDIR" ]]; then
-  ZDOTDIR="$AITERM_REAL_ZDOTDIR"
-  [[ -f "$ZDOTDIR/.zshrc" ]] && source "$ZDOTDIR/.zshrc"
-else
-  ZDOTDIR="$HOME"
-  [[ -f "$HOME/.zshrc" ]] && source "$HOME/.zshrc"
-fi
+    let mut hooks = String::new();
+    hooks.push_str("# aiTerm shell integration - do not edit\n");
+    hooks.push_str("if [[ -n \"$AITERM_REAL_ZDOTDIR\" ]]; then\n");
+    hooks.push_str("  ZDOTDIR=\"$AITERM_REAL_ZDOTDIR\"\n");
+    hooks.push_str("  [[ -f \"$ZDOTDIR/.zshrc\" ]] && source \"$ZDOTDIR/.zshrc\"\n");
+    hooks.push_str("else\n");
+    hooks.push_str("  ZDOTDIR=\"$HOME\"\n");
+    hooks.push_str("  [[ -f \"$HOME/.zshrc\" ]] && source \"$HOME/.zshrc\"\n");
+    hooks.push_str("fi\n\n");
+    hooks.push_str("autoload -Uz add-zsh-hook\n");
 
-_aiterm_title_precmd() {
-  printf '\033]0;%s@%s:%s\007' "${USER}" "${HOST%%.*}" "${PWD/#$HOME/~}"
-}
-autoload -Uz add-zsh-hook
-add-zsh-hook precmd _aiterm_title_precmd
-"#;
+    if shell_integration {
+        hooks.push_str("_aiterm_osc133_precmd() {\n");
+        hooks.push_str("  print -Pn '\\e]133;D;%?\\a\\e]133;A\\a'\n");
+        hooks.push_str("}\n");
+        hooks.push_str("add-zsh-hook precmd _aiterm_osc133_precmd\n");
+        hooks.push_str("_aiterm_osc133_preexec() {\n");
+        hooks.push_str("  print -Pn '\\e]133;B\\a'\n");
+        hooks.push_str("}\n");
+        hooks.push_str("add-zsh-hook preexec _aiterm_osc133_preexec\n");
+    }
+
+    if title {
+        hooks.push_str("_aiterm_title_precmd() {\n");
+        hooks.push_str("  printf '\\033]0;%s@%s:%s\\007' \"${USER}\" \"${HOST%%.*}\" \"${PWD/#$HOME/~}\"\n");
+        hooks.push_str("}\n");
+        hooks.push_str("add-zsh-hook precmd _aiterm_title_precmd\n");
+    }
 
     std::fs::write(zsh_dir.join(".zshenv"), zshenv_content).map_err(|e| e.to_string())?;
-    std::fs::write(zsh_dir.join(".zshrc"), zshrc_content).map_err(|e| e.to_string())?;
+    std::fs::write(zsh_dir.join(".zshrc"), &hooks).map_err(|e| e.to_string())?;
 
     Ok(zsh_dir)
 }

@@ -66,7 +66,7 @@ export const builtinThemes: Theme[] = [
       cyan: '#7dcfff',
       magenta: '#bb9af7',
       tab_border: 'transparent',
-      tab_border_active: 'transparent',
+      tab_border_active: '#7aa2f7',
       tab_border_activity: 'transparent',
     },
     terminal: {
@@ -111,7 +111,7 @@ export const builtinThemes: Theme[] = [
       cyan: '#8be9fd',
       magenta: '#ff79c6',
       tab_border: 'transparent',
-      tab_border_active: 'transparent',
+      tab_border_active: '#bd93f9',
       tab_border_activity: 'transparent',
     },
     terminal: {
@@ -336,7 +336,7 @@ export const builtinThemes: Theme[] = [
       cyan: '#66d9ef',
       magenta: '#ae81ff',
       tab_border: 'transparent',
-      tab_border_active: 'transparent',
+      tab_border_active: '#66d9ef',
       tab_border_activity: 'transparent',
     },
     terminal: {
@@ -426,7 +426,7 @@ export const builtinThemes: Theme[] = [
       cyan: '#56b6c2',
       magenta: '#c678dd',
       tab_border: 'transparent',
-      tab_border_active: 'transparent',
+      tab_border_active: '#61afef',
       tab_border_activity: 'transparent',
     },
     terminal: {
@@ -531,4 +531,5 @@ export function applyUiTheme(ui: UiColors): void {
   root.style.setProperty('--tab-border', ui.tab_border);
   root.style.setProperty('--tab-border-active', ui.tab_border_active);
   root.style.setProperty('--tab-border-activity', ui.tab_border_activity);
+
 }

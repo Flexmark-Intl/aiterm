@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, untrack } from 'svelte';
   import { listen } from '@tauri-apps/api/event';
   import type { UnlistenFn } from '@tauri-apps/api/event';
   import { Terminal } from '@xterm/xterm';
@@ -186,6 +186,25 @@
         }
       } catch {
         // not a valid URL — ignore
+      }
+      return true;
+    });
+
+    // OSC 133: shell integration — command completion detection
+    // Always registered: remote shells may already emit OSC 133.
+    // Gated on trackActivity to ignore sequences replayed from restored scrollback.
+    terminal.parser.registerOscHandler(133, (data) => {
+      if (!trackActivity) return true;
+      const parts = data.split(';');
+      const cmd = parts[0];
+      if (cmd === 'A') {
+        activityStore.setShellState(tabId, 'prompt');
+      } else if (cmd === 'D') {
+        const exitCode = parts[1] ? parseInt(parts[1], 10) : 0;
+        activityStore.setShellState(tabId, 'completed', exitCode);
+      }
+      if (cmd === 'B' || cmd === 'C') {
+        activityStore.setShellState(tabId, 'running');
       }
       return true;
     });
@@ -389,7 +408,10 @@
         fitWithPadding();
         terminal.focus();
       });
-      activityStore.clearActive(tabId);
+      untrack(() => {
+        activityStore.clearActive(tabId);
+        activityStore.clearShellState(tabId);
+      });
     }
   });
 

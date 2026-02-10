@@ -194,3 +194,7 @@ export async function resetWindow(): Promise<void> {
 export async function getWindowCount(): Promise<number> {
   return invoke('get_window_count');
 }
+
+export async function openPreferencesWindow(): Promise<void> {
+  return invoke('open_preferences_window');
+}
