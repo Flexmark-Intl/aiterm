@@ -288,8 +288,7 @@
 <div class="tabs-bar" bind:this={tabsBarEl} data-tauri-drag-region>
   {#each pane.tabs as tab, index (tab.id)}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
-    {@const shellStateRaw = activityStore.getShellState(tab.id)}
-    {@const shellState = tab.id !== pane.active_tab_id ? shellStateRaw : (shellStateRaw?.state === 'running' ? shellStateRaw : undefined)}
+    {@const shellState = tab.id !== pane.active_tab_id ? activityStore.getShellState(tab.id) : undefined}
     {@const hasActivity = tab.id !== pane.active_tab_id && activityStore.hasActivity(tab.id)}
     <div
       class="tab"
@@ -297,7 +296,6 @@
       class:activity={!shellState && hasActivity}
       class:completed={shellState?.state === 'completed' && shellState?.exitCode === 0}
       class:failed={shellState?.state === 'completed' && shellState?.exitCode !== 0}
-      class:running={shellState?.state === 'running'}
       class:prompt={shellState?.state === 'prompt'}
       class:dragging={dragTabId === tab.id}
       class:drop-before={dropTargetIndex === index && dropSide === 'before' && dragTabId !== tab.id}
@@ -327,8 +325,6 @@
       {:else}
         {#if shellState?.state === 'completed'}
           <span class="indicator" class:completed-indicator={shellState.exitCode === 0} class:failed-indicator={shellState.exitCode !== 0}>{shellState.exitCode === 0 ? '\u2713' : '\u2717'}</span>
-        {:else if shellState?.state === 'running'}
-          <span class="indicator running-indicator"></span>
         {:else if shellState?.state === 'prompt'}
           <span class="indicator prompt-indicator">\u203A</span>
         {:else if hasActivity}
@@ -395,7 +391,7 @@
 
   .tab.active {
     background: var(--bg-dark);
-    border-color: var(--tab-border-active);
+    box-shadow: inset 0 -2px 0 var(--tab-border-active);
   }
 
   .tab.activity {
@@ -408,10 +404,6 @@
 
   .tab.failed {
     border-color: var(--red, #f7768e);
-  }
-
-  .tab.running {
-    border-color: var(--accent);
   }
 
   .tab.prompt {
@@ -490,19 +482,6 @@
 
   .failed-indicator {
     color: var(--red, #f7768e);
-  }
-
-  .running-indicator {
-    width: 8px;
-    height: 8px;
-    border: 1.5px solid var(--accent);
-    border-top-color: transparent;
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
   }
 
   .prompt-indicator {

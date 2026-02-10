@@ -25,7 +25,11 @@ src/                          # Frontend (Svelte/TypeScript)
 │   ├── stores/               # Svelte 5 stores (.svelte.ts)
 │   │   ├── workspaces.svelte.ts
 │   │   ├── terminals.svelte.ts
-│   │   └── preferences.svelte.ts
+│   │   ├── preferences.svelte.ts
+│   │   └── activity.svelte.ts
+│   ├── utils/                # Pure utility modules
+│   │   ├── shellIntegration.ts  # Remote shell hook snippets
+│   │   └── promptPattern.ts     # PS1 prompt pattern matching
 │   └── tauri/                # Tauri IPC layer
 │       ├── commands.ts       # invoke() wrappers
 │       └── types.ts          # TypeScript interfaces matching Rust
@@ -198,7 +202,30 @@ Priority: OSC 7 (if not stale) → prompt pattern heuristic.
 
 - **OSC 0/2** (title): Updates tab display name unless `tab.custom_name` is true
 - **OSC 7** (cwd): Parses `file://hostname/path` URL, stores both cwd and cwdHost
+- **OSC 133** (FinalTerm): Command completion detection — see Shell Integration below
 - **Listener API**: `onOscChange(fn)` for reactive subscriptions (used by TerminalTabs)
+
+## Shell Integration
+
+OSC 133 (FinalTerm protocol) detects command start/finish for tab indicators. Controlled by `shell_integration` preference.
+
+**Protocol**: `A` = prompt start, `B` = command start, `D;exitcode` = command finished
+
+**Local hooks** (Rust `pty/manager.rs`): Injected via env vars / ZDOTDIR shim before the shell starts.
+
+**Remote hooks** (`src/lib/utils/shellIntegration.ts`): Two context menu modes:
+- **Setup Shell Integration** — sends a one-liner to the current session (temporary, lost on shell exit). Uses `buildShellIntegrationSnippet()`.
+- **Install Shell Integration** — writes clean hook functions to `~/.bashrc` or `~/.zshrc` via heredoc (permanent, idempotent). Uses `buildInstallSnippet()`.
+
+**Tab indicators** (`activity.svelte.ts`): Priority: completed (checkmark/cross) > prompt (›) > activity dot. Shell state only shown on inactive tabs. `B`/`C` sequences clear indicators (new command started), they do NOT show a spinner — long-running interactive programs (SSH, vim) make a "running" state unreliable.
+
+**Bash hook anatomy**:
+```
+PROMPT_COMMAND="__aiterm_ec=$?; printf D; printf A; printf title; __aiterm_at_prompt=1"
+trap '[[ "$__aiterm_at_prompt" == 1 ]] && __aiterm_at_prompt= && printf B' DEBUG
+```
+
+**Zsh hook anatomy**: Uses `add-zsh-hook precmd` (for D+A) and `add-zsh-hook preexec` (for B).
 
 ## Dev/Production Isolation
 
@@ -332,3 +359,7 @@ Check `~/Library/Application Support/com.aiterm.dev/aiterm-state.json` (dev) or 
 - **`\u` in Svelte templates**: Interpreted as unicode escape. Use expression syntax: `{'\\u'}`
 - **Stale OSC 7 on SSH**: Local shell sets OSC 7 cwd before SSH starts. If remote doesn't emit OSC 7, the local value persists — compare with lsof cwd to detect
 - **Shell escaping layers**: JS → local shell → SSH → remote shell. `$SHELL` must not be escaped (remote needs to expand it). Single quotes protect from local expansion but prevent ~ expansion
+- **PROMPT_COMMAND guard flag must be last**: `__aiterm_at_prompt=1` MUST be the final item in PROMPT_COMMAND. If other commands follow it (e.g. title printf), the DEBUG trap fires spuriously during PROMPT_COMMAND and clears shell state.
+- **Bash parses all if/elif branches**: Even non-executed branches must be syntactically valid. Zsh function bodies `(){ cmd }` need `; }` to be valid bash syntax.
+- **Svelte $effect reactive loops with stores**: `clearFoo()` that reads `$state` inside `$effect` subscribes the effect to that state. Wrap in `untrack()` to prevent re-triggering.
+- **OSC 133 replayed from scrollback**: Restored scrollback replays OSC sequences. Gate the OSC 133 handler on `trackActivity` flag (delayed 2s after mount) to ignore stale sequences.

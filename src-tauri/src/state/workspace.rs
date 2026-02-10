@@ -293,6 +293,10 @@ fn default_theme() -> String {
     "tokyo-night".to_string()
 }
 
+fn default_notify_min_duration() -> u32 {
+    30
+}
+
 fn default_true() -> bool {
     true
 }
@@ -340,6 +344,10 @@ pub struct Preferences {
     pub custom_themes: Vec<serde_json::Value>,
     #[serde(default)]
     pub restore_session: bool,
+    #[serde(default)]
+    pub notify_on_completion: bool,
+    #[serde(default = "default_notify_min_duration")]
+    pub notify_min_duration: u32,
 }
 
 impl Default for Preferences {
@@ -361,6 +369,8 @@ impl Default for Preferences {
             shell_integration: false,
             custom_themes: Vec::new(),
             restore_session: false,
+            notify_on_completion: false,
+            notify_min_duration: default_notify_min_duration(),
         }
     }
 }

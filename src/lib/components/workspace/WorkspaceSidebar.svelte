@@ -147,7 +147,9 @@
   .sidebar-titlebar {
     display: flex;
     align-items: center;
-    padding: 10px 16px;
+    height: var(--tab-height);
+    padding: 0 16px;
+    border-bottom: 1px solid var(--bg-light);
   }
 
   .sidebar-logo {

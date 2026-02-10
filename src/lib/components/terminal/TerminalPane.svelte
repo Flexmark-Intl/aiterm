@@ -19,6 +19,7 @@
   import { getCompiledPatterns } from '$lib/utils/promptPattern';
   import { error as logError } from '@tauri-apps/plugin-log';
   import { isModKey, modSymbol } from '$lib/utils/platform';
+  import { buildShellIntegrationSnippet, buildInstallSnippet } from '$lib/utils/shellIntegration';
 
   interface Props {
     workspaceId: string;
@@ -204,7 +205,7 @@
         activityStore.setShellState(tabId, 'completed', exitCode);
       }
       if (cmd === 'B' || cmd === 'C') {
-        activityStore.setShellState(tabId, 'running');
+        activityStore.setShellState(tabId, null);
       }
       return true;
     });
@@ -288,6 +289,7 @@
           logError(`Failed to replay SSH command: ${e}`);
         }
       }, 500);
+
     }
 
     // Register terminal instance with serialize addon for scrollback saving
@@ -550,6 +552,30 @@
           terminalsStore.clearTerminal(tabId);
         },
       },
+      ...(preferencesStore.shellTitleIntegration || preferencesStore.shellIntegration ? [
+        { label: '', separator: true, action: () => {} },
+        {
+          label: 'Setup Shell Integration',
+          action: async () => {
+            const snippet = buildShellIntegrationSnippet({
+              shellTitle: preferencesStore.shellTitleIntegration,
+              shellIntegration: preferencesStore.shellIntegration,
+            });
+            if (snippet) {
+              const bytes = Array.from(new TextEncoder().encode(snippet + '\n'));
+              await writeTerminal(ptyId, bytes);
+            }
+          },
+        },
+        {
+          label: 'Install Shell Integration',
+          action: async () => {
+            const snippet = buildInstallSnippet();
+            const bytes = Array.from(new TextEncoder().encode(snippet + '\n'));
+            await writeTerminal(ptyId, bytes);
+          },
+        },
+      ] : []),
     ];
   }
 </script>

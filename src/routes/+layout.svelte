@@ -14,6 +14,8 @@
   import * as commands from '$lib/tauri/commands';
   import type { Preferences } from '$lib/tauri/types';
   import { isModKey } from '$lib/utils/platform';
+  // Side-effect import: subscribes to activity store for OS notifications
+  import '$lib/stores/notifications.svelte';
 
   interface Props {
     children: import('svelte').Snippet;

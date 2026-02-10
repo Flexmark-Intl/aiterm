@@ -20,6 +20,8 @@ function createPreferencesStore() {
   let shellIntegration = $state(false);
   let customThemes = $state<Theme[]>([]);
   let restoreSession = $state(false);
+  let notifyOnCompletion = $state(false);
+  let notifyMinDuration = $state(30);
 
   return {
     get fontSize() { return fontSize; },
@@ -38,6 +40,8 @@ function createPreferencesStore() {
     get shellIntegration() { return shellIntegration; },
     get customThemes() { return customThemes; },
     get restoreSession() { return restoreSession; },
+    get notifyOnCompletion() { return notifyOnCompletion; },
+    get notifyMinDuration() { return notifyMinDuration; },
 
     async load() {
       const prefs = await commands.getPreferences();
@@ -57,6 +61,8 @@ function createPreferencesStore() {
       shellIntegration = prefs.shell_integration ?? false;
       customThemes = prefs.custom_themes ?? [];
       restoreSession = prefs.restore_session ?? false;
+      notifyOnCompletion = prefs.notify_on_completion ?? false;
+      notifyMinDuration = prefs.notify_min_duration ?? 30;
     },
 
     async setFontSize(value: number) {
@@ -134,6 +140,16 @@ function createPreferencesStore() {
       await this.save();
     },
 
+    async setNotifyOnCompletion(value: boolean) {
+      notifyOnCompletion = value;
+      await this.save();
+    },
+
+    async setNotifyMinDuration(value: number) {
+      notifyMinDuration = value;
+      await this.save();
+    },
+
     async addCustomTheme(t: Theme) {
       customThemes = [...customThemes, t];
       await this.save();
@@ -169,6 +185,8 @@ function createPreferencesStore() {
       shellIntegration = prefs.shell_integration ?? false;
       customThemes = prefs.custom_themes ?? [];
       restoreSession = prefs.restore_session ?? false;
+      notifyOnCompletion = prefs.notify_on_completion ?? false;
+      notifyMinDuration = prefs.notify_min_duration ?? 30;
     },
 
     async save() {
@@ -189,6 +207,8 @@ function createPreferencesStore() {
         shell_integration: shellIntegration,
         custom_themes: customThemes,
         restore_session: restoreSession,
+        notify_on_completion: notifyOnCompletion,
+        notify_min_duration: notifyMinDuration,
       };
       await commands.setPreferences(prefs);
     }

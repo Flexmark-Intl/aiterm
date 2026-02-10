@@ -60,6 +60,8 @@ export interface Preferences {
   shell_integration: boolean;
   custom_themes: import('$lib/themes').Theme[];
   restore_session: boolean;
+  notify_on_completion: boolean;
+  notify_min_duration: number;
 }
 
 export interface WindowData {

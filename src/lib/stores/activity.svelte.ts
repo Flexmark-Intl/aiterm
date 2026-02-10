@@ -1,11 +1,17 @@
 export interface ShellState {
-  state: 'prompt' | 'completed' | 'running';
+  state: 'prompt' | 'completed';
   exitCode?: number;
 }
+
+type CommandStartListener = (tabId: string) => void;
+type CommandCompleteListener = (tabId: string, exitCode: number) => void;
 
 function createActivityStore() {
   let active = $state<Set<string>>(new Set());
   let shellStates = $state<Map<string, ShellState>>(new Map());
+
+  const commandStartListeners = new Set<CommandStartListener>();
+  const commandCompleteListeners = new Set<CommandCompleteListener>();
 
   return {
     hasActivity(tabId: string): boolean {
@@ -36,11 +42,14 @@ function createActivityStore() {
       return shellStates.get(tabId);
     },
 
-    setShellState(tabId: string, state: 'prompt' | 'completed' | 'running' | null, exitCode?: number) {
+    setShellState(tabId: string, state: 'prompt' | 'completed' | null, exitCode?: number) {
       if (state === null) {
-        if (!shellStates.has(tabId)) return;
-        shellStates = new Map(shellStates);
-        shellStates.delete(tabId);
+        // B/C: command started running
+        if (shellStates.has(tabId)) {
+          shellStates = new Map(shellStates);
+          shellStates.delete(tabId);
+        }
+        for (const fn of commandStartListeners) fn(tabId);
         return;
       }
       if (state === 'prompt') {
@@ -50,12 +59,27 @@ function createActivityStore() {
       }
       shellStates = new Map(shellStates);
       shellStates.set(tabId, { state, exitCode });
+      if (state === 'completed') {
+        for (const fn of commandCompleteListeners) fn(tabId, exitCode ?? 0);
+      }
     },
 
     clearShellState(tabId: string) {
       if (!shellStates.has(tabId)) return;
       shellStates = new Map(shellStates);
       shellStates.delete(tabId);
+    },
+
+    /** Subscribe to command start events (B/C sequence). Returns unsubscribe function. */
+    onCommandStart(fn: CommandStartListener): () => void {
+      commandStartListeners.add(fn);
+      return () => { commandStartListeners.delete(fn); };
+    },
+
+    /** Subscribe to command complete events (D sequence). Returns unsubscribe function. */
+    onCommandComplete(fn: CommandCompleteListener): () => void {
+      commandCompleteListeners.add(fn);
+      return () => { commandCompleteListeners.delete(fn); };
     },
   };
 }

@@ -35,9 +35,6 @@
 </script>
 
 <div class="app">
-  {#if import.meta.env.DEV}
-    <span class="dev-badge">DEV</span>
-  {/if}
   <div class="app-body">
     {#if loading}
       <div class="loading">
@@ -109,21 +106,6 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-  }
-
-  .dev-badge {
-    position: fixed;
-    top: 6px;
-    right: 10px;
-    z-index: 9999;
-    font-size: 10px;
-    font-weight: 600;
-    color: var(--bg-dark);
-    background: var(--accent);
-    padding: 1px 6px;
-    border-radius: 3px;
-    letter-spacing: 0.5px;
-    pointer-events: none;
   }
 
   .app-body {

@@ -257,6 +257,45 @@
             <span class="toggle-knob"></span>
           </button>
         </div>
+
+        <h3 class="section-heading" style="margin-top: 20px;">Notifications</h3>
+
+        <div class="setting" style="align-items: flex-start;">
+          <div>
+            <label for="notify-completion">Notify on Completion</label>
+            <p class="setting-hint">
+              Send an OS notification when a command finishes in a background tab.
+              Requires shell integration to be set up.
+            </p>
+          </div>
+          <button
+            id="notify-completion"
+            class="toggle"
+            class:active={preferencesStore.notifyOnCompletion}
+            onclick={() => preferencesStore.setNotifyOnCompletion(!preferencesStore.notifyOnCompletion)}
+            aria-pressed={preferencesStore.notifyOnCompletion}
+            aria-label="Toggle notify on completion"
+          >
+            <span class="toggle-knob"></span>
+          </button>
+        </div>
+
+        <div class="setting">
+          <label for="notify-duration">Minimum Duration</label>
+          <select
+            id="notify-duration"
+            value={preferencesStore.notifyMinDuration}
+            onchange={(e) => preferencesStore.setNotifyMinDuration(parseInt(e.currentTarget.value))}
+          >
+            <option value={0}>Always</option>
+            <option value={3}>3 seconds</option>
+            <option value={5}>5 seconds</option>
+            <option value={10}>10 seconds</option>
+            <option value={15}>15 seconds</option>
+            <option value={30}>30 seconds</option>
+            <option value={60}>60 seconds</option>
+          </select>
+        </div>
       {:else if activeSection === 'ui'}
         <div class="setting">
           <label for="auto-save">Auto-save Interval</label>
