@@ -4,10 +4,15 @@
   import WorkspaceSidebar from '$lib/components/workspace/WorkspaceSidebar.svelte';
   import SplitContainer from '$lib/components/pane/SplitContainer.svelte';
   import TerminalPane from '$lib/components/terminal/TerminalPane.svelte';
+  import ChangelogModal from '$lib/components/ChangelogModal.svelte';
   import Resizer from '$lib/components/Resizer.svelte';
+  import { getVersion } from '@tauri-apps/api/app';
   import { modLabel, modSymbol, altLabel } from '$lib/utils/platform';
 
   let loading = $state(true);
+  let showChangelog = $state(false);
+  let appVersion = $state('');
+  getVersion().then(v => { appVersion = v; });
 
   // Track which workspaces have been visited so we lazily mount terminals
   // on first activation but keep them alive across workspace switches.
@@ -46,7 +51,7 @@
         class:collapsed={workspacesStore.sidebarCollapsed}
         style="width: {workspacesStore.sidebarCollapsed ? 0 : workspacesStore.sidebarWidth + 4}px"
       >
-        <WorkspaceSidebar width={workspacesStore.sidebarWidth} />
+        <WorkspaceSidebar width={workspacesStore.sidebarWidth} onversionclick={() => showChangelog = true} />
         <Resizer direction="horizontal" onresize={handleSidebarResize} onresizeend={handleSidebarResizeEnd} />
       </div>
       {#if workspacesStore.sidebarCollapsed}
@@ -104,6 +109,8 @@
     {/if}
   </div>
 </div>
+
+<ChangelogModal open={showChangelog} onclose={() => showChangelog = false} version={appVersion} />
 
 <style>
   .app {

@@ -20,9 +20,10 @@
 
   interface Props {
     width: number;
+    onversionclick?: () => void;
   }
 
-  let { width }: Props = $props();
+  let { width, onversionclick }: Props = $props();
 
   let editingId = $state<string | null>(null);
   let editingName = $state('');
@@ -257,7 +258,7 @@
       <span class="dev-badge">DEV</span>
     {/if}
     {#if appVersion}
-      <span class="version-badge">v{appVersion}</span>
+      <button class="version-badge" onclick={onversionclick}>v{appVersion}</button>
     {/if}
   </div>
   <div class="sidebar-header">
@@ -360,7 +361,12 @@
     margin-left: 6px;
     font-size: 10px;
     color: var(--fg-dim);
-    pointer-events: none;
+    cursor: pointer;
+    -webkit-app-region: no-drag;
+  }
+
+  .version-badge:hover {
+    color: var(--fg);
   }
 
   .sidebar-header {
