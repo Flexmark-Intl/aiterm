@@ -316,27 +316,20 @@
     }
     await workspacesStore.setTabPtyId(workspaceId, paneId, tabId, ptyId);
 
-    // If the source pane was running SSH (or last session had SSH), replay the command
+    // If the source pane was running SSH (or last session had SSH), replay the command.
+    // The pinned command (if any) is sent immediately after — the TTY buffers it
+    // until SSH connects and the remote shell reads from forwarded stdin.
     if (ctx?.sshCommand) {
       // Small delay to let the local shell prompt initialize before sending
       setTimeout(async () => {
         try {
           const cmd = buildSshCommand(ctx.sshCommand, ctx.remoteCwd);
-          const bytes = Array.from(new TextEncoder().encode(cmd + '\n'));
-          await writeTerminal(ptyId, bytes);
-
-          // If a pinned command is set, send it after SSH connects
-          const pinnedCmd = pinnedCommand;
-          if (pinnedCmd) {
-            setTimeout(async () => {
-              try {
-                const cmdBytes = Array.from(new TextEncoder().encode(pinnedCmd + '\n'));
-                await writeTerminal(ptyId, cmdBytes);
-              } catch (e) {
-                logError(`Failed to send pinned command: ${e}`);
-              }
-            }, 3000);
+          let payload = cmd + '\n';
+          if (pinnedCommand) {
+            payload += pinnedCommand + '\n';
           }
+          const bytes = Array.from(new TextEncoder().encode(payload));
+          await writeTerminal(ptyId, bytes);
         } catch (e) {
           logError(`Failed to replay SSH command: ${e}`);
         }
@@ -662,14 +655,14 @@
       },
       { label: '', separator: true, action: () => {} },
       ...(isPinned ? [{
-        label: 'Unpin Session',
+        label: 'Disable Auto-resume',
         action: async () => {
           await workspacesStore.setTabPinnedContext(workspaceId, paneId, tabId, null, null, null);
           isPinned = false;
         },
       }] : [
         {
-          label: 'Pin Session',
+          label: 'Auto-resume',
           action: async () => {
             try {
               const ctx = await gatherPinContext();
@@ -677,12 +670,12 @@
               await workspacesStore.setTabPinnedContext(workspaceId, paneId, tabId, ctx.sshCmd, ctx.remoteCwd, null);
               isPinned = true;
             } catch (e) {
-              logError(`Pin session failed: ${e}`);
+              logError(`Auto-resume failed: ${e}`);
             }
           },
         },
         {
-          label: 'Pin Session + Command\u2026',
+          label: 'Auto-resume + Command\u2026',
           action: async () => {
             try {
               const ctx = await gatherPinContext();
@@ -690,7 +683,7 @@
               pinPromptValue = '';
               pinPrompt = ctx;
             } catch (e) {
-              logError(`Pin session failed: ${e}`);
+              logError(`Auto-resume failed: ${e}`);
             }
           },
         },
@@ -760,12 +753,15 @@
         bind:value={pinPromptValue}
         placeholder="e.g. claude --continue"
         autofocus
+        autocorrect="off"
+        autocapitalize="off"
+        spellcheck="false"
         onkeydown={(e) => { if (e.key === 'Enter') submitPinPrompt(); if (e.key === 'Escape') cancelPinPrompt(); }}
       />
       <div class="pin-prompt-hint">Leave empty for SSH + cwd only</div>
       <div class="pin-prompt-actions">
         <button class="pin-prompt-btn cancel" onclick={cancelPinPrompt}>Cancel</button>
-        <button class="pin-prompt-btn confirm" onclick={submitPinPrompt}>Pin</button>
+        <button class="pin-prompt-btn confirm" onclick={submitPinPrompt}>Save</button>
       </div>
     </div>
   </div>

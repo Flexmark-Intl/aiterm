@@ -350,7 +350,7 @@
           <span class="activity-dot"></span>
         {/if}
         {#if tab.pinned_ssh_command}
-          <span class="pin-indicator" title="Pinned session">&#x1F4CC;</span>
+          <span class="auto-resume-indicator" title="Auto-resume enabled">&#x21BB;</span>
         {/if}
         <span class="tab-name">{displayName(tab)}</span>
         <div class="tab-actions">
@@ -485,9 +485,9 @@
     font-family: -apple-system, system-ui, sans-serif;
   }
 
-  .pin-indicator {
+  .auto-resume-indicator {
     flex-shrink: 0;
-    font-size: 9px;
+    font-size: 10px;
     margin-right: 3px;
     opacity: 0.6;
     line-height: 1;
