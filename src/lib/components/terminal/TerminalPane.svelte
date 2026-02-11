@@ -30,12 +30,14 @@
     restoreCwd?: string | null;
     restoreSshCommand?: string | null;
     restoreRemoteCwd?: string | null;
-    pinnedSshCommand?: string | null;
-    pinnedRemoteCwd?: string | null;
-    pinnedCommand?: string | null;
+    autoResumeCwd?: string | null;
+    autoResumeSshCommand?: string | null;
+    autoResumeRemoteCwd?: string | null;
+    autoResumeCommand?: string | null;
+    autoResumeRememberedCommand?: string | null;
   }
 
-  let { workspaceId, paneId, tabId, visible, initialScrollback, restoreCwd, restoreSshCommand, restoreRemoteCwd, pinnedSshCommand, pinnedRemoteCwd, pinnedCommand }: Props = $props();
+  let { workspaceId, paneId, tabId, visible, initialScrollback, restoreCwd, restoreSshCommand, restoreRemoteCwd, autoResumeCwd, autoResumeSshCommand, autoResumeRemoteCwd, autoResumeCommand, autoResumeRememberedCommand }: Props = $props();
 
   let containerRef: HTMLDivElement;
   let terminal: Terminal;
@@ -52,12 +54,14 @@
   let initialized = $state(false);
   let trackActivity = false;
   let visibilityGraceUntil = 0; // timestamp — suppress activity until this time
-  let isPinned = $state(false);
+  let isAutoResume = $state(false);
   // Initialized in onMount from prop (intentionally one-time read, managed locally after)
   let resizePtyTimeout: ReturnType<typeof setTimeout> | undefined;
-  // Inline prompt for pinned command
-  let pinPrompt = $state<{ sshCmd: string; remoteCwd: string | null } | null>(null);
-  let pinPromptValue = $state('');
+  // Inline prompt for auto-resume command
+  let autoResumePrompt = $state<{ cwd: string | null; sshCmd: string | null; remoteCwd: string | null } | null>(null);
+  let autoResumePromptValue = $state('');
+  let autoResumeManualResize = false;
+  let autoResumeHeightBeforeMouse = 0;
 
   // Fit terminal with one fewer row for bottom breathing room.
   // Uses proposeDimensions() + a single resize instead of fit() + resize()
@@ -163,7 +167,7 @@
 
   onMount(async () => {
     ptyId = crypto.randomUUID();
-    isPinned = !!pinnedSshCommand;
+    isAutoResume = !!(autoResumeSshCommand || autoResumeCwd);
 
     terminal = new Terminal({
       theme: getTheme(preferencesStore.theme, preferencesStore.customThemes).terminal,
@@ -297,16 +301,16 @@
     });
 
     // Check for split context (cwd, SSH command from source pane)
-    // Fall back to pinned context, then persisted restore context from last session.
-    // Pinned context always wins over restore context (survives SSH disconnects).
+    // Fall back to auto-resume context, then persisted restore context from last session.
+    // Auto-resume context always wins over restore context (survives SSH disconnects).
     const splitCtx = terminalsStore.consumeSplitContext(tabId);
-    const pinnedCtx = pinnedSshCommand
-      ? { cwd: restoreCwd ?? null, sshCommand: cleanSshCommand(pinnedSshCommand), remoteCwd: pinnedRemoteCwd ?? null }
+    const autoResumeCtx = (autoResumeSshCommand || autoResumeCwd)
+      ? { cwd: autoResumeCwd ?? restoreCwd ?? null, sshCommand: autoResumeSshCommand ? cleanSshCommand(autoResumeSshCommand) : null, remoteCwd: autoResumeRemoteCwd ?? null }
       : null;
     const restoreCtx = (restoreCwd || restoreSshCommand)
       ? { cwd: restoreCwd ?? null, sshCommand: restoreSshCommand ? cleanSshCommand(restoreSshCommand) : null, remoteCwd: restoreRemoteCwd ?? null }
       : null;
-    const ctx = splitCtx ?? pinnedCtx ?? restoreCtx;
+    const ctx = splitCtx ?? autoResumeCtx ?? restoreCtx;
 
     // Spawn PTY with tab-specific history, optionally inheriting cwd
     try {
@@ -317,7 +321,7 @@
     await workspacesStore.setTabPtyId(workspaceId, paneId, tabId, ptyId);
 
     // If the source pane was running SSH (or last session had SSH), replay the command.
-    // The pinned command (if any) is sent immediately after — the TTY buffers it
+    // The auto-resume command (if any) is sent immediately after — the TTY buffers it
     // until SSH connects and the remote shell reads from forwarded stdin.
     if (ctx?.sshCommand) {
       // Small delay to let the local shell prompt initialize before sending
@@ -325,13 +329,23 @@
         try {
           const cmd = buildSshCommand(ctx.sshCommand, ctx.remoteCwd);
           let payload = cmd + '\n';
-          if (pinnedCommand) {
-            payload += pinnedCommand + '\n';
+          if (autoResumeCommand) {
+            payload += autoResumeCommand + '\n';
           }
           const bytes = Array.from(new TextEncoder().encode(payload));
           await writeTerminal(ptyId, bytes);
         } catch (e) {
           logError(`Failed to replay SSH command: ${e}`);
+        }
+      }, 500);
+    } else if (autoResumeCommand && !splitCtx) {
+      // Local auto-resume: send command after shell starts
+      setTimeout(async () => {
+        try {
+          const bytes = Array.from(new TextEncoder().encode(autoResumeCommand + '\n'));
+          await writeTerminal(ptyId, bytes);
+        } catch (e) {
+          logError(`Failed to replay auto-resume command: ${e}`);
         }
       }, 500);
     }
@@ -357,6 +371,20 @@
       if (isModKey(e) && e.key === 'v') {
         e.preventDefault();
         pasteFromClipboard().catch(e => logError(String(e)));
+        return false;
+      }
+
+      if (isModKey(e) && e.key === 'r') {
+        e.preventDefault();
+        if (isAutoResume) {
+          workspacesStore.setTabAutoResumeContext(workspaceId, paneId, tabId, null, null, null, null);
+          isAutoResume = false;
+        } else {
+          gatherAutoResumeContext().then(ctx => {
+            autoResumePromptValue = autoResumeRememberedCommand ?? '';
+            autoResumePrompt = ctx;
+          }).catch(e => logError(`Auto-resume failed: ${e}`));
+        }
         return false;
       }
 
@@ -456,7 +484,7 @@
       // Delay fit to ensure container is visible
       requestAnimationFrame(() => {
         fitWithPadding();
-        if (!pinPrompt) terminal.focus();
+        if (!autoResumePrompt) terminal.focus();
       });
       untrack(() => {
         activityStore.clearActive(tabId);
@@ -563,55 +591,63 @@
     };
   });
 
-  async function gatherPinContext(): Promise<{ sshCmd: string; remoteCwd: string | null } | null> {
+  async function gatherAutoResumeContext(): Promise<{ cwd: string | null; sshCmd: string | null; remoteCwd: string | null }> {
     const info = await getPtyInfo(ptyId);
-    if (!info.foreground_command) return null;
-    const sshCmd = cleanSshCommand(info.foreground_command);
-    const osc7Cwd = terminalsStore.getOsc(tabId)?.cwd ?? null;
-    const isOsc7Stale = osc7Cwd === info.cwd;
-    let remoteCwd = (osc7Cwd && !isOsc7Stale) ? osc7Cwd : null;
-    if (!remoteCwd) {
-      const patterns = getCompiledPatterns(preferencesStore.promptPatterns);
-      const buffer = terminal.buffer.active;
-      const cursorLine = buffer.baseY + buffer.cursorY;
-      for (let i = cursorLine; i >= Math.max(0, cursorLine - 5); i--) {
-        const line = buffer.getLine(i);
-        if (!line) continue;
-        const text = line.translateToString(true).trim();
-        if (!text) continue;
-        for (const re of patterns) {
-          const match = text.match(re);
-          if (match?.[1]) { remoteCwd = match[1]; break; }
+    const sshCmd = info.foreground_command ? cleanSshCommand(info.foreground_command) : null;
+    const localCwd = info.cwd ?? null;
+    let remoteCwd: string | null = null;
+    if (sshCmd) {
+      const osc7Cwd = terminalsStore.getOsc(tabId)?.cwd ?? null;
+      const isOsc7Stale = osc7Cwd === localCwd;
+      remoteCwd = (osc7Cwd && !isOsc7Stale) ? osc7Cwd : null;
+      if (!remoteCwd) {
+        const patterns = getCompiledPatterns(preferencesStore.promptPatterns);
+        const buffer = terminal.buffer.active;
+        const cursorLine = buffer.baseY + buffer.cursorY;
+        for (let i = cursorLine; i >= Math.max(0, cursorLine - 5); i--) {
+          const line = buffer.getLine(i);
+          if (!line) continue;
+          const text = line.translateToString(true).trim();
+          if (!text) continue;
+          for (const re of patterns) {
+            const match = text.match(re);
+            if (match?.[1]) { remoteCwd = match[1]; break; }
+          }
+          if (remoteCwd) break;
         }
-        if (remoteCwd) break;
       }
     }
-    return { sshCmd, remoteCwd };
+    return { cwd: localCwd, sshCmd, remoteCwd };
   }
 
-  async function submitPinPrompt() {
-    if (!pinPrompt) return;
-    const cmd = pinPromptValue.trim() || null;
-    await workspacesStore.setTabPinnedContext(workspaceId, paneId, tabId, pinPrompt.sshCmd, pinPrompt.remoteCwd, cmd);
-    isPinned = true;
-    pinPrompt = null;
-    pinPromptValue = '';
+  async function submitAutoResumePrompt() {
+    if (!autoResumePrompt) return;
+    const cmd = autoResumePromptValue.trim() || null;
+    await workspacesStore.setTabAutoResumeContext(workspaceId, paneId, tabId, autoResumePrompt.cwd, autoResumePrompt.sshCmd, autoResumePrompt.remoteCwd, cmd);
+    isAutoResume = true;
+    autoResumePrompt = null;
+    autoResumePromptValue = '';
     terminal?.focus();
   }
 
-  function cancelPinPrompt() {
-    pinPrompt = null;
-    pinPromptValue = '';
+  function cancelAutoResumePrompt() {
+    autoResumePrompt = null;
+    autoResumePromptValue = '';
     terminal?.focus();
   }
 
-  // When pin prompt opens: blur xterm so it stops competing, then focus the input
+  // When auto-resume prompt opens: blur xterm so it stops competing, then focus the input
   $effect(() => {
-    if (pinPrompt) {
+    if (autoResumePrompt) {
+      autoResumeManualResize = false;
       terminal?.blur();
       requestAnimationFrame(() => {
-        const el = document.getElementById('pin-cmd-input') as HTMLInputElement | null;
-        el?.focus();
+        const el = document.getElementById('auto-resume-cmd-input') as HTMLTextAreaElement | null;
+        if (el) {
+          el.focus();
+          el.style.height = 'auto';
+          el.style.height = Math.min(el.scrollHeight, 560) + 'px';
+        }
       });
     }
   });
@@ -654,21 +690,20 @@
         },
       },
       { label: '', separator: true, action: () => {} },
-      ...(isPinned ? [{
+      ...(isAutoResume ? [{
         label: 'Disable Auto-resume',
         action: async () => {
-          await workspacesStore.setTabPinnedContext(workspaceId, paneId, tabId, null, null, null);
-          isPinned = false;
+          await workspacesStore.setTabAutoResumeContext(workspaceId, paneId, tabId, null, null, null, null);
+          isAutoResume = false;
         },
       }] : [
         {
           label: 'Auto-resume',
           action: async () => {
             try {
-              const ctx = await gatherPinContext();
-              if (!ctx) return;
-              await workspacesStore.setTabPinnedContext(workspaceId, paneId, tabId, ctx.sshCmd, ctx.remoteCwd, null);
-              isPinned = true;
+              const ctx = await gatherAutoResumeContext();
+              await workspacesStore.setTabAutoResumeContext(workspaceId, paneId, tabId, ctx.cwd, ctx.sshCmd, ctx.remoteCwd, null);
+              isAutoResume = true;
             } catch (e) {
               logError(`Auto-resume failed: ${e}`);
             }
@@ -678,10 +713,9 @@
           label: 'Auto-resume + Command\u2026',
           action: async () => {
             try {
-              const ctx = await gatherPinContext();
-              if (!ctx) return;
-              pinPromptValue = '';
-              pinPrompt = ctx;
+              const ctx = await gatherAutoResumeContext();
+              autoResumePromptValue = autoResumeRememberedCommand ?? '';
+              autoResumePrompt = ctx;
             } catch (e) {
               logError(`Auto-resume failed: ${e}`);
             }
@@ -739,29 +773,53 @@
   />
 {/if}
 
-{#if pinPrompt}
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <div class="pin-prompt-backdrop" onclick={(e) => { if (e.target === e.currentTarget) cancelPinPrompt(); }}>
-    <div class="pin-prompt">
-      <label class="pin-prompt-label" for="pin-cmd-input">Command to run after connect</label>
+{#if autoResumePrompt}
+  <div class="auto-resume-prompt-backdrop">
+    <div class="auto-resume-prompt">
+      <label class="auto-resume-prompt-label" for="auto-resume-cmd-input">Command to run after {autoResumePrompt.sshCmd ? 'connect' : 'start'}</label>
       <!-- svelte-ignore a11y_autofocus -->
-      <input
-        id="pin-cmd-input"
-        class="pin-prompt-input"
-        type="text"
-        bind:value={pinPromptValue}
-        placeholder="e.g. claude --continue"
-        autofocus
-        autocorrect="off"
-        autocapitalize="off"
-        spellcheck="false"
-        onkeydown={(e) => { if (e.key === 'Enter') submitPinPrompt(); if (e.key === 'Escape') cancelPinPrompt(); }}
-      />
-      <div class="pin-prompt-hint">Leave empty for SSH + cwd only</div>
-      <div class="pin-prompt-actions">
-        <button class="pin-prompt-btn cancel" onclick={cancelPinPrompt}>Cancel</button>
-        <button class="pin-prompt-btn confirm" onclick={submitPinPrompt}>Save</button>
+      <div class="auto-resume-input-group">
+        <textarea
+          id="auto-resume-cmd-input"
+          class="auto-resume-prompt-input"
+          bind:value={autoResumePromptValue}
+          placeholder="e.g. claude --continue"
+          rows="1"
+          autofocus
+          autocapitalize="off"
+          spellcheck="false"
+          onkeydown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submitAutoResumePrompt(); if (e.key === 'Escape') cancelAutoResumePrompt(); }}
+          oninput={(e) => { if (!autoResumeManualResize) { const el = e.currentTarget; el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 560) + 'px'; } }}
+        ></textarea>
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="auto-resume-resize-handle" style="cursor: row-resize" onmousedown={(e) => {
+          e.preventDefault();
+          const textarea = document.getElementById('auto-resume-cmd-input') as HTMLTextAreaElement;
+          if (!textarea) return;
+          const startY = e.clientY;
+          const startH = textarea.offsetHeight;
+          function onMove(ev: MouseEvent) {
+            const h = Math.max(32, Math.min(560, startH + ev.clientY - startY));
+            textarea.style.height = h + 'px';
+          }
+          function onUp() {
+            autoResumeManualResize = true;
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+          }
+          window.addEventListener('mousemove', onMove);
+          window.addEventListener('mouseup', onUp);
+        }}>
+          <svg class="auto-resume-resize-icon" width="16" height="4" viewBox="0 0 16 4" style="pointer-events: none">
+            <line x1="1" y1="1" x2="15" y2="1" stroke="currentColor" stroke-width="1" stroke-linecap="round" />
+            <line x1="1" y1="3" x2="15" y2="3" stroke="currentColor" stroke-width="1" stroke-linecap="round" />
+          </svg>
+        </div>
+      </div>
+      <div class="auto-resume-prompt-hint">{autoResumePrompt.sshCmd ? 'Leave empty for SSH + cwd only' : 'Leave empty for cwd only'} &middot; Each line sent as a separate command &middot; {modSymbol}Enter to save</div>
+      <div class="auto-resume-prompt-actions">
+        <button class="auto-resume-prompt-btn cancel" onclick={cancelAutoResumePrompt}>Cancel</button>
+        <button class="auto-resume-prompt-btn confirm" onclick={submitAutoResumePrompt}>Save</button>
       </div>
     </div>
   </div>
@@ -817,7 +875,7 @@
     overflow-y: auto !important;
   }
 
-  .pin-prompt-backdrop {
+  .auto-resume-prompt-backdrop {
     position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.4);
@@ -828,7 +886,7 @@
     pointer-events: auto;
   }
 
-  .pin-prompt {
+  .auto-resume-prompt {
     background: var(--bg-medium);
     border: 1px solid var(--bg-light);
     border-radius: 8px;
@@ -839,40 +897,76 @@
     gap: 8px;
   }
 
-  .pin-prompt-label {
+  .auto-resume-prompt-label {
     color: var(--fg);
     font-size: 13px;
     font-weight: 500;
   }
 
-  .pin-prompt-input {
-    background: var(--bg-dark);
+  .auto-resume-input-group {
+    display: flex;
+    flex-direction: column;
     border: 1px solid var(--bg-light);
     border-radius: 4px;
+    transition: border-color 0.1s;
+  }
+
+  .auto-resume-input-group:focus-within {
+    border-color: var(--accent);
+  }
+
+  .auto-resume-prompt-input {
+    background: var(--bg-dark);
+    border: none;
+    border-radius: 4px 4px 0 0;
     padding: 8px;
     color: var(--fg);
     font-family: inherit;
     font-size: 13px;
     outline: none;
+    resize: none;
+    min-height: 2.4em;
+    max-height: 560px;
+    overflow-y: auto;
   }
 
-  .pin-prompt-input:focus {
-    border-color: var(--accent);
+  .auto-resume-resize-handle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 12px;
+    background: var(--bg-dark);
+    border-radius: 0 0 3px 3px;
+    user-select: none;
   }
 
-  .pin-prompt-hint {
+  .auto-resume-resize-handle:hover {
+    background: var(--bg-light);
+  }
+
+  .auto-resume-resize-icon {
+    color: var(--bg-light);
+    transition: color 0.1s;
+  }
+
+  .auto-resume-resize-handle:hover .auto-resume-resize-icon {
+    color: var(--fg-dim);
+  }
+
+
+  .auto-resume-prompt-hint {
     color: var(--fg-dim);
     font-size: 11px;
   }
 
-  .pin-prompt-actions {
+  .auto-resume-prompt-actions {
     display: flex;
     justify-content: flex-end;
     gap: 8px;
     margin-top: 4px;
   }
 
-  .pin-prompt-btn {
+  .auto-resume-prompt-btn {
     padding: 6px 14px;
     border-radius: 4px;
     border: none;
@@ -880,22 +974,22 @@
     cursor: pointer;
   }
 
-  .pin-prompt-btn.cancel {
+  .auto-resume-prompt-btn.cancel {
     background: var(--bg-light);
     color: var(--fg);
   }
 
-  .pin-prompt-btn.cancel:hover {
+  .auto-resume-prompt-btn.cancel:hover {
     background: #525a80;
   }
 
-  .pin-prompt-btn.confirm {
+  .auto-resume-prompt-btn.confirm {
     background: var(--accent);
     color: var(--bg-dark);
     font-weight: 500;
   }
 
-  .pin-prompt-btn.confirm:hover {
+  .auto-resume-prompt-btn.confirm:hover {
     opacity: 0.9;
   }
 </style>

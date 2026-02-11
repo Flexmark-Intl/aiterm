@@ -173,15 +173,22 @@ pub struct Tab {
     /// Persisted restore context: remote cwd from last session.
     #[serde(default)]
     pub restore_remote_cwd: Option<String>,
-    /// Pinned SSH command — always restore this session regardless of last state.
+    /// Auto-resume: local cwd to restore to on startup.
     #[serde(default)]
-    pub pinned_ssh_command: Option<String>,
-    /// Pinned remote cwd — used with pinned_ssh_command.
+    pub auto_resume_cwd: Option<String>,
+    /// Auto-resume: SSH command to replay on startup.
+    #[serde(default, alias = "pinned_ssh_command")]
+    pub auto_resume_ssh_command: Option<String>,
+    /// Auto-resume: remote cwd — used with auto_resume_ssh_command.
+    #[serde(default, alias = "pinned_remote_cwd")]
+    pub auto_resume_remote_cwd: Option<String>,
+    /// Auto-resume: command to run after connect (e.g. "claude").
+    #[serde(default, alias = "pinned_command")]
+    pub auto_resume_command: Option<String>,
+    /// Auto-resume: last command entered by the user (for pre-fill memory).
+    /// Only updated when user submits a command, never cleared on disable.
     #[serde(default)]
-    pub pinned_remote_cwd: Option<String>,
-    /// Pinned command to run after SSH connects (e.g. "claude").
-    #[serde(default)]
-    pub pinned_command: Option<String>,
+    pub auto_resume_remembered_command: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -395,9 +402,11 @@ impl Tab {
             restore_cwd: None,
             restore_ssh_command: None,
             restore_remote_cwd: None,
-            pinned_ssh_command: None,
-            pinned_remote_cwd: None,
-            pinned_command: None,
+            auto_resume_cwd: None,
+            auto_resume_ssh_command: None,
+            auto_resume_remote_cwd: None,
+            auto_resume_command: None,
+            auto_resume_remembered_command: None,
         }
     }
 }

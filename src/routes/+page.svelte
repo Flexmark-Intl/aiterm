@@ -90,9 +90,11 @@
                   restoreCwd={tab.restore_cwd}
                   restoreSshCommand={tab.restore_ssh_command}
                   restoreRemoteCwd={tab.restore_remote_cwd}
-                  pinnedSshCommand={tab.pinned_ssh_command}
-                  pinnedRemoteCwd={tab.pinned_remote_cwd}
-                  pinnedCommand={tab.pinned_command}
+                  autoResumeCwd={tab.auto_resume_cwd}
+                  autoResumeSshCommand={tab.auto_resume_ssh_command}
+                  autoResumeRemoteCwd={tab.auto_resume_remote_cwd}
+                  autoResumeCommand={tab.auto_resume_command}
+                  autoResumeRememberedCommand={tab.auto_resume_remembered_command}
                 />
               {/each}
             {/each}

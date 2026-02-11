@@ -205,6 +205,12 @@
         return;
       }
 
+      // Cmd+R - Auto-resume toggle (handled in TerminalPane, prevent browser reload)
+      if (isMeta && !e.shiftKey && e.key.toLowerCase() === 'r') {
+        e.preventDefault();
+        return;
+      }
+
       // Cmd+W - Close current tab (or pane if last tab)
       if (isMeta && e.key.toLowerCase() === 'w') {
         e.preventDefault();

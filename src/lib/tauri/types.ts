@@ -7,9 +7,11 @@ export interface Tab {
   restore_cwd: string | null;
   restore_ssh_command: string | null;
   restore_remote_cwd: string | null;
-  pinned_ssh_command: string | null;
-  pinned_remote_cwd: string | null;
-  pinned_command: string | null;
+  auto_resume_cwd: string | null;
+  auto_resume_ssh_command: string | null;
+  auto_resume_remote_cwd: string | null;
+  auto_resume_command: string | null;
+  auto_resume_remembered_command: string | null;
 }
 
 export interface Pane {

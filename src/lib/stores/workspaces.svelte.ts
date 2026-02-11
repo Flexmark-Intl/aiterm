@@ -433,8 +433,8 @@ function createWorkspacesStore() {
       });
     },
 
-    async setTabPinnedContext(workspaceId: string, paneId: string, tabId: string, sshCommand: string | null, remoteCwd: string | null, command: string | null = null) {
-      await commands.setTabPinnedContext(workspaceId, paneId, tabId, sshCommand, remoteCwd, command);
+    async setTabAutoResumeContext(workspaceId: string, paneId: string, tabId: string, cwd: string | null, sshCommand: string | null, remoteCwd: string | null, command: string | null = null) {
+      await commands.setTabAutoResumeContext(workspaceId, paneId, tabId, cwd, sshCommand, remoteCwd, command);
       workspaces = workspaces.map(w => {
         if (w.id === workspaceId) {
           return {
@@ -444,7 +444,7 @@ function createWorkspacesStore() {
                 return {
                   ...p,
                   tabs: p.tabs.map(t =>
-                    t.id === tabId ? { ...t, pinned_ssh_command: sshCommand, pinned_remote_cwd: remoteCwd, pinned_command: command } : t
+                    t.id === tabId ? { ...t, auto_resume_cwd: cwd, auto_resume_ssh_command: sshCommand, auto_resume_remote_cwd: remoteCwd, auto_resume_command: command, ...(command != null ? { auto_resume_remembered_command: command } : {}) } : t
                   )
                 };
               }
@@ -675,7 +675,7 @@ function createWorkspacesStore() {
       workspaces = data.workspaces;
     },
 
-    async duplicateTab(workspaceId: string, paneId: string, tabId: string) {
+    async duplicateTab(workspaceId: string, paneId: string, tabId: string, opts?: { skipScrollback?: boolean }) {
       const ws = workspaces.find(w => w.id === workspaceId);
       const pane = ws?.panes.find(p => p.id === paneId);
       const sourceTab = pane?.tabs.find(t => t.id === tabId);
@@ -683,6 +683,7 @@ function createWorkspacesStore() {
 
       // 1. Gather context from source terminal
       const { instance, scrollback, cwd, sshCommand } = await this._gatherTabContext(tabId);
+      const useScrollback = opts?.skipScrollback ? null : scrollback;
 
       // 2. Compute duplicate name with incrementing index for custom names
       const dupName = sourceTab.custom_name
@@ -698,8 +699,8 @@ function createWorkspacesStore() {
       }
 
       // 5. Set scrollback
-      if (scrollback) {
-        await commands.setTabScrollback(workspaceId, paneId, newTab.id, scrollback);
+      if (useScrollback) {
+        await commands.setTabScrollback(workspaceId, paneId, newTab.id, useScrollback);
       }
 
       // 6. Copy history

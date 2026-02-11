@@ -217,7 +217,7 @@ pub fn run() {
             commands::workspace::set_preferences,
             commands::workspace::copy_tab_history,
             commands::workspace::set_tab_restore_context,
-            commands::workspace::set_tab_pinned_context,
+            commands::workspace::set_tab_auto_resume_context,
             commands::window::get_window_data,
             commands::window::create_window,
             commands::window::duplicate_window,

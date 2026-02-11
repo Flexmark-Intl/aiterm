@@ -177,15 +177,16 @@ export async function setTabRestoreContext(
   return invoke('set_tab_restore_context', { workspaceId, paneId, tabId, cwd, sshCommand, remoteCwd });
 }
 
-export async function setTabPinnedContext(
+export async function setTabAutoResumeContext(
   workspaceId: string,
   paneId: string,
   tabId: string,
+  cwd: string | null,
   sshCommand: string | null,
   remoteCwd: string | null,
   command: string | null,
 ): Promise<void> {
-  return invoke('set_tab_pinned_context', { workspaceId, paneId, tabId, sshCommand, remoteCwd, command });
+  return invoke('set_tab_auto_resume_context', { workspaceId, paneId, tabId, cwd, sshCommand, remoteCwd, command });
 }
 
 // Window commands

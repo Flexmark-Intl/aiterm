@@ -80,7 +80,7 @@
 
   async function handleDuplicateTab(tabId: string, e: MouseEvent) {
     e.stopPropagation();
-    await workspacesStore.duplicateTab(workspaceId, pane.id, tabId);
+    await workspacesStore.duplicateTab(workspaceId, pane.id, tabId, { skipScrollback: e.metaKey || e.ctrlKey });
   }
 
   async function handleCloseTab(tabId: string, e: MouseEvent) {
@@ -349,7 +349,7 @@
         {:else if hasActivity}
           <span class="activity-dot"></span>
         {/if}
-        {#if tab.pinned_ssh_command}
+        {#if tab.auto_resume_ssh_command || tab.auto_resume_cwd}
           <span class="auto-resume-indicator" title="Auto-resume enabled">&#x21BB;</span>
         {/if}
         <span class="tab-name">{displayName(tab)}</span>
@@ -358,12 +358,7 @@
             class="tab-btn duplicate-btn"
             onclick={(e) => handleDuplicateTab(tab.id, e)}
             title="Duplicate tab ({modLabel}+Shift+T)"
-          >
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
-              <rect x="3" y="3" width="6" height="6" rx="1" />
-              <path d="M7 3V1.5A.5.5 0 006.5 1H1.5a.5.5 0 00-.5.5v5a.5.5 0 00.5.5H3" />
-            </svg>
-          </button>
+          >&#x29C9;</button>
           <button
             class="tab-btn close-btn"
             onclick={(e) => handleCloseTab(tab.id, e)}
