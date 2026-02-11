@@ -27,3 +27,7 @@ tauri-plugin-log = "2"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-notification = "2"
 log = "0.4"
+tauri-plugin-mcp-bridge = { version = "0.8", optional = true }
+
+[features]
+mcp-bridge = ["dep:tauri-plugin-mcp-bridge"]

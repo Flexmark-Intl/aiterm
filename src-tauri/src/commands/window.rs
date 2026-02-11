@@ -229,6 +229,9 @@ pub(crate) fn clone_workspace_with_id_mapping(
                 restore_cwd: ctx.and_then(|c| c.cwd.clone()),
                 restore_ssh_command: ctx.and_then(|c| c.ssh_command.clone()),
                 restore_remote_cwd: ctx.and_then(|c| c.remote_cwd.clone()),
+                pinned_ssh_command: tab.pinned_ssh_command.clone(),
+                pinned_remote_cwd: tab.pinned_remote_cwd.clone(),
+                pinned_command: tab.pinned_command.clone(),
             }
         }).collect();
 

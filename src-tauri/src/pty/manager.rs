@@ -50,6 +50,7 @@ pub fn spawn_pty(
     // Set environment variables
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
+    cmd.env("TERM_PROGRAM", "aiterm");
 
     // Shell-specific environment variables for macOS
     if shell_name == "bash" {
@@ -93,19 +94,20 @@ pub fn spawn_pty(
             "bash" => {
                 if shell_integration {
                     // Build PROMPT_COMMAND with DEBUG trap for OSC 133 B.
-                    // The trap is set once (guarded by __aiterm_trap). It fires
-                    // before each command; the __aiterm_at_prompt flag ensures B
-                    // is only emitted for the first command after a prompt.
-                    // The flag is set LAST so DEBUG doesn't see it during prompt.
+                    // __aiterm_ec=$? MUST be first to capture the user's command
+                    // exit code before anything else clobbers $?.
+                    // The trap is set once (guarded by __aiterm_trap via && chain).
+                    // __aiterm_at_prompt=1 MUST be last so the DEBUG trap only
+                    // fires B for user commands, not PROMPT_COMMAND internals.
                     let title_part = if shell_title_integration {
                         r#" printf "\033]0;%s@%s:%s\007" "${USER}" "${HOSTNAME%%.*}" "${PWD/#$HOME/~}";"#
                     } else { "" };
                     let prompt_cmd = format!(
                         concat!(
-                            r#"if [ -z "$__aiterm_trap" ]; then __aiterm_trap=1;"#,
+                            r#"__aiterm_ec=$?;"#,
+                            r#" [[ -z "$__aiterm_trap" ]] && __aiterm_trap=1 &&"#,
                             r#" trap '[[ "$__aiterm_at_prompt" == 1 ]] && __aiterm_at_prompt= && printf "\033]133;B\007"' DEBUG;"#,
-                            r#" fi;"#,
-                            r#" __aiterm_ec=$?; printf '\033]133;D;%d\007' "$__aiterm_ec"; printf '\033]133;A\007';"#,
+                            r#" printf '\033]133;D;%d\007' "$__aiterm_ec"; printf '\033]133;A\007';"#,
                             r#"{}"#,
                             r#" __aiterm_at_prompt=1"#,
                         ),

@@ -30,9 +30,12 @@
     restoreCwd?: string | null;
     restoreSshCommand?: string | null;
     restoreRemoteCwd?: string | null;
+    pinnedSshCommand?: string | null;
+    pinnedRemoteCwd?: string | null;
+    pinnedCommand?: string | null;
   }
 
-  let { workspaceId, paneId, tabId, visible, initialScrollback, restoreCwd, restoreSshCommand, restoreRemoteCwd }: Props = $props();
+  let { workspaceId, paneId, tabId, visible, initialScrollback, restoreCwd, restoreSshCommand, restoreRemoteCwd, pinnedSshCommand, pinnedRemoteCwd, pinnedCommand }: Props = $props();
 
   let containerRef: HTMLDivElement;
   let terminal: Terminal;
@@ -49,15 +52,28 @@
   let initialized = $state(false);
   let trackActivity = false;
   let visibilityGraceUntil = 0; // timestamp — suppress activity until this time
+  let isPinned = $state(false);
+  // Initialized in onMount from prop (intentionally one-time read, managed locally after)
+  let resizePtyTimeout: ReturnType<typeof setTimeout> | undefined;
+  // Inline prompt for pinned command
+  let pinPrompt = $state<{ sshCmd: string; remoteCwd: string | null } | null>(null);
+  let pinPromptValue = $state('');
 
-  // Fit terminal with one fewer row for bottom breathing room
+  // Fit terminal with one fewer row for bottom breathing room.
+  // Uses proposeDimensions() + a single resize instead of fit() + resize()
+  // to avoid a double reflow that corrupts the scroll position.
   function fitWithPadding() {
     // Guard: skip if container is not in the document (detached during split re-render)
     if (!containerRef?.isConnected) return;
-    fitAddon.fit();
-    const { cols, rows } = terminal;
-    if (rows > 1) {
-      terminal.resize(cols, rows - 1);
+    const dims = fitAddon.proposeDimensions();
+    if (!dims || isNaN(dims.cols) || isNaN(dims.rows)) return;
+    const cols = dims.cols;
+    const rows = Math.max(dims.rows - 1, 1);
+    if (cols === terminal.cols && rows === terminal.rows) return;
+    const wasAtBottom = terminal.buffer.active.viewportY >= terminal.buffer.active.baseY;
+    terminal.resize(cols, rows);
+    if (wasAtBottom) {
+      terminal.scrollToBottom();
     }
   }
   let contextMenu = $state<{ x: number; y: number } | null>(null);
@@ -105,7 +121,10 @@
   // so the remote shell starts in the right directory atomically.
   function buildSshCommand(sshCmd: string | null, remoteCwd: string | null): string {
     if (!sshCmd) return '';
-    if (!remoteCwd) return sshCmd;
+    if (!remoteCwd) {
+      // Inject ControlMaster=no to avoid multiplexing conflict on restore
+      return sshCmd.replace(/^ssh\s+/, 'ssh -o ControlMaster=no ');
+    }
 
     const cdPath = shellEscapePath(remoteCwd);
 
@@ -113,7 +132,7 @@
     const sshMatch = sshCmd.match(/^(ssh\s+)/);
     if (sshMatch) {
       const rest = sshCmd.slice(sshMatch[1].length);
-      return `ssh -t ${rest} 'cd ${cdPath} && exec $SHELL -l'`;
+      return `ssh -t -o ControlMaster=no ${rest} 'cd ${cdPath} && exec $SHELL -l'`;
     }
 
     // Fallback for aliases/mosh/autossh: send ssh command then cd on next line
@@ -144,6 +163,7 @@
 
   onMount(async () => {
     ptyId = crypto.randomUUID();
+    isPinned = !!pinnedSshCommand;
 
     terminal = new Terminal({
       theme: getTheme(preferencesStore.theme, preferencesStore.customThemes).terminal,
@@ -257,17 +277,36 @@
       }
     });
 
-    // Listen for PTY close
+    // Listen for PTY close — when the shell exits (exit/logout/Ctrl+D),
+    // close the tab using the same logic as Cmd+W.
     unlistenClose = await listen(`pty-close-${ptyId}`, () => {
-      terminal.write('\r\n[Process exited]\r\n');
+      if (terminalsStore.shuttingDown) return;
+
+      const ws = workspacesStore.workspaces.find(w => w.id === workspaceId);
+      const pane = ws?.panes.find(p => p.id === paneId);
+      if (!ws || !pane) return;
+
+      if (pane.tabs.length > 1) {
+        workspacesStore.deleteTab(workspaceId, paneId, tabId).catch(() => {});
+      } else if (ws.panes.length > 1) {
+        workspacesStore.deletePane(workspaceId, paneId).catch(() => {});
+      } else {
+        // Last tab in last pane — delete tab, pane shows empty state
+        workspacesStore.deleteTab(workspaceId, paneId, tabId).catch(() => {});
+      }
     });
 
     // Check for split context (cwd, SSH command from source pane)
-    // Fall back to persisted restore context from last session
+    // Fall back to pinned context, then persisted restore context from last session.
+    // Pinned context always wins over restore context (survives SSH disconnects).
     const splitCtx = terminalsStore.consumeSplitContext(tabId);
-    const ctx = splitCtx ?? (restoreCwd || restoreSshCommand
+    const pinnedCtx = pinnedSshCommand
+      ? { cwd: restoreCwd ?? null, sshCommand: cleanSshCommand(pinnedSshCommand), remoteCwd: pinnedRemoteCwd ?? null }
+      : null;
+    const restoreCtx = (restoreCwd || restoreSshCommand)
       ? { cwd: restoreCwd ?? null, sshCommand: restoreSshCommand ? cleanSshCommand(restoreSshCommand) : null, remoteCwd: restoreRemoteCwd ?? null }
-      : null);
+      : null;
+    const ctx = splitCtx ?? pinnedCtx ?? restoreCtx;
 
     // Spawn PTY with tab-specific history, optionally inheriting cwd
     try {
@@ -285,11 +324,23 @@
           const cmd = buildSshCommand(ctx.sshCommand, ctx.remoteCwd);
           const bytes = Array.from(new TextEncoder().encode(cmd + '\n'));
           await writeTerminal(ptyId, bytes);
+
+          // If a pinned command is set, send it after SSH connects
+          const pinnedCmd = pinnedCommand;
+          if (pinnedCmd) {
+            setTimeout(async () => {
+              try {
+                const cmdBytes = Array.from(new TextEncoder().encode(pinnedCmd + '\n'));
+                await writeTerminal(ptyId, cmdBytes);
+              } catch (e) {
+                logError(`Failed to send pinned command: ${e}`);
+              }
+            }, 3000);
+          }
         } catch (e) {
           logError(`Failed to replay SSH command: ${e}`);
         }
       }, 500);
-
     }
 
     // Register terminal instance with serialize addon for scrollback saving
@@ -329,13 +380,16 @@
       }
     });
 
-    // Handle resize
+    // Handle resize — fit immediately for visual update,
+    // debounce PTY resize to avoid rapid-fire SIGWINCH during window drag.
     resizeObserver = new ResizeObserver(() => {
-      if (visible && containerRef?.isConnected) {
-        fitWithPadding();
+      if (!visible || !containerRef?.isConnected) return;
+      fitWithPadding();
+      clearTimeout(resizePtyTimeout);
+      resizePtyTimeout = setTimeout(() => {
         const { cols, rows } = terminal;
         resizeTerminal(ptyId, cols, rows).catch(e => logError(String(e)));
-      }
+      }, 150);
     });
     resizeObserver.observe(containerRef);
 
@@ -387,6 +441,7 @@
     if (unlistenDragOver) unlistenDragOver();
     if (unlistenDragDrop) unlistenDragDrop();
     if (unlistenDragLeave) unlistenDragLeave();
+    clearTimeout(resizePtyTimeout);
     if (resizeObserver) resizeObserver.disconnect();
     if (terminal) terminal.dispose();
     if (ptyId) {
@@ -408,7 +463,7 @@
       // Delay fit to ensure container is visible
       requestAnimationFrame(() => {
         fitWithPadding();
-        terminal.focus();
+        if (!pinPrompt) terminal.focus();
       });
       untrack(() => {
         activityStore.clearActive(tabId);
@@ -515,6 +570,59 @@
     };
   });
 
+  async function gatherPinContext(): Promise<{ sshCmd: string; remoteCwd: string | null } | null> {
+    const info = await getPtyInfo(ptyId);
+    if (!info.foreground_command) return null;
+    const sshCmd = cleanSshCommand(info.foreground_command);
+    const osc7Cwd = terminalsStore.getOsc(tabId)?.cwd ?? null;
+    const isOsc7Stale = osc7Cwd === info.cwd;
+    let remoteCwd = (osc7Cwd && !isOsc7Stale) ? osc7Cwd : null;
+    if (!remoteCwd) {
+      const patterns = getCompiledPatterns(preferencesStore.promptPatterns);
+      const buffer = terminal.buffer.active;
+      const cursorLine = buffer.baseY + buffer.cursorY;
+      for (let i = cursorLine; i >= Math.max(0, cursorLine - 5); i--) {
+        const line = buffer.getLine(i);
+        if (!line) continue;
+        const text = line.translateToString(true).trim();
+        if (!text) continue;
+        for (const re of patterns) {
+          const match = text.match(re);
+          if (match?.[1]) { remoteCwd = match[1]; break; }
+        }
+        if (remoteCwd) break;
+      }
+    }
+    return { sshCmd, remoteCwd };
+  }
+
+  async function submitPinPrompt() {
+    if (!pinPrompt) return;
+    const cmd = pinPromptValue.trim() || null;
+    await workspacesStore.setTabPinnedContext(workspaceId, paneId, tabId, pinPrompt.sshCmd, pinPrompt.remoteCwd, cmd);
+    isPinned = true;
+    pinPrompt = null;
+    pinPromptValue = '';
+    terminal?.focus();
+  }
+
+  function cancelPinPrompt() {
+    pinPrompt = null;
+    pinPromptValue = '';
+    terminal?.focus();
+  }
+
+  // When pin prompt opens: blur xterm so it stops competing, then focus the input
+  $effect(() => {
+    if (pinPrompt) {
+      terminal?.blur();
+      requestAnimationFrame(() => {
+        const el = document.getElementById('pin-cmd-input') as HTMLInputElement | null;
+        el?.focus();
+      });
+    }
+  });
+
   function handleContextMenu(e: MouseEvent) {
     e.preventDefault();
     contextMenu = { x: e.clientX, y: e.clientY };
@@ -552,6 +660,41 @@
           terminalsStore.clearTerminal(tabId);
         },
       },
+      { label: '', separator: true, action: () => {} },
+      ...(isPinned ? [{
+        label: 'Unpin Session',
+        action: async () => {
+          await workspacesStore.setTabPinnedContext(workspaceId, paneId, tabId, null, null, null);
+          isPinned = false;
+        },
+      }] : [
+        {
+          label: 'Pin Session',
+          action: async () => {
+            try {
+              const ctx = await gatherPinContext();
+              if (!ctx) return;
+              await workspacesStore.setTabPinnedContext(workspaceId, paneId, tabId, ctx.sshCmd, ctx.remoteCwd, null);
+              isPinned = true;
+            } catch (e) {
+              logError(`Pin session failed: ${e}`);
+            }
+          },
+        },
+        {
+          label: 'Pin Session + Command\u2026',
+          action: async () => {
+            try {
+              const ctx = await gatherPinContext();
+              if (!ctx) return;
+              pinPromptValue = '';
+              pinPrompt = ctx;
+            } catch (e) {
+              logError(`Pin session failed: ${e}`);
+            }
+          },
+        },
+      ]),
       ...(preferencesStore.shellTitleIntegration || preferencesStore.shellIntegration ? [
         { label: '', separator: true, action: () => {} },
         {
@@ -603,6 +746,31 @@
   />
 {/if}
 
+{#if pinPrompt}
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <div class="pin-prompt-backdrop" onclick={(e) => { if (e.target === e.currentTarget) cancelPinPrompt(); }}>
+    <div class="pin-prompt">
+      <label class="pin-prompt-label" for="pin-cmd-input">Command to run after connect</label>
+      <!-- svelte-ignore a11y_autofocus -->
+      <input
+        id="pin-cmd-input"
+        class="pin-prompt-input"
+        type="text"
+        bind:value={pinPromptValue}
+        placeholder="e.g. claude --continue"
+        autofocus
+        onkeydown={(e) => { if (e.key === 'Enter') submitPinPrompt(); if (e.key === 'Escape') cancelPinPrompt(); }}
+      />
+      <div class="pin-prompt-hint">Leave empty for SSH + cwd only</div>
+      <div class="pin-prompt-actions">
+        <button class="pin-prompt-btn cancel" onclick={cancelPinPrompt}>Cancel</button>
+        <button class="pin-prompt-btn confirm" onclick={submitPinPrompt}>Pin</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
 <style>
   .terminal-container {
     position: relative;
@@ -651,5 +819,87 @@
 
   .terminal-container :global(.xterm-viewport) {
     overflow-y: auto !important;
+  }
+
+  .pin-prompt-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    pointer-events: auto;
+  }
+
+  .pin-prompt {
+    background: var(--bg-medium);
+    border: 1px solid var(--bg-light);
+    border-radius: 8px;
+    padding: 16px;
+    min-width: 320px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .pin-prompt-label {
+    color: var(--fg);
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .pin-prompt-input {
+    background: var(--bg-dark);
+    border: 1px solid var(--bg-light);
+    border-radius: 4px;
+    padding: 8px;
+    color: var(--fg);
+    font-family: inherit;
+    font-size: 13px;
+    outline: none;
+  }
+
+  .pin-prompt-input:focus {
+    border-color: var(--accent);
+  }
+
+  .pin-prompt-hint {
+    color: var(--fg-dim);
+    font-size: 11px;
+  }
+
+  .pin-prompt-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 4px;
+  }
+
+  .pin-prompt-btn {
+    padding: 6px 14px;
+    border-radius: 4px;
+    border: none;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  .pin-prompt-btn.cancel {
+    background: var(--bg-light);
+    color: var(--fg);
+  }
+
+  .pin-prompt-btn.cancel:hover {
+    background: #525a80;
+  }
+
+  .pin-prompt-btn.confirm {
+    background: var(--accent);
+    color: var(--bg-dark);
+    font-weight: 500;
+  }
+
+  .pin-prompt-btn.confirm:hover {
+    opacity: 0.9;
   }
 </style>

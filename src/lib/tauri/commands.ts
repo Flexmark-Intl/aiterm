@@ -22,8 +22,11 @@ export function cleanSshCommand(cmd: string): string {
   let cleaned = cmd.replace(/\s+cd\s+.*?&&\s+exec\s+\$?SHELL\s+-l\s*$/, '');
   // Also handle the single-quoted form
   cleaned = cleaned.replace(/\s+'cd\s+.*?&&\s+exec\s+\$?SHELL\s+-l'\s*$/, '');
-  // Remove -t flags (buildSshCommand re-adds it)
+  // Remove flags that buildSshCommand re-injects
   cleaned = cleaned.replace(/\s+-t(?=\s|$)/g, '');
+  cleaned = cleaned.replace(/\s+-o\s+ControlMaster=\S+/g, '');
+  // Remove any bare ControlMaster=... leftover (malformed from previous cycles)
+  cleaned = cleaned.replace(/\s+ControlMaster=\S+/g, '');
   // Deduplicate single-letter flags (e.g. -x -C -x -C → -x -C)
   const parts = cleaned.split(/\s+/);
   const seen = new Set<string>();
@@ -172,6 +175,17 @@ export async function setTabRestoreContext(
   remoteCwd: string | null,
 ): Promise<void> {
   return invoke('set_tab_restore_context', { workspaceId, paneId, tabId, cwd, sshCommand, remoteCwd });
+}
+
+export async function setTabPinnedContext(
+  workspaceId: string,
+  paneId: string,
+  tabId: string,
+  sshCommand: string | null,
+  remoteCwd: string | null,
+  command: string | null,
+): Promise<void> {
+  return invoke('set_tab_pinned_context', { workspaceId, paneId, tabId, sshCommand, remoteCwd, command });
 }
 
 // Window commands

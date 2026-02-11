@@ -36,6 +36,7 @@
 
   async function startEditing(id: string, currentName: string, e: MouseEvent) {
     e.stopPropagation();
+    if (editingId === id) return; // Already editing — let browser handle word selection
     editingId = id;
     editingName = currentName;
     await tick();
@@ -43,8 +44,21 @@
   }
 
   async function finishEditing() {
-    if (editingId && editingName.trim()) {
-      await workspacesStore.renameTab(workspaceId, pane.id, editingId, editingName.trim(), true);
+    if (editingId) {
+      const trimmed = editingName.trim();
+      if (trimmed) {
+        await workspacesStore.renameTab(workspaceId, pane.id, editingId, trimmed, true);
+      } else {
+        // Clearing the name resets to default (auto-naming from OSC title)
+        const oscTitle = terminalsStore.getOsc(editingId)?.title;
+        const defaultName = oscTitle ?? 'Terminal';
+        await workspacesStore.renameTab(workspaceId, pane.id, editingId, defaultName, false);
+        // Populate oscTitles so displayName picks it up immediately
+        if (oscTitle) {
+          oscTitles = new Map(oscTitles);
+          oscTitles.set(editingId, oscTitle);
+        }
+      }
     }
     editingId = null;
     editingName = '';
@@ -293,6 +307,7 @@
     <div
       class="tab"
       class:active={tab.id === pane.active_tab_id}
+      class:unclamped={editingId === tab.id || tab.custom_name}
       class:activity={!shellState && hasActivity}
       class:completed={shellState?.state === 'completed' && shellState?.exitCode === 0}
       class:failed={shellState?.state === 'completed' && shellState?.exitCode !== 0}
@@ -302,7 +317,7 @@
       class:drop-after={dropTargetIndex === index && dropSide === 'after' && dragTabId !== tab.id}
       data-tab-id={tab.id}
       onclick={() => { if (!dragTabId) handleTabClick(tab.id); }}
-      ondblclick={(e) => startEditing(tab.id, tab.name, e)}
+      ondblclick={(e) => startEditing(tab.id, displayName(tab), e)}
       onpointerdown={(e) => handlePointerDown(e, tab.id)}
       onpointermove={handlePointerMove}
       onpointerup={handlePointerUp}
@@ -312,16 +327,20 @@
       onkeydown={(e) => e.key === 'Enter' && handleTabClick(tab.id)}
     >
       {#if editingId === tab.id}
-        <!-- svelte-ignore a11y_autofocus -->
-        <input
-          type="text"
-          bind:value={editingName}
-          bind:this={editInput}
-          onblur={finishEditing}
-          onkeydown={handleKeydown}
-          class="edit-input"
-          autofocus
-        />
+        <div class="edit-wrapper">
+          <span class="edit-sizer">{editingName || ' '}</span>
+          <!-- svelte-ignore a11y_autofocus -->
+          <input
+            type="text"
+            size="1"
+            bind:value={editingName}
+            bind:this={editInput}
+            onblur={finishEditing}
+            onkeydown={handleKeydown}
+            class="edit-input"
+            autofocus
+          />
+        </div>
       {:else}
         {#if shellState?.state === 'completed'}
           <span class="indicator" class:completed-indicator={shellState.exitCode === 0} class:failed-indicator={shellState.exitCode !== 0}>{shellState.exitCode === 0 ? '\u2713' : '\u2717'}</span>
@@ -329,6 +348,9 @@
           <span class="indicator prompt-indicator">\u203A</span>
         {:else if hasActivity}
           <span class="activity-dot"></span>
+        {/if}
+        {#if tab.pinned_ssh_command}
+          <span class="pin-indicator" title="Pinned session">&#x1F4CC;</span>
         {/if}
         <span class="tab-name">{displayName(tab)}</span>
         <div class="tab-actions">
@@ -382,6 +404,10 @@
     max-width: 180px;
     transition: background 0.1s, padding-right 0.15s ease, border-color 0.1s;
     -webkit-app-region: no-drag;
+  }
+
+  .tab.unclamped {
+    max-width: none;
   }
 
   .tab:hover {
@@ -459,6 +485,14 @@
     font-family: -apple-system, system-ui, sans-serif;
   }
 
+  .pin-indicator {
+    flex-shrink: 0;
+    font-size: 9px;
+    margin-right: 3px;
+    opacity: 0.6;
+    line-height: 1;
+  }
+
   .activity-dot {
     width: 6px;
     height: 6px;
@@ -529,10 +563,36 @@
     color: var(--fg);
   }
 
-  .edit-input {
-    width: 100px;
+  .edit-wrapper {
+    display: grid;
+    align-items: center;
+    overflow: hidden;
+  }
+
+  .edit-wrapper > * {
+    grid-area: 1 / 1;
     font-size: 12px;
-    padding: 2px 4px;
+    padding: 0 4px;
+    font-family: inherit;
+  }
+
+  .edit-sizer {
+    visibility: hidden;
+    white-space: pre;
+    min-width: 1ch;
+  }
+
+  .edit-input {
+    width: 100%;
+    min-width: 0;
+    padding: 0 4px;
+    border: none;
+    outline: none;
+    background: none;
+    color: inherit;
+    -webkit-appearance: none;
+    appearance: none;
+    border-radius: 0;
   }
 
   .new-tab-btn {

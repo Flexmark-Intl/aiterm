@@ -433,6 +433,29 @@ function createWorkspacesStore() {
       });
     },
 
+    async setTabPinnedContext(workspaceId: string, paneId: string, tabId: string, sshCommand: string | null, remoteCwd: string | null, command: string | null = null) {
+      await commands.setTabPinnedContext(workspaceId, paneId, tabId, sshCommand, remoteCwd, command);
+      workspaces = workspaces.map(w => {
+        if (w.id === workspaceId) {
+          return {
+            ...w,
+            panes: w.panes.map(p => {
+              if (p.id === paneId) {
+                return {
+                  ...p,
+                  tabs: p.tabs.map(t =>
+                    t.id === tabId ? { ...t, pinned_ssh_command: sshCommand, pinned_remote_cwd: remoteCwd, pinned_command: command } : t
+                  )
+                };
+              }
+              return p;
+            })
+          };
+        }
+        return w;
+      });
+    },
+
     setSplitRatioLocal(workspaceId: string, splitId: string, ratio: number) {
       workspaces = workspaces.map(w => {
         if (w.id === workspaceId && w.split_root) {

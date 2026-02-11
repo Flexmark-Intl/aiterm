@@ -173,6 +173,15 @@ pub struct Tab {
     /// Persisted restore context: remote cwd from last session.
     #[serde(default)]
     pub restore_remote_cwd: Option<String>,
+    /// Pinned SSH command — always restore this session regardless of last state.
+    #[serde(default)]
+    pub pinned_ssh_command: Option<String>,
+    /// Pinned remote cwd — used with pinned_ssh_command.
+    #[serde(default)]
+    pub pinned_remote_cwd: Option<String>,
+    /// Pinned command to run after SSH connects (e.g. "claude").
+    #[serde(default)]
+    pub pinned_command: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -386,6 +395,9 @@ impl Tab {
             restore_cwd: None,
             restore_ssh_command: None,
             restore_remote_cwd: None,
+            pinned_ssh_command: None,
+            pinned_remote_cwd: None,
+            pinned_command: None,
         }
     }
 }
