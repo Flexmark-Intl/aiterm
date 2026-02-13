@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.8.2
+
+- Persist notes panel open/closed state per tab across sessions
+- Fix titlebar window dragging when notes panel is open
+
 ## v0.8.1
 
 - Add centered workspace name to macOS title bar
