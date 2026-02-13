@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.8.0
+
+- Add notes panel per tab with source/rendered mode toggle
+- Add notes preferences (font size, font family, width, word wrap)
+- Add `Cmd+Shift+N` keyboard shortcut to toggle notes panel
+- Show indicator dot on tabs with notes content
+
 ## v0.7.1
 
 - Add macOS menu items for Preferences, Reload All Windows, and Reload Current Window
