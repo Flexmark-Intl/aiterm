@@ -16,6 +16,7 @@
 
   let editingId = $state<string | null>(null);
   let editingName = $state('');
+  let editingOriginalName = '';
   let editInput = $state<HTMLInputElement | null>(null);
 
   // Track OSC titles for tabs in this pane
@@ -40,11 +41,12 @@
     return oscTitles.get(tab.id) ?? tab.name;
   }
 
-  async function startEditing(id: string, currentName: string, e: MouseEvent) {
+  async function startEditing(tab: Tab, e: MouseEvent) {
     e.stopPropagation();
-    if (editingId === id) return; // Already editing — let browser handle word selection
-    editingId = id;
-    editingName = currentName;
+    if (editingId === tab.id) return; // Already editing — let browser handle word selection
+    editingId = tab.id;
+    editingName = tab.custom_name ? tab.name : displayName(tab);
+    editingOriginalName = editingName;
     await tick();
     editInput?.select();
   }
@@ -53,7 +55,10 @@
     if (editingId) {
       const trimmed = editingName.trim();
       if (trimmed) {
-        await workspacesStore.renameTab(workspaceId, pane.id, editingId, trimmed, true);
+        // Skip rename if nothing changed — preserves original custom_name state
+        if (trimmed !== editingOriginalName) {
+          await workspacesStore.renameTab(workspaceId, pane.id, editingId, trimmed, true);
+        }
       } else {
         // Clearing the name resets to default (auto-naming from OSC title)
         const oscTitle = terminalsStore.getOsc(editingId)?.title;
@@ -323,7 +328,7 @@
       class:drop-after={dropTargetIndex === index && dropSide === 'after' && dragTabId !== tab.id}
       data-tab-id={tab.id}
       onclick={() => { if (!dragTabId) handleTabClick(tab.id); }}
-      ondblclick={(e) => startEditing(tab.id, tab.custom_name ? tab.name : displayName(tab), e)}
+      ondblclick={(e) => startEditing(tab, e)}
       onpointerdown={(e) => handlePointerDown(e, tab.id)}
       onpointermove={handlePointerMove}
       onpointerup={handlePointerUp}
