@@ -123,11 +123,16 @@ pub fn run() {
 
             // Custom app menu
             let quit_item = MenuItem::with_id(app, "quit", "Quit aiTerm", true, Some("CmdOrCtrl+Q"))?;
+            let preferences_item = MenuItem::with_id(app, "preferences", "Preferences…", true, Some("CmdOrCtrl+,"))?;
+            let reload_all_item = MenuItem::with_id(app, "reload_all", "Reload All Windows", true, None::<&str>)?;
             let new_window_item = MenuItem::with_id(app, "new_window", "New Window", true, Some("CmdOrCtrl+N"))?;
             let duplicate_window_item = MenuItem::with_id(app, "duplicate_window", "Duplicate Window", true, Some("CmdOrCtrl+Shift+N"))?;
+            let reload_window_item = MenuItem::with_id(app, "reload_window", "Reload Current Window", true, None::<&str>)?;
 
             let app_menu = SubmenuBuilder::new(app, "aiTerm")
                 .about(None)
+                .separator()
+                .item(&preferences_item)
                 .separator()
                 .services()
                 .separator()
@@ -141,6 +146,8 @@ pub fn run() {
             let file_menu = SubmenuBuilder::new(app, "File")
                 .item(&new_window_item)
                 .item(&duplicate_window_item)
+                .separator()
+                .item(&reload_all_item)
                 .build()?;
 
             let edit_menu = SubmenuBuilder::new(app, "Edit")
@@ -156,6 +163,8 @@ pub fn run() {
             let window_menu = SubmenuBuilder::new(app, "Window")
                 .minimize()
                 .close_window()
+                .separator()
+                .item(&reload_window_item)
                 .build()?;
 
             let menu = MenuBuilder::new(app)
@@ -171,6 +180,25 @@ pub fn run() {
                         // Don't close windows directly — that triggers closeWindow()
                         // which removes window data from state.
                         let _ = app_handle.emit("quit-requested", ());
+                    }
+                    "preferences" => {
+                        if let Some(win) = app_handle.get_webview_window("main") {
+                            let _ = commands::window::open_preferences_window(win, app_handle.clone());
+                        }
+                    }
+                    "reload_all" => {
+                        for (_, win) in app_handle.webview_windows() {
+                            let _ = tauri::WebviewWindow::eval(&win, "window.location.reload()");
+                        }
+                    }
+                    "reload_window" => {
+                        // Reload the focused window (find it by checking is_focused)
+                        for (_, win) in app_handle.webview_windows() {
+                            if win.is_focused().unwrap_or(false) {
+                                let _ = tauri::WebviewWindow::eval(&win, "window.location.reload()");
+                                break;
+                            }
+                        }
                     }
                     "new_window" | "duplicate_window" => {
                         // These are handled by frontend keyboard shortcuts.

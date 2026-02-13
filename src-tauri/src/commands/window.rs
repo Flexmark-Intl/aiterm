@@ -125,7 +125,7 @@ pub fn get_window_count(app: tauri::AppHandle) -> usize {
 }
 
 #[tauri::command]
-pub fn open_preferences_window(window: tauri::Window, app: tauri::AppHandle) -> Result<(), String> {
+pub fn open_preferences_window(window: tauri::WebviewWindow, app: tauri::AppHandle) -> Result<(), String> {
     // If already open, focus it
     if let Some(win) = app.get_webview_window("preferences") {
         let _ = win.set_focus();
@@ -135,7 +135,7 @@ pub fn open_preferences_window(window: tauri::Window, app: tauri::AppHandle) -> 
     let url = if cfg!(debug_assertions) {
         tauri::WebviewUrl::External("http://localhost:1420/preferences".parse().unwrap())
     } else {
-        tauri::WebviewUrl::App("preferences.html".into())
+        tauri::WebviewUrl::App("preferences".into())
     };
 
     let title = if cfg!(debug_assertions) { "Preferences (Dev)" } else { "Preferences" };
