@@ -439,23 +439,23 @@
 
   .tab.active {
     background: var(--bg-dark);
-    box-shadow: inset 0 -2px 0 var(--tab-border-active);
+    border-color: var(--tab-border-active);
   }
 
   .tab.activity {
-    border-color: var(--tab-border-activity);
+    box-shadow: inset 0 -2px 0 var(--tab-border-activity);
   }
 
   .tab.completed {
-    border-color: var(--green, #9ece6a);
+    box-shadow: inset 0 -2px 0 var(--green, #9ece6a);
   }
 
   .tab.failed {
-    border-color: var(--red, #f7768e);
+    box-shadow: inset 0 -2px 0 var(--red, #f7768e);
   }
 
   .tab.prompt {
-    border-color: var(--yellow, #e0af68);
+    box-shadow: inset 0 -2px 0 var(--yellow, #e0af68);
   }
 
   .tab.dragging {
