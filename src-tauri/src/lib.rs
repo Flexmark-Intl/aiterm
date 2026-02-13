@@ -236,6 +236,8 @@ pub fn run() {
             commands::workspace::set_sidebar_collapsed,
             commands::workspace::set_split_ratio,
             commands::workspace::set_tab_scrollback,
+            commands::workspace::set_tab_notes,
+            commands::workspace::set_tab_notes_mode,
             commands::workspace::reorder_tabs,
             commands::workspace::reorder_workspaces,
             commands::workspace::duplicate_workspace,

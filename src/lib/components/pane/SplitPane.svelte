@@ -4,6 +4,7 @@
   import { workspacesStore } from '$lib/stores/workspaces.svelte';
   import TerminalTabs from '$lib/components/terminal/TerminalTabs.svelte';
   import SearchBar from '$lib/components/terminal/SearchBar.svelte';
+  import NotesPanel from '$lib/components/terminal/NotesPanel.svelte';
   import { modLabel } from '$lib/utils/platform';
 
   interface Props {
@@ -107,17 +108,35 @@
   {#if pane.tabs.length > 0}
     <TerminalTabs {workspaceId} {pane} />
 
-    <div class="terminal-area">
-      {#if pane.active_tab_id}
-        <SearchBar tabId={pane.active_tab_id} />
+    <div class="terminal-with-notes">
+      <div class="terminal-area">
+        {#if pane.active_tab_id}
+          <SearchBar tabId={pane.active_tab_id} />
+        {/if}
+        {#each pane.tabs as tab (tab.id)}
+          <div
+            class="terminal-slot"
+            class:hidden-tab={tab.id !== pane.active_tab_id}
+            data-terminal-slot={tab.id}
+          ></div>
+        {/each}
+      </div>
+
+      {#if pane.active_tab_id && workspacesStore.isNotesVisible(pane.active_tab_id)}
+        {@const activeTab = pane.tabs.find(t => t.id === pane.active_tab_id)}
+        {#if activeTab}
+          {#key activeTab.id}
+            <NotesPanel
+              tabId={activeTab.id}
+              {workspaceId}
+              paneId={pane.id}
+              notes={activeTab.notes}
+              notesMode={activeTab.notes_mode}
+              onclose={() => workspacesStore.toggleNotes(activeTab.id)}
+            />
+          {/key}
+        {/if}
       {/if}
-      {#each pane.tabs as tab (tab.id)}
-        <div
-          class="terminal-slot"
-          class:hidden-tab={tab.id !== pane.active_tab_id}
-          data-terminal-slot={tab.id}
-        ></div>
-      {/each}
     </div>
   {:else}
     <div class="empty-pane">
@@ -194,11 +213,20 @@
     padding: 4px 8px;
   }
 
+  .terminal-with-notes {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+    overflow: hidden;
+  }
+
   .terminal-area {
     flex: 1;
     display: flex;
     min-height: 0;
+    min-width: 0;
     position: relative;
+    overflow: hidden;
   }
 
   .terminal-slot {

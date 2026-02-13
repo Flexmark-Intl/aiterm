@@ -375,6 +375,51 @@ pub fn set_tab_scrollback(
 }
 
 #[tauri::command]
+pub fn set_tab_notes(
+    window: tauri::Window,
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+    pane_id: String,
+    tab_id: String,
+    notes: Option<String>,
+) -> Result<(), String> {
+    let label = window.label().to_string();
+    let mut app_data = state.app_data.write();
+    let win = app_data.window_mut(&label).ok_or("Window not found")?;
+    if let Some(workspace) = win.workspaces.iter_mut().find(|w| w.id == workspace_id) {
+        if let Some(pane) = workspace.panes.iter_mut().find(|p| p.id == pane_id) {
+            if let Some(tab) = pane.tabs.iter_mut().find(|t| t.id == tab_id) {
+                tab.notes = notes;
+            }
+        }
+    }
+    save_state(&app_data)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_tab_notes_mode(
+    window: tauri::Window,
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+    pane_id: String,
+    tab_id: String,
+    notes_mode: Option<String>,
+) -> Result<(), String> {
+    let label = window.label().to_string();
+    let mut app_data = state.app_data.write();
+    let win = app_data.window_mut(&label).ok_or("Window not found")?;
+    if let Some(workspace) = win.workspaces.iter_mut().find(|w| w.id == workspace_id) {
+        if let Some(pane) = workspace.panes.iter_mut().find(|p| p.id == pane_id) {
+            if let Some(tab) = pane.tabs.iter_mut().find(|t| t.id == tab_id) {
+                tab.notes_mode = notes_mode;
+            }
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub fn reorder_tabs(
     window: tauri::Window,
     state: State<'_, Arc<AppState>>,

@@ -381,6 +381,26 @@
   <button class="new-tab-btn" onclick={handleNewTab} title="New tab ({modLabel}+T)">
     +
   </button>
+
+  <div class="tabs-spacer" data-tauri-drag-region></div>
+
+  {#if pane.active_tab_id}
+    {@const activeTabObj = pane.tabs.find(t => t.id === pane.active_tab_id)}
+    {#if activeTabObj?.notes}
+      <button
+        class="notes-indicator"
+        onclick={() => workspacesStore.toggleNotes(pane.active_tab_id!)}
+        title="Toggle notes ({modLabel}+E)"
+      >
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V5L9 1Z"/>
+          <path d="M9 1v4h4"/>
+          <path d="M6 9h4"/>
+          <path d="M6 12h2"/>
+        </svg>
+      </button>
+    {/if}
+  {/if}
 </div>
 
 <style>
@@ -607,6 +627,33 @@
   }
 
   .new-tab-btn:hover {
+    background: var(--bg-light);
+    color: var(--fg);
+  }
+
+  .tabs-spacer {
+    flex: 1;
+    min-width: 0;
+    -webkit-app-region: drag;
+  }
+
+  .notes-indicator {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    margin-right: 4px;
+    color: var(--fg-dim);
+    border-radius: 4px;
+    font-size: 13px;
+    -webkit-app-region: no-drag;
+    transition: background 0.1s, color 0.1s;
+  }
+
+  .notes-indicator:hover {
     background: var(--bg-light);
     color: var(--fg);
   }

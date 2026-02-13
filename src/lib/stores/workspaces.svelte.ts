@@ -82,6 +82,8 @@ function createWorkspacesStore() {
   let sidebarWidth = $state(180);
   let sidebarCollapsed = $state(false);
   let lastSwitchedAt = $state<Map<string, number>>(new Map());
+  // Frontend-only: set of tab IDs with notes panel visible
+  let notesVisible = $state<Set<string>>(new Set());
   // Tick counter to force re-evaluation of recentWorkspaces when entries expire
   let _recentTick = $state(0);
   let _recentTimer: ReturnType<typeof setInterval> | null = null;
@@ -253,6 +255,15 @@ function createWorkspacesStore() {
           ? nextDuplicateName(sourceTab.name, allTabNames(ws_current))
           : sourceTab.name;
         await commands.renameTab(workspaceId, newPane.id, newTabId, tabName, sourceTab.custom_name);
+
+        // Copy notes
+        if (sourceTab.notes) {
+          await commands.setTabNotes(workspaceId, newPane.id, newTabId, sourceTab.notes);
+        }
+        // Copy notes mode
+        if (sourceTab.notes_mode) {
+          await commands.setTabNotesMode(workspaceId, newPane.id, newTabId, sourceTab.notes_mode);
+        }
       }
       if (newTabId) {
         if (preferencesStore.cloneHistory) {
@@ -605,6 +616,15 @@ function createWorkspacesStore() {
         }
       }
 
+      // Copy notes
+      if (sourceTab.notes) {
+        await commands.setTabNotes(targetWsId, targetPane.id, newTab.id, sourceTab.notes);
+      }
+      // Copy notes mode
+      if (sourceTab.notes_mode) {
+        await commands.setTabNotesMode(targetWsId, targetPane.id, newTab.id, sourceTab.notes_mode);
+      }
+
       // Store split context for the new terminal
       this._storeSplitContext(sourceTabId, newTab.id, cwd, sshCommand, instance);
 
@@ -745,10 +765,19 @@ function createWorkspacesStore() {
         }
       }
 
-      // 7. Store split context for the new TerminalPane to consume on mount
+      // 7. Copy notes
+      if (sourceTab.notes) {
+        await commands.setTabNotes(workspaceId, paneId, newTab.id, sourceTab.notes);
+      }
+      // 7b. Copy notes mode
+      if (sourceTab.notes_mode) {
+        await commands.setTabNotesMode(workspaceId, paneId, newTab.id, sourceTab.notes_mode);
+      }
+
+      // 8. Store split context for the new TerminalPane to consume on mount
       this._storeSplitContext(tabId, newTab.id, cwd, sshCommand, instance);
 
-      // 8. Reorder to place new tab right after source
+      // 9. Reorder to place new tab right after source
       const currentIds = pane!.tabs.map(t => t.id);
       const sourceIndex = currentIds.indexOf(tabId);
       // newTab.id was appended at end by createTab; move it after source
@@ -756,7 +785,7 @@ function createWorkspacesStore() {
       reordered.splice(sourceIndex + 1, 0, newTab.id);
       await commands.reorderTabs(workspaceId, paneId, reordered);
 
-      // 9. Reload workspace state
+      // 10. Reload workspace state
       const data = await commands.getWindowData();
       const updatedWs = data.workspaces.find(w => w.id === workspaceId);
       if (updatedWs) {
@@ -794,7 +823,67 @@ function createWorkspacesStore() {
       }
 
       await commands.duplicateWindow(tabContexts);
-    }
+    },
+
+    toggleNotes(tabId: string) {
+      const updated = new Set(notesVisible);
+      if (updated.has(tabId)) {
+        updated.delete(tabId);
+      } else {
+        updated.add(tabId);
+      }
+      notesVisible = updated;
+    },
+
+    isNotesVisible(tabId: string) {
+      return notesVisible.has(tabId);
+    },
+
+    async setTabNotes(workspaceId: string, paneId: string, tabId: string, notes: string | null) {
+      await commands.setTabNotes(workspaceId, paneId, tabId, notes);
+      workspaces = workspaces.map(w => {
+        if (w.id === workspaceId) {
+          return {
+            ...w,
+            panes: w.panes.map(p => {
+              if (p.id === paneId) {
+                return {
+                  ...p,
+                  tabs: p.tabs.map(t =>
+                    t.id === tabId ? { ...t, notes } : t
+                  )
+                };
+              }
+              return p;
+            })
+          };
+        }
+        return w;
+      });
+    },
+
+    async setTabNotesMode(workspaceId: string, paneId: string, tabId: string, notesMode: string | null) {
+      await commands.setTabNotesMode(workspaceId, paneId, tabId, notesMode);
+      workspaces = workspaces.map(w => {
+        if (w.id === workspaceId) {
+          return {
+            ...w,
+            panes: w.panes.map(p => {
+              if (p.id === paneId) {
+                return {
+                  ...p,
+                  tabs: p.tabs.map(t =>
+                    t.id === tabId ? { ...t, notes_mode: notesMode } : t
+                  )
+                };
+              }
+              return p;
+            })
+          };
+        }
+        return w;
+      });
+    },
   };
 }
 

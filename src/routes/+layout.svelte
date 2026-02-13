@@ -328,6 +328,17 @@
         return;
       }
 
+      // Cmd+E - Toggle notes panel
+      if (isMeta && !e.shiftKey && e.key.toLowerCase() === 'e') {
+        e.preventDefault();
+        e.stopPropagation();
+        const tab = workspacesStore.activeTab;
+        if (tab) {
+          workspacesStore.toggleNotes(tab.id);
+        }
+        return;
+      }
+
       // Cmd+B - Toggle sidebar
       if (isMeta && !e.shiftKey && e.key.toLowerCase() === 'b') {
         e.preventDefault();

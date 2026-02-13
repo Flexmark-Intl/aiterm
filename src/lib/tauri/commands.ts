@@ -138,6 +138,14 @@ export async function setTabScrollback(workspaceId: string, paneId: string, tabI
   return invoke('set_tab_scrollback', { workspaceId, paneId, tabId, scrollback });
 }
 
+export async function setTabNotes(workspaceId: string, paneId: string, tabId: string, notes: string | null): Promise<void> {
+  return invoke('set_tab_notes', { workspaceId, paneId, tabId, notes });
+}
+
+export async function setTabNotesMode(workspaceId: string, paneId: string, tabId: string, notesMode: string | null): Promise<void> {
+  return invoke('set_tab_notes_mode', { workspaceId, paneId, tabId, notesMode });
+}
+
 export async function reorderTabs(workspaceId: string, paneId: string, tabIds: string[]): Promise<void> {
   return invoke('reorder_tabs', { workspaceId, paneId, tabIds });
 }

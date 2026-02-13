@@ -68,6 +68,7 @@
 
         <section>
           <h3>General</h3>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>E</kbd> <span>Toggle notes panel</span></div>
           <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>F</kbd> <span>Find in terminal</span></div>
           <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>K</kbd> <span>Clear terminal + scrollback</span></div>
           <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>+</kbd> <span>Zoom in</span></div>

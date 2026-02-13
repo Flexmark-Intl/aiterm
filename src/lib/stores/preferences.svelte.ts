@@ -22,6 +22,10 @@ function createPreferencesStore() {
   let restoreSession = $state(false);
   let notifyOnCompletion = $state(false);
   let notifyMinDuration = $state(30);
+  let notesFontSize = $state(13);
+  let notesFontFamily = $state('Menlo');
+  let notesWidth = $state(320);
+  let notesWordWrap = $state(true);
 
   return {
     get fontSize() { return fontSize; },
@@ -42,6 +46,10 @@ function createPreferencesStore() {
     get restoreSession() { return restoreSession; },
     get notifyOnCompletion() { return notifyOnCompletion; },
     get notifyMinDuration() { return notifyMinDuration; },
+    get notesFontSize() { return notesFontSize; },
+    get notesFontFamily() { return notesFontFamily; },
+    get notesWidth() { return notesWidth; },
+    get notesWordWrap() { return notesWordWrap; },
 
     async load() {
       const prefs = await commands.getPreferences();
@@ -63,6 +71,10 @@ function createPreferencesStore() {
       restoreSession = prefs.restore_session ?? false;
       notifyOnCompletion = prefs.notify_on_completion ?? false;
       notifyMinDuration = prefs.notify_min_duration ?? 30;
+      notesFontSize = prefs.notes_font_size ?? 13;
+      notesFontFamily = prefs.notes_font_family ?? 'Menlo';
+      notesWidth = prefs.notes_width ?? 320;
+      notesWordWrap = prefs.notes_word_wrap ?? true;
     },
 
     async setFontSize(value: number) {
@@ -150,6 +162,26 @@ function createPreferencesStore() {
       await this.save();
     },
 
+    async setNotesFontSize(value: number) {
+      notesFontSize = Math.max(10, Math.min(24, value));
+      await this.save();
+    },
+
+    async setNotesFontFamily(value: string) {
+      notesFontFamily = value;
+      await this.save();
+    },
+
+    async setNotesWidth(value: number) {
+      notesWidth = Math.max(200, Math.min(600, value));
+      await this.save();
+    },
+
+    async setNotesWordWrap(value: boolean) {
+      notesWordWrap = value;
+      await this.save();
+    },
+
     async addCustomTheme(t: Theme) {
       customThemes = [...customThemes, t];
       await this.save();
@@ -187,6 +219,10 @@ function createPreferencesStore() {
       restoreSession = prefs.restore_session ?? false;
       notifyOnCompletion = prefs.notify_on_completion ?? false;
       notifyMinDuration = prefs.notify_min_duration ?? 30;
+      notesFontSize = prefs.notes_font_size ?? 13;
+      notesFontFamily = prefs.notes_font_family ?? 'Menlo';
+      notesWidth = prefs.notes_width ?? 320;
+      notesWordWrap = prefs.notes_word_wrap ?? true;
     },
 
     async save() {
@@ -209,6 +245,10 @@ function createPreferencesStore() {
         restore_session: restoreSession,
         notify_on_completion: notifyOnCompletion,
         notify_min_duration: notifyMinDuration,
+        notes_font_size: notesFontSize,
+        notes_font_family: notesFontFamily,
+        notes_width: notesWidth,
+        notes_word_wrap: notesWordWrap,
       };
       await commands.setPreferences(prefs);
     }

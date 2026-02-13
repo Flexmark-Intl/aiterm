@@ -6,13 +6,14 @@
   import { modLabel, isModKey } from '$lib/utils/platform';
   import { getCurrentWindow } from '@tauri-apps/api/window';
 
-  let activeSection = $state<'appearance' | 'terminal' | 'ui' | 'panels'>('appearance');
+  let activeSection = $state<'appearance' | 'terminal' | 'ui' | 'panels' | 'notes'>('appearance');
 
   const sections = [
     { id: 'appearance' as const, label: 'Appearance' },
     { id: 'terminal' as const, label: 'Terminal' },
     { id: 'ui' as const, label: 'Scrollback' },
     { id: 'panels' as const, label: 'Panels' },
+    { id: 'notes' as const, label: 'Notes' },
   ];
 
   const fontFamilies = [
@@ -425,6 +426,72 @@
             onclick={() => preferencesStore.setPromptPatterns([...defaultPromptPatterns])}
           >Reset to Defaults</button>
         </div>
+      {:else if activeSection === 'notes'}
+        <h3 class="section-heading">Preview</h3>
+
+        <div class="setting">
+          <label for="notes-font-size">Font Size</label>
+          <div class="number-input-wrapper">
+            <button class="number-btn" onclick={() => preferencesStore.setNotesFontSize(preferencesStore.notesFontSize - 1)}>−</button>
+            <input
+              type="number"
+              id="notes-font-size"
+              class="number-input"
+              min="10"
+              max="24"
+              value={preferencesStore.notesFontSize}
+              onchange={(e) => preferencesStore.setNotesFontSize(parseInt(e.currentTarget.value) || 13)}
+            />
+            <button class="number-btn" onclick={() => preferencesStore.setNotesFontSize(preferencesStore.notesFontSize + 1)}>+</button>
+          </div>
+        </div>
+
+        <div class="setting">
+          <label for="notes-font-family">Font Family</label>
+          <select
+            id="notes-font-family"
+            value={preferencesStore.notesFontFamily}
+            onchange={(e) => preferencesStore.setNotesFontFamily(e.currentTarget.value)}
+          >
+            {#each fontFamilies as font}
+              <option value={font}>{font}</option>
+            {/each}
+          </select>
+        </div>
+
+        <h3 class="section-heading">General</h3>
+
+        <div class="setting">
+          <label for="notes-width">Panel Width</label>
+          <div class="number-input-wrapper">
+            <button class="number-btn" onclick={() => preferencesStore.setNotesWidth(preferencesStore.notesWidth - 20)}>−</button>
+            <input
+              type="number"
+              id="notes-width"
+              class="number-input"
+              min="200"
+              max="600"
+              value={preferencesStore.notesWidth}
+              onchange={(e) => preferencesStore.setNotesWidth(parseInt(e.currentTarget.value) || 320)}
+            />
+            <button class="number-btn" onclick={() => preferencesStore.setNotesWidth(preferencesStore.notesWidth + 20)}>+</button>
+          </div>
+        </div>
+
+        <div class="setting">
+          <label for="notes-word-wrap">Word Wrap</label>
+          <button
+            id="notes-word-wrap"
+            class="toggle"
+            class:active={preferencesStore.notesWordWrap}
+            onclick={() => preferencesStore.setNotesWordWrap(!preferencesStore.notesWordWrap)}
+            aria-pressed={preferencesStore.notesWordWrap}
+            aria-label="Toggle word wrap in notes"
+          >
+            <span class="toggle-knob"></span>
+          </button>
+        </div>
+
       {/if}
     </div>
   </div>

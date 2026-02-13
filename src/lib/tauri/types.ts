@@ -12,6 +12,8 @@ export interface Tab {
   auto_resume_remote_cwd: string | null;
   auto_resume_command: string | null;
   auto_resume_remembered_command: string | null;
+  notes: string | null;
+  notes_mode: string | null;
 }
 
 export interface Pane {
@@ -67,6 +69,10 @@ export interface Preferences {
   restore_session: boolean;
   notify_on_completion: boolean;
   notify_min_duration: number;
+  notes_font_size: number;
+  notes_font_family: string;
+  notes_width: number;
+  notes_word_wrap: boolean;
 }
 
 export interface WindowData {

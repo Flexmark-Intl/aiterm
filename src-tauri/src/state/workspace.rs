@@ -189,6 +189,12 @@ pub struct Tab {
     /// Only updated when user submits a command, never cleared on disable.
     #[serde(default)]
     pub auto_resume_remembered_command: Option<String>,
+    /// User-editable notes scratchpad for this tab.
+    #[serde(default)]
+    pub notes: Option<String>,
+    /// Persisted source/render mode for the notes panel.
+    #[serde(default)]
+    pub notes_mode: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -317,6 +323,11 @@ fn default_true() -> bool {
     true
 }
 
+fn default_notes_width() -> u32 {
+    320
+}
+
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum CursorStyle {
@@ -364,6 +375,14 @@ pub struct Preferences {
     pub notify_on_completion: bool,
     #[serde(default = "default_notify_min_duration")]
     pub notify_min_duration: u32,
+    #[serde(default = "default_font_size")]
+    pub notes_font_size: u32,
+    #[serde(default = "default_font_family")]
+    pub notes_font_family: String,
+    #[serde(default = "default_notes_width")]
+    pub notes_width: u32,
+    #[serde(default = "default_true")]
+    pub notes_word_wrap: bool,
 }
 
 impl Default for Preferences {
@@ -387,6 +406,10 @@ impl Default for Preferences {
             restore_session: false,
             notify_on_completion: false,
             notify_min_duration: default_notify_min_duration(),
+            notes_font_size: default_font_size(),
+            notes_font_family: default_font_family(),
+            notes_width: default_notes_width(),
+            notes_word_wrap: true,
         }
     }
 }
@@ -407,6 +430,8 @@ impl Tab {
             auto_resume_remote_cwd: None,
             auto_resume_command: None,
             auto_resume_remembered_command: None,
+            notes: None,
+            notes_mode: None,
         }
     }
 }

@@ -91,12 +91,19 @@ export function buildShellIntegrationSnippet(opts: {
  * Idempotent: checks for existing marker before writing, guards against
  * duplicate PROMPT_COMMAND entries on re-source.
  *
- * Returns a multi-line string to send to the PTY. Uses a heredoc so the
- * content is written literally to the file (no escaping issues).
+ * Returns a single-line string to send to the PTY. Uses printf '%s\n'
+ * with single-quoted arguments to write file content (no heredocs —
+ * heredocs break when pasted into interactive shells).
  */
 export function buildInstallSnippet(): string {
-  // Content written to ~/.zshrc (inside single-quoted heredoc — no expansion)
-  const zshRC = [
+  // Escape a string for use as a single-quoted shell argument.
+  // Each ' becomes '\'' (end quote, escaped literal quote, restart quote).
+  function sq(s: string): string {
+    return "'" + s.replace(/'/g, "'\\''") + "'";
+  }
+
+  // Lines to write to ~/.zshrc (literal text — no shell expansion at write time)
+  const zshLines = [
     "",
     "# aiterm-shell-integration",
     "autoload -Uz add-zsh-hook",
@@ -111,8 +118,8 @@ export function buildInstallSnippet(): string {
     "add-zsh-hook preexec _aiterm_preexec",
   ];
 
-  // Content written to ~/.bashrc (inside single-quoted heredoc — no expansion)
-  const bashRC = [
+  // Lines to write to ~/.bashrc (literal text — no shell expansion at write time)
+  const bashLines = [
     "",
     "# aiterm-shell-integration",
     "__aiterm_pc() {",
@@ -126,32 +133,19 @@ export function buildInstallSnippet(): string {
     "[[ -z \"$__aiterm_trap\" ]] && __aiterm_trap=1 && trap '[[ \"$__aiterm_at_prompt\" == 1 ]] && __aiterm_at_prompt= && printf \"\\033]133;B\\007\"' DEBUG",
   ];
 
-  const lines = [
-    // Detect shell and set rc file path
-    "if [ -n \"$ZSH_VERSION\" ]; then",
-    "__f=~/.zshrc",
-    "if ! grep -q '# aiterm-shell-integration' \"$__f\" 2>/dev/null; then",
-    "cat >> \"$__f\" << 'AITERM_EOF'",
-    ...zshRC,
-    "AITERM_EOF",
-    ". \"$__f\" && echo \"aiTerm: installed in $__f\"",
-    "else",
-    "echo \"aiTerm: already installed in $__f\"",
-    "fi",
-    "elif [ -n \"$BASH_VERSION\" ]; then",
-    "__f=~/.bashrc",
-    "if ! grep -q '# aiterm-shell-integration' \"$__f\" 2>/dev/null; then",
-    "cat >> \"$__f\" << 'AITERM_EOF'",
-    ...bashRC,
-    "AITERM_EOF",
-    ". \"$__f\" && echo \"aiTerm: installed in $__f\"",
-    "else",
-    "echo \"aiTerm: already installed in $__f\"",
-    "fi",
-    "else",
-    "echo \"aiTerm: unsupported shell\"",
-    "fi",
-  ];
+  // printf '%s\n' 'line1' 'line2' ... writes each line followed by newline
+  const zshPrintf = "printf '%s\\n' " + zshLines.map(sq).join(' ');
+  const bashPrintf = "printf '%s\\n' " + bashLines.map(sq).join(' ');
 
-  return lines.join('\n');
+  // Single-line command: detect shell → check marker → write via printf → source
+  return [
+    "if [ -n \"$ZSH_VERSION\" ]; then __f=~/.zshrc;",
+    "elif [ -n \"$BASH_VERSION\" ]; then __f=~/.bashrc;",
+    "else printf '\\n\\033[1;31m%s\\033[0m\\n\\n' 'aiTerm: unsupported shell'; false; fi",
+    "&& if ! grep -q '# aiterm-shell-integration' \"$__f\" 2>/dev/null; then",
+    "{ if [ -n \"$ZSH_VERSION\" ]; then " + zshPrintf + ";",
+    "else " + bashPrintf + "; fi; } >> \"$__f\"",
+    "&& . \"$__f\" && printf '\\n\\033[1;32m%s\\033[0m\\n\\n' \"aiTerm: installed in $__f\";",
+    "else printf '\\n\\033[1;33m%s\\033[0m\\n\\n' \"aiTerm: already installed in $__f\"; fi",
+  ].join(' ');
 }
