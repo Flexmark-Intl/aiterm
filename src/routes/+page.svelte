@@ -40,6 +40,11 @@
 </script>
 
 <div class="app">
+  <div class="titlebar" data-tauri-drag-region>
+    <span class="titlebar-text" data-tauri-drag-region>
+      aiTerm{#if workspacesStore.activeWorkspace}{' '}| {workspacesStore.activeWorkspace.name}{/if}
+    </span>
+  </div>
   <div class="app-body">
     {#if loading}
       <div class="loading">
@@ -118,6 +123,23 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+  }
+
+  .titlebar {
+    height: 28px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-medium);
+    border-bottom: 1px solid var(--bg-light);
+    -webkit-app-region: drag;
+  }
+
+  .titlebar-text {
+    font-size: 12px;
+    color: var(--fg-dim);
+    pointer-events: none;
   }
 
   .app-body {

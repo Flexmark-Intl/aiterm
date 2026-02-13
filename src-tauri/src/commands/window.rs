@@ -185,6 +185,7 @@ fn build_window(app: &tauri::AppHandle, label: &str) -> Result<(), String> {
         .resizable(true)
         .fullscreen(false)
         .hidden_title(true)
+        .title_bar_style(tauri::TitleBarStyle::Overlay)
         .build()
         .map_err(|e| format!("Failed to create window: {}", e))?;
 

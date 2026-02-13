@@ -30,6 +30,14 @@
     applyUiTheme(t.ui);
   });
 
+  // Update OS-level window title (Mission Control, Cmd+Tab, etc.)
+  $effect(() => {
+    const ws = workspacesStore.activeWorkspace;
+    if (!ws) return;
+    const suffix = import.meta.env.DEV ? ' (Dev)' : '';
+    getCurrentWindow().setTitle(`aiTerm | ${ws.name}${suffix}`);
+  });
+
   onMount(() => {
     // Attach console for dev mode (Rust logs appear in browser devtools)
     let detachConsole: (() => void) | undefined;

@@ -85,11 +85,7 @@ pub fn run() {
     builder
         .manage(app_state.clone())
         .setup(move |app| {
-            if cfg!(debug_assertions) {
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.set_title("aiTerm (Dev)");
-                }
-            }
+            // Window title is set dynamically from the frontend (workspace name)
 
             // Restore additional windows beyond "main"
             let extra_windows: Vec<String> = {
@@ -106,6 +102,7 @@ pub fn run() {
                 } else {
                     tauri::WebviewUrl::App("index.html".into())
                 };
+                // Title is set dynamically from the frontend (workspace name)
                 let title = if cfg!(debug_assertions) { "aiTerm (Dev)" } else { "aiTerm" };
 
                 if let Err(e) = WebviewWindowBuilder::new(app, &label, url)
@@ -115,6 +112,7 @@ pub fn run() {
                     .resizable(true)
                     .fullscreen(false)
                     .hidden_title(true)
+                    .title_bar_style(tauri::TitleBarStyle::Overlay)
                     .build()
                 {
                     log::error!("Failed to restore window '{}': {}", label, e);
