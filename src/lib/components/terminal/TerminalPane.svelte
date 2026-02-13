@@ -74,6 +74,9 @@
     if (!dims || isNaN(dims.cols) || isNaN(dims.rows)) return;
     const cols = dims.cols;
     const rows = Math.max(dims.rows - 1, 1);
+    // Guard: skip transient layouts during portal moves where the container
+    // is connected but hasn't been laid out yet, producing tiny dimensions.
+    if (cols < 10 || rows < 2) return;
     if (cols === terminal.cols && rows === terminal.rows) return;
     const wasAtBottom = terminal.buffer.active.viewportY >= terminal.buffer.active.baseY;
     terminal.resize(cols, rows);
@@ -279,7 +282,9 @@
     unlistenOutput = await listen<number[]>(`pty-output-${ptyId}`, (event) => {
       const data = new Uint8Array(event.payload);
       terminal.write(data);
-      if (!visible && trackActivity && Date.now() > visibilityGraceUntil) {
+      // Ignore tiny writes (spinner frames, cursor blinks, status-line redraws)
+      // that TUI apps like Claude Code emit periodically while idle.
+      if (!visible && trackActivity && data.length > 64 && Date.now() > visibilityGraceUntil) {
         activityStore.markActive(tabId);
       }
     });
