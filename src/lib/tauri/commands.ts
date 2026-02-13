@@ -142,6 +142,10 @@ export async function setTabNotes(workspaceId: string, paneId: string, tabId: st
   return invoke('set_tab_notes', { workspaceId, paneId, tabId, notes });
 }
 
+export async function setTabNotesOpen(workspaceId: string, paneId: string, tabId: string, open: boolean): Promise<void> {
+  return invoke('set_tab_notes_open', { workspaceId, paneId, tabId, open });
+}
+
 export async function setTabNotesMode(workspaceId: string, paneId: string, tabId: string, notesMode: string | null): Promise<void> {
   return invoke('set_tab_notes_mode', { workspaceId, paneId, tabId, notesMode });
 }

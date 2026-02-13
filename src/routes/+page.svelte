@@ -7,6 +7,7 @@
   import ChangelogModal from '$lib/components/ChangelogModal.svelte';
   import Resizer from '$lib/components/Resizer.svelte';
   import { getVersion } from '@tauri-apps/api/app';
+  import { getCurrentWindow } from '@tauri-apps/api/window';
   import { modLabel, modSymbol, altLabel } from '$lib/utils/platform';
 
   let loading = $state(true);
@@ -37,11 +38,16 @@
   function handleSidebarResizeEnd() {
     workspacesStore.saveSidebarWidth();
   }
+
+  function handleTitlebarMouseDown(e: MouseEvent) {
+    if (e.button === 0) getCurrentWindow().startDragging();
+  }
 </script>
 
 <div class="app">
-  <div class="titlebar" data-tauri-drag-region>
-    <span class="titlebar-text" data-tauri-drag-region>
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="titlebar" onmousedown={handleTitlebarMouseDown}>
+    <span class="titlebar-text">
       aiTerm{#if workspacesStore.activeWorkspace}{' '}| {workspacesStore.activeWorkspace.name}{/if}
     </span>
   </div>
@@ -126,19 +132,18 @@
   }
 
   .titlebar {
-    height: 28px;
+    height: 36px;
     flex-shrink: 0;
     display: flex;
     align-items: center;
     justify-content: center;
     background: var(--bg-medium);
     border-bottom: 1px solid var(--bg-light);
-    -webkit-app-region: drag;
   }
 
   .titlebar-text {
     font-size: 12px;
-    color: var(--fg-dim);
+    color: var(--fg);
     pointer-events: none;
   }
 

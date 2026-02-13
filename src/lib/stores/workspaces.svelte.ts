@@ -134,6 +134,17 @@ function createWorkspacesStore() {
       sidebarWidth = data.sidebar_width || 180;
       sidebarCollapsed = data.sidebar_collapsed ?? false;
 
+      // Seed notesVisible from persisted notes_open state
+      const seeded = new Set<string>();
+      for (const ws of data.workspaces) {
+        for (const pane of ws.panes) {
+          for (const tab of pane.tabs) {
+            if (tab.notes_open) seeded.add(tab.id);
+          }
+        }
+      }
+      notesVisible = seeded;
+
       // Create default workspace if none exist
       if (workspaces.length === 0) {
         await this.createWorkspace('Default');
@@ -827,12 +838,25 @@ function createWorkspacesStore() {
 
     toggleNotes(tabId: string) {
       const updated = new Set(notesVisible);
-      if (updated.has(tabId)) {
-        updated.delete(tabId);
-      } else {
+      const isOpen = !updated.has(tabId);
+      if (isOpen) {
         updated.add(tabId);
+      } else {
+        updated.delete(tabId);
       }
       notesVisible = updated;
+
+      // Persist notes_open to backend
+      for (const ws of workspaces) {
+        for (const pane of ws.panes) {
+          const tab = pane.tabs.find(t => t.id === tabId);
+          if (tab) {
+            tab.notes_open = isOpen;
+            commands.setTabNotesOpen(ws.id, pane.id, tabId, isOpen);
+            return;
+          }
+        }
+      }
     },
 
     isNotesVisible(tabId: string) {

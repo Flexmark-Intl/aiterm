@@ -195,6 +195,9 @@ pub struct Tab {
     /// Persisted source/render mode for the notes panel.
     #[serde(default)]
     pub notes_mode: Option<String>,
+    /// Whether the notes panel is open for this tab.
+    #[serde(default)]
+    pub notes_open: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -436,6 +439,7 @@ impl Tab {
             auto_resume_remembered_command: None,
             notes: None,
             notes_mode: None,
+            notes_open: false,
         }
     }
 }

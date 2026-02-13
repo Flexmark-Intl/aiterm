@@ -14,6 +14,7 @@ export interface Tab {
   auto_resume_remembered_command: string | null;
   notes: string | null;
   notes_mode: string | null;
+  notes_open: boolean;
 }
 
 export interface Pane {

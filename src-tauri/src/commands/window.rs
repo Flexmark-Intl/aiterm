@@ -237,6 +237,7 @@ pub(crate) fn clone_workspace_with_id_mapping(
                 auto_resume_remembered_command: tab.auto_resume_remembered_command.clone(),
                 notes: tab.notes.clone(),
                 notes_mode: tab.notes_mode.clone(),
+                notes_open: tab.notes_open,
             }
         }).collect();
 
