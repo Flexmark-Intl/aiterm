@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.8.3
+
+- Redesign tab styling: full border for active tab, colored underline for activity indicators
+
 ## v0.8.2
 
 - Persist notes panel open/closed state per tab across sessions
