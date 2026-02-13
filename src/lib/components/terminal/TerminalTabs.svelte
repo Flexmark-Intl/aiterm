@@ -22,7 +22,7 @@
   let oscTitles = $state<Map<string, string>>(new Map());
 
   const unsubOsc = terminalsStore.onOscChange((tabId: string, osc: OscState) => {
-    if (osc.title && pane.tabs.some(t => t.id === tabId && !t.custom_name)) {
+    if (osc.title && pane.tabs.some(t => t.id === tabId)) {
       oscTitles = new Map(oscTitles);
       oscTitles.set(tabId, osc.title);
     }
@@ -30,7 +30,13 @@
   onDestroy(unsubOsc);
 
   function displayName(tab: Tab): string {
-    if (tab.custom_name) return tab.name;
+    if (tab.custom_name) {
+      if (tab.name.includes('%title')) {
+        const oscTitle = oscTitles.get(tab.id);
+        return oscTitle ? tab.name.replace('%title', oscTitle) : tab.name;
+      }
+      return tab.name;
+    }
     return oscTitles.get(tab.id) ?? tab.name;
   }
 
@@ -317,7 +323,7 @@
       class:drop-after={dropTargetIndex === index && dropSide === 'after' && dragTabId !== tab.id}
       data-tab-id={tab.id}
       onclick={() => { if (!dragTabId) handleTabClick(tab.id); }}
-      ondblclick={(e) => startEditing(tab.id, displayName(tab), e)}
+      ondblclick={(e) => startEditing(tab.id, tab.custom_name ? tab.name : displayName(tab), e)}
       onpointerdown={(e) => handlePointerDown(e, tab.id)}
       onpointermove={handlePointerMove}
       onpointerup={handlePointerUp}
@@ -338,6 +344,7 @@
             onblur={finishEditing}
             onkeydown={handleKeydown}
             class="edit-input"
+            placeholder="Use %title for dynamic title"
             autofocus
           />
         </div>

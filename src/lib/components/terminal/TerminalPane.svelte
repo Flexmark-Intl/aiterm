@@ -18,6 +18,7 @@
   import { getTheme } from '$lib/themes';
   import { getCompiledPatterns } from '$lib/utils/promptPattern';
   import { error as logError } from '@tauri-apps/plugin-log';
+  import { open as shellOpen } from '@tauri-apps/plugin-shell';
   import { isModKey, modSymbol } from '$lib/utils/platform';
   import { buildShellIntegrationSnippet, buildInstallSnippet } from '$lib/utils/shellIntegration';
 
@@ -186,7 +187,9 @@
     terminal.loadAddon(fitAddon);
     terminal.loadAddon(serializeAddon);
     terminal.loadAddon(searchAddon);
-    terminal.loadAddon(new WebLinksAddon());
+    terminal.loadAddon(new WebLinksAddon((_event, uri) => {
+      shellOpen(uri);
+    }));
 
     terminal.open(containerRef);
 
