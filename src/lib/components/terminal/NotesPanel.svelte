@@ -28,10 +28,19 @@
     `font-family: '${preferencesStore.notesFontFamily}', monospace; font-size: ${preferencesStore.notesFontSize}px; word-wrap: ${preferencesStore.notesWordWrap ? 'break-word' : 'normal'}; overflow-x: ${preferencesStore.notesWordWrap ? 'hidden' : 'auto'};`
   );
 
-  // Configure marked for safe rendering
-  marked.setOptions({ breaks: true, gfm: true });
+  // Configure marked for safe rendering with interactive checkboxes
+  const renderer = new marked.Renderer();
+  let checkboxIndex = 0;
+  renderer.checkbox = function({ checked }) {
+    const i = checkboxIndex++;
+    return `<input type="checkbox" data-index="${i}"${checked ? ' checked=""' : ''}>`;
+  };
+  marked.setOptions({ breaks: true, gfm: true, renderer });
 
-  const renderedHtml = $derived(marked.parse(value) as string);
+  const renderedHtml = $derived.by(() => {
+    checkboxIndex = 0;
+    return marked.parse(value) as string;
+  });
 
   // Focus at end of content when entering source mode
   $effect(() => {
@@ -83,7 +92,28 @@
   }
 
   function handleRenderClick(e: MouseEvent) {
-    const anchor = (e.target as HTMLElement).closest('a');
+    const target = e.target as HTMLElement;
+
+    // Handle checkbox toggles (clicking checkbox or its label text)
+    const checkbox = target instanceof HTMLInputElement && target.type === 'checkbox'
+      ? target
+      : target.closest('li')?.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
+    if (checkbox?.dataset.index != null) {
+      e.preventDefault();
+      const idx = parseInt(checkbox.dataset.index, 10);
+      let count = 0;
+      value = value.replace(/- \[([ xX])\]/g, (match, ch) => {
+        if (count++ === idx) {
+          return ch === ' ' ? '- [x]' : '- [ ]';
+        }
+        return match;
+      });
+      save();
+      return;
+    }
+
+    // Handle link clicks
+    const anchor = target.closest('a');
     if (anchor?.href) {
       e.preventDefault();
       shellOpen(anchor.href);
@@ -254,10 +284,10 @@
   }
 
   .notes-render :global(code) {
-    background: var(--bg-medium);
+    background: var(--bg-light);
     padding: 1px 5px;
     border-radius: 3px;
-    font-family: var(--font-family, 'Menlo', monospace);
+    font-family: var(--font-family, 'Menlo'), monospace;
     font-size: 0.9em;
   }
 
@@ -282,6 +312,43 @@
 
   .notes-render :global(li) {
     margin-bottom: 0.2em;
+  }
+
+  .notes-render :global(li:has(> input[type="checkbox"])) {
+    list-style: none;
+    margin-left: -1.5em;
+    cursor: pointer;
+  }
+
+  .notes-render :global(input[type="checkbox"]) {
+    appearance: none;
+    width: 1em;
+    height: 1em;
+    border: 2px solid var(--fg-dim);
+    border-radius: 3px;
+    background: transparent;
+    vertical-align: middle;
+    margin-right: 6px;
+    position: relative;
+    top: -1px;
+    cursor: pointer;
+  }
+
+  .notes-render :global(input[type="checkbox"]:checked) {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+
+  .notes-render :global(input[type="checkbox"]:checked::after) {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 45%;
+    width: 5px;
+    height: 9px;
+    border: solid var(--bg-dark);
+    border-width: 0 2px 2px 0;
+    transform: translate(-50%, -60%) rotate(45deg);
   }
 
   .notes-render :global(blockquote) {

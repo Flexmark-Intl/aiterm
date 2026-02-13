@@ -283,6 +283,10 @@ fn default_font_size() -> u32 {
     13
 }
 
+fn default_notes_font_size() -> u32 {
+    16
+}
+
 fn default_font_family() -> String {
     "Menlo".to_string()
 }
@@ -375,7 +379,7 @@ pub struct Preferences {
     pub notify_on_completion: bool,
     #[serde(default = "default_notify_min_duration")]
     pub notify_min_duration: u32,
-    #[serde(default = "default_font_size")]
+    #[serde(default = "default_notes_font_size")]
     pub notes_font_size: u32,
     #[serde(default = "default_font_family")]
     pub notes_font_family: String,
@@ -406,7 +410,7 @@ impl Default for Preferences {
             restore_session: false,
             notify_on_completion: false,
             notify_min_duration: default_notify_min_duration(),
-            notes_font_size: default_font_size(),
+            notes_font_size: default_notes_font_size(),
             notes_font_family: default_font_family(),
             notes_width: default_notes_width(),
             notes_word_wrap: true,
