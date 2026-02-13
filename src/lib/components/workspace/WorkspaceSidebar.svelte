@@ -268,6 +268,23 @@
     </button>
   </div>
 
+  {#if workspacesStore.recentWorkspaces.length > 0}
+    <div class="recent-section">
+      <span class="recent-title">RECENT</span>
+      <div class="recent-list">
+        {#each workspacesStore.recentWorkspaces as workspace (workspace.id)}
+          <button
+            class="recent-item"
+            onclick={() => workspacesStore.setActiveWorkspace(workspace.id)}
+            title={workspace.name}
+          >
+            {workspace.name}
+          </button>
+        {/each}
+      </div>
+    </div>
+  {/if}
+
   <div class="workspace-list" bind:this={workspaceListEl}>
     {#each workspacesStore.workspaces as workspace, index (workspace.id)}
       <div
@@ -401,6 +418,44 @@
   .collapse-btn:hover {
     background: var(--bg-light);
     color: var(--fg);
+  }
+
+  .recent-section {
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--bg-light);
+  }
+
+  .recent-title {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    color: var(--fg-dim);
+  }
+
+  .recent-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 6px;
+  }
+
+  .recent-item {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 3px;
+    background: var(--bg-light);
+    color: var(--fg);
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+    transition: background 0.1s;
+  }
+
+  .recent-item:hover {
+    background: var(--accent);
+    color: var(--bg-dark);
   }
 
   .workspace-list {

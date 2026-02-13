@@ -74,11 +74,27 @@ function allTabNames(ws: Workspace): string[] {
   return ws.panes.flatMap(p => p.tabs.map(t => t.name));
 }
 
+const RECENT_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
+
 function createWorkspacesStore() {
   let workspaces = $state<Workspace[]>([]);
   let activeWorkspaceId = $state<string | null>(null);
   let sidebarWidth = $state(180);
   let sidebarCollapsed = $state(false);
+  let lastSwitchedAt = $state<Map<string, number>>(new Map());
+  // Tick counter to force re-evaluation of recentWorkspaces when entries expire
+  let _recentTick = $state(0);
+  let _recentTimer: ReturnType<typeof setInterval> | null = null;
+
+  const recentWorkspaces = $derived.by(() => {
+    void _recentTick; // subscribe to tick for expiry re-evaluation
+    const now = Date.now();
+    return workspaces.filter(w => {
+      if (w.id === activeWorkspaceId) return false;
+      const ts = lastSwitchedAt.get(w.id);
+      return ts != null && (now - ts) < RECENT_WINDOW_MS;
+    });
+  });
 
   const activeWorkspace = $derived(
     workspaces.find(w => w.id === activeWorkspaceId) ?? null
@@ -102,6 +118,7 @@ function createWorkspacesStore() {
     get activeTab() { return activeTab; },
     get sidebarWidth() { return sidebarWidth; },
     get sidebarCollapsed() { return sidebarCollapsed; },
+    get recentWorkspaces() { return recentWorkspaces; },
 
     reset() {
       workspaces = [];
@@ -118,6 +135,11 @@ function createWorkspacesStore() {
       // Create default workspace if none exist
       if (workspaces.length === 0) {
         await this.createWorkspace('Default');
+      }
+
+      // Start periodic tick to expire recent workspaces
+      if (!_recentTimer) {
+        _recentTimer = setInterval(() => { _recentTick++; }, 60_000);
       }
     },
 
@@ -145,6 +167,11 @@ function createWorkspacesStore() {
       const oldIndex = workspaces.findIndex(w => w.id === workspaceId);
       await commands.deleteWorkspace(workspaceId);
       workspaces = workspaces.filter(w => w.id !== workspaceId);
+      if (lastSwitchedAt.has(workspaceId)) {
+        const updated = new Map(lastSwitchedAt);
+        updated.delete(workspaceId);
+        lastSwitchedAt = updated;
+      }
       if (activeWorkspaceId === workspaceId) {
         // Activate adjacent: prefer previous, fall back to next
         const adjacentIndex = Math.min(oldIndex, workspaces.length - 1);
@@ -160,6 +187,12 @@ function createWorkspacesStore() {
     },
 
     async setActiveWorkspace(workspaceId: string) {
+      // Record the workspace we're leaving as recently active
+      if (activeWorkspaceId && activeWorkspaceId !== workspaceId) {
+        const updated = new Map(lastSwitchedAt);
+        updated.set(activeWorkspaceId, Date.now());
+        lastSwitchedAt = updated;
+      }
       await commands.setActiveWorkspace(workspaceId);
       activeWorkspaceId = workspaceId;
     },
