@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.7.1
+
+- Add macOS menu items for Preferences, Reload All Windows, and Reload Current Window
+- Add recent workspaces section to sidebar
+- Add `%title` support for tab names via clickable URLs
+- Ignore small PTY writes for tab activity detection
+
 ## v0.7.0
 
 - Add auto-resume support for local (non-SSH) terminals
