@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.8.1
+
+- Add centered workspace name to macOS title bar
+- Improve notes panel: interactive checkboxes in rendered mode, better default styling and contrast
+
 ## v0.8.0
 
 - Add notes panel per tab with source/rendered mode toggle
