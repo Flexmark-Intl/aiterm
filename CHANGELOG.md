@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.9.0
+
+- Add trigger system: watch terminal output for regex patterns, fire actions (notify, send command)
+- Add trigger variables: capture groups extracted into named variables with `%varName` interpolation
+- Add default triggers for Claude Code (`claude-resume`, `claude-session-id`)
+- Overhaul notification system: three modes (auto, in-app, native, disabled) with in-app toast UI
+- Add reusable Toggle, Select, and InlineConfirm components
+- Add trigger management UI in Preferences
+- Fix tab rename incorrectly setting `custom_name` when exiting edit mode without changes
+
 ## v0.8.3
 
 - Redesign tab styling: full border for active tab, colored underline for activity indicators
