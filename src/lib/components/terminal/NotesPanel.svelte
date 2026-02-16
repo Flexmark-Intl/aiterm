@@ -4,6 +4,7 @@
   import { untrack } from 'svelte';
   import { marked } from 'marked';
   import { open as shellOpen } from '@tauri-apps/plugin-shell';
+  import Icon from '$lib/components/Icon.svelte';
 
   interface Props {
     tabId: string;
@@ -132,14 +133,9 @@
         title={mode === 'source' ? 'Preview' : 'Edit'}
       >
         {#if mode === 'source'}
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5Z"/>
-            <circle cx="8" cy="8" r="2"/>
-          </svg>
+          <Icon name="eye" />
         {:else}
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 2l2 2L5 13l-3 1 1-3L12 2Z"/>
-          </svg>
+          <Icon name="pencil" />
         {/if}
       </button>
       <button class="close-btn" onclick={() => {

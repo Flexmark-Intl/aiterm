@@ -1,9 +1,12 @@
-import type { CursorStyle, Preferences } from '$lib/tauri/types';
+import type { CursorStyle, Preferences, Trigger } from '$lib/tauri/types';
 import type { Theme } from '$lib/themes';
 import { builtinThemes } from '$lib/themes';
 import * as commands from '$lib/tauri/commands';
 
 function createPreferencesStore() {
+  let _resolveReady: () => void;
+  const ready = new Promise<void>(r => { _resolveReady = r; });
+
   let fontSize = $state(13);
   let fontFamily = $state('Menlo');
   let cursorStyle = $state<CursorStyle>('block');
@@ -15,19 +18,26 @@ function createPreferencesStore() {
   let cloneScrollback = $state(true);
   let cloneSsh = $state(true);
   let cloneHistory = $state(true);
+  let cloneNotes = $state(true);
+  let cloneAutoResume = $state(true);
+  let cloneVariables = $state(true);
   let theme = $state('tokyo-night');
   let shellTitleIntegration = $state(false);
   let shellIntegration = $state(false);
   let customThemes = $state<Theme[]>([]);
   let restoreSession = $state(false);
-  let notifyOnCompletion = $state(false);
+  let notificationMode = $state('auto');
   let notifyMinDuration = $state(30);
   let notesFontSize = $state(16);
   let notesFontFamily = $state('Menlo');
   let notesWidth = $state(320);
   let notesWordWrap = $state(true);
+  let triggers = $state<Trigger[]>([]);
+  let hiddenDefaultTriggers = $state<string[]>([]);
 
   return {
+    /** Resolves once the initial load() has completed. */
+    get ready() { return ready; },
     get fontSize() { return fontSize; },
     get fontFamily() { return fontFamily; },
     get cursorStyle() { return cursorStyle; },
@@ -39,17 +49,22 @@ function createPreferencesStore() {
     get cloneScrollback() { return cloneScrollback; },
     get cloneSsh() { return cloneSsh; },
     get cloneHistory() { return cloneHistory; },
+    get cloneNotes() { return cloneNotes; },
+    get cloneAutoResume() { return cloneAutoResume; },
+    get cloneVariables() { return cloneVariables; },
     get theme() { return theme; },
     get shellTitleIntegration() { return shellTitleIntegration; },
     get shellIntegration() { return shellIntegration; },
     get customThemes() { return customThemes; },
     get restoreSession() { return restoreSession; },
-    get notifyOnCompletion() { return notifyOnCompletion; },
+    get notificationMode() { return notificationMode; },
     get notifyMinDuration() { return notifyMinDuration; },
     get notesFontSize() { return notesFontSize; },
     get notesFontFamily() { return notesFontFamily; },
     get notesWidth() { return notesWidth; },
     get notesWordWrap() { return notesWordWrap; },
+    get triggers() { return triggers; },
+    get hiddenDefaultTriggers() { return hiddenDefaultTriggers; },
 
     async load() {
       const prefs = await commands.getPreferences();
@@ -64,17 +79,28 @@ function createPreferencesStore() {
       cloneScrollback = prefs.clone_scrollback;
       cloneSsh = prefs.clone_ssh;
       cloneHistory = prefs.clone_history;
+      cloneNotes = prefs.clone_notes ?? true;
+      cloneAutoResume = prefs.clone_auto_resume ?? true;
+      cloneVariables = prefs.clone_variables ?? true;
       theme = prefs.theme;
       shellTitleIntegration = prefs.shell_title_integration;
       shellIntegration = prefs.shell_integration ?? false;
       customThemes = prefs.custom_themes ?? [];
       restoreSession = prefs.restore_session ?? false;
-      notifyOnCompletion = prefs.notify_on_completion ?? false;
+      // Migration: derive notification_mode from old notify_on_completion if absent
+      if (prefs.notification_mode) {
+        notificationMode = prefs.notification_mode;
+      } else {
+        notificationMode = prefs.notify_on_completion ? 'auto' : 'disabled';
+      }
       notifyMinDuration = prefs.notify_min_duration ?? 30;
       notesFontSize = prefs.notes_font_size ?? 16;
       notesFontFamily = prefs.notes_font_family ?? 'Menlo';
       notesWidth = prefs.notes_width ?? 320;
       notesWordWrap = prefs.notes_word_wrap ?? true;
+      triggers = prefs.triggers ?? [];
+      hiddenDefaultTriggers = prefs.hidden_default_triggers ?? [];
+      _resolveReady();
     },
 
     async setFontSize(value: number) {
@@ -132,6 +158,21 @@ function createPreferencesStore() {
       await this.save();
     },
 
+    async setCloneNotes(value: boolean) {
+      cloneNotes = value;
+      await this.save();
+    },
+
+    async setCloneAutoResume(value: boolean) {
+      cloneAutoResume = value;
+      await this.save();
+    },
+
+    async setCloneVariables(value: boolean) {
+      cloneVariables = value;
+      await this.save();
+    },
+
     async setTheme(value: string) {
       theme = value;
       await this.save();
@@ -152,8 +193,8 @@ function createPreferencesStore() {
       await this.save();
     },
 
-    async setNotifyOnCompletion(value: boolean) {
-      notifyOnCompletion = value;
+    async setNotificationMode(value: string) {
+      notificationMode = value;
       await this.save();
     },
 
@@ -179,6 +220,16 @@ function createPreferencesStore() {
 
     async setNotesWordWrap(value: boolean) {
       notesWordWrap = value;
+      await this.save();
+    },
+
+    async setTriggers(value: Trigger[]) {
+      triggers = value;
+      await this.save();
+    },
+
+    async setHiddenDefaultTriggers(value: string[]) {
+      hiddenDefaultTriggers = value;
       await this.save();
     },
 
@@ -212,17 +263,26 @@ function createPreferencesStore() {
       cloneScrollback = prefs.clone_scrollback;
       cloneSsh = prefs.clone_ssh;
       cloneHistory = prefs.clone_history;
+      cloneNotes = prefs.clone_notes ?? true;
+      cloneAutoResume = prefs.clone_auto_resume ?? true;
+      cloneVariables = prefs.clone_variables ?? true;
       theme = prefs.theme;
       shellTitleIntegration = prefs.shell_title_integration;
       shellIntegration = prefs.shell_integration ?? false;
       customThemes = prefs.custom_themes ?? [];
       restoreSession = prefs.restore_session ?? false;
-      notifyOnCompletion = prefs.notify_on_completion ?? false;
+      if (prefs.notification_mode) {
+        notificationMode = prefs.notification_mode;
+      } else {
+        notificationMode = prefs.notify_on_completion ? 'auto' : 'disabled';
+      }
       notifyMinDuration = prefs.notify_min_duration ?? 30;
       notesFontSize = prefs.notes_font_size ?? 16;
       notesFontFamily = prefs.notes_font_family ?? 'Menlo';
       notesWidth = prefs.notes_width ?? 320;
       notesWordWrap = prefs.notes_word_wrap ?? true;
+      triggers = prefs.triggers ?? [];
+      hiddenDefaultTriggers = prefs.hidden_default_triggers ?? [];
     },
 
     async save() {
@@ -238,17 +298,23 @@ function createPreferencesStore() {
         clone_scrollback: cloneScrollback,
         clone_ssh: cloneSsh,
         clone_history: cloneHistory,
+        clone_notes: cloneNotes,
+        clone_auto_resume: cloneAutoResume,
+        clone_variables: cloneVariables,
         theme,
         shell_title_integration: shellTitleIntegration,
         shell_integration: shellIntegration,
         custom_themes: customThemes,
         restore_session: restoreSession,
-        notify_on_completion: notifyOnCompletion,
+        notify_on_completion: notificationMode !== 'disabled',
+        notification_mode: notificationMode,
         notify_min_duration: notifyMinDuration,
         notes_font_size: notesFontSize,
         notes_font_family: notesFontFamily,
         notes_width: notesWidth,
         notes_word_wrap: notesWordWrap,
+        triggers,
+        hidden_default_triggers: hiddenDefaultTriggers,
       };
       await commands.setPreferences(prefs);
     }

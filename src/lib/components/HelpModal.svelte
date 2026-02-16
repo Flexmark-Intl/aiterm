@@ -37,55 +37,77 @@
       </div>
 
       <div class="content">
-        <section>
-          <h3>Tabs</h3>
-          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>T</kbd> <span>New tab</span></div>
-          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>T</kbd> <span>Duplicate tab</span></div>
-          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>W</kbd> <span>Close tab</span></div>
-          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>1-9</kbd> <span>Switch to tab</span></div>
-          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>[</kbd> <span>Previous tab</span></div>
-          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>]</kbd> <span>Next tab</span></div>
-          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>R</kbd> <span>Toggle auto-resume</span></div>
-        </section>
+        <div class="columns">
+          <div class="col-shortcuts">
+            <section>
+              <h3>Tabs</h3>
+              <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>T</kbd> <span>New tab</span></div>
+              <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>T</kbd> <span>Duplicate tab</span></div>
+              <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>R</kbd> <span>Reload tab</span></div>
+              <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>W</kbd> <span>Close tab</span></div>
+              <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>1-9</kbd> <span>Switch to tab</span></div>
+              <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>[</kbd> <span>Previous tab</span></div>
+              <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>]</kbd> <span>Next tab</span></div>
+              <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>R</kbd> <span>Toggle auto-resume</span></div>
+            </section>
 
-        <section>
-          <h3>Panes</h3>
-          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>D</kbd> <span>Split right</span></div>
-          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>D</kbd> <span>Split down</span></div>
-        </section>
+            <section>
+              <h3>Panes</h3>
+              <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>D</kbd> <span>Split right</span></div>
+              <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>D</kbd> <span>Split down</span></div>
+            </section>
 
-        <section>
-          <h3>Windows</h3>
-          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>N</kbd> <span>New window</span></div>
-          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>N</kbd> <span>Duplicate window</span></div>
-        </section>
+            <section>
+              <h3>Windows</h3>
+              <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>N</kbd> <span>New window</span></div>
+              <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>N</kbd> <span>Duplicate window</span></div>
+            </section>
 
-        <section>
-          <h3>Workspaces</h3>
-          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>{altLabel}</kbd> + <kbd>N</kbd> <span>New workspace</span></div>
-          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>{altLabel}</kbd> + <kbd>Shift</kbd> + <kbd>N</kbd> <span>Duplicate workspace</span></div>
-        </section>
+            <section>
+              <h3>Workspaces</h3>
+              <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>{altLabel}</kbd> + <kbd>N</kbd> <span>New workspace</span></div>
+              <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>{altLabel}</kbd> + <kbd>Shift</kbd> + <kbd>N</kbd> <span>Duplicate workspace</span></div>
+            </section>
 
-        <section>
-          <h3>General</h3>
-          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>E</kbd> <span>Toggle notes panel</span></div>
-          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>F</kbd> <span>Find in terminal</span></div>
-          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>K</kbd> <span>Clear terminal + scrollback</span></div>
-          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>+</kbd> <span>Zoom in</span></div>
-          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>-</kbd> <span>Zoom out</span></div>
-          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>0</kbd> <span>Reset zoom</span></div>
-          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>,</kbd> <span>Preferences</span></div>
-          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>/</kbd> <span>Show this help</span></div>
-          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Q</kbd> <span>Quit</span></div>
-        </section>
+            <section>
+              <h3>General</h3>
+              <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>E</kbd> <span>Toggle notes panel</span></div>
+              <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>F</kbd> <span>Find in terminal</span></div>
+              <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>K</kbd> <span>Clear terminal + scrollback</span></div>
+              <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>+</kbd> <span>Zoom in</span></div>
+              <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>-</kbd> <span>Zoom out</span></div>
+              <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>0</kbd> <span>Reset zoom</span></div>
+              <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>,</kbd> <span>Preferences</span></div>
+              <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>/</kbd> <span>Show this help</span></div>
+              <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Q</kbd> <span>Quit</span></div>
+            </section>
+          </div>
 
-        <section>
-          <h3>Tips</h3>
-          <ul class="tips">
-            <li>Double-click on workspace, pane, or tab names to rename them.</li>
-            <li>Drag workspaces or tabs to reorder. Hold <kbd>{altLabel}</kbd> while dragging to duplicate.</li>
-          </ul>
-        </section>
+          <div class="col-tips">
+            <section>
+              <h3>Tabs</h3>
+              <ul class="tips">
+                <li>Double-click a tab to rename. Use <code>%title</code> or <code>%dir</code> for dynamic names, e.g. <code>Dev %dir</code>. Clear to revert to auto-title.</li>
+                <li>The duplicate button does a full copy (scrollback, notes, auto-resume). <kbd>{altLabel}</kbd>+click a tab for a shallow duplicate (name, cwd, history, variables only).</li>
+              </ul>
+            </section>
+
+            <section>
+              <h3>Organization</h3>
+              <ul class="tips">
+                <li>Double-click workspace or pane names to rename them.</li>
+                <li>Drag workspaces or tabs to reorder. Hold <kbd>{altLabel}</kbd> while dragging to duplicate.</li>
+              </ul>
+            </section>
+
+            <section>
+              <h3>Shell</h3>
+              <ul class="tips">
+                <li>Right-click a terminal for "Setup Shell Integration" (session) or "Install Shell Integration" (permanent).</li>
+              </ul>
+            </section>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -106,7 +128,7 @@
     background: var(--bg-medium);
     border: 1px solid var(--bg-light);
     border-radius: 8px;
-    width: 400px;
+    width: 680px;
     max-height: 80vh;
     overflow-y: auto;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
@@ -143,6 +165,20 @@
     padding: 16px 20px;
   }
 
+  .columns {
+    display: flex;
+    gap: 24px;
+  }
+
+  .col-shortcuts {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .col-tips {
+    flex: 0 0 220px;
+  }
+
   section {
     margin-bottom: 20px;
   }
@@ -169,8 +205,17 @@
   }
 
   .shortcut span {
-    margin-left: auto;
     color: var(--fg-dim);
+    white-space: nowrap;
+    order: 2;
+  }
+
+  .shortcut::after {
+    content: '';
+    flex: 1;
+    order: 1;
+    border-bottom: 1px dotted var(--bg-light);
+    margin: 0 6px;
   }
 
   kbd {
@@ -190,13 +235,22 @@
   }
 
   .tips li {
-    font-size: 13px;
+    font-size: 12px;
     color: var(--fg-dim);
     line-height: 1.5;
-    margin-bottom: 6px;
+    margin-bottom: 8px;
   }
 
   .tips li:last-child {
     margin-bottom: 0;
+  }
+
+  .tips code {
+    background: var(--bg-dark);
+    border: 1px solid var(--bg-light);
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-size: 11px;
+    color: var(--fg);
   }
 </style>

@@ -189,6 +189,19 @@ export async function setTabRestoreContext(
   return invoke('set_tab_restore_context', { workspaceId, paneId, tabId, cwd, sshCommand, remoteCwd });
 }
 
+export async function setTabTriggerVariables(
+  workspaceId: string,
+  paneId: string,
+  tabId: string,
+  vars: Record<string, string>,
+): Promise<void> {
+  return invoke('set_tab_trigger_variables', { workspaceId, paneId, tabId, vars });
+}
+
+export async function getAllWorkspaces(): Promise<[string, string][]> {
+  return invoke('get_all_workspaces');
+}
+
 export async function setTabAutoResumeContext(
   workspaceId: string,
   paneId: string,

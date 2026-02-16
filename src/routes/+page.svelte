@@ -111,6 +111,7 @@
                   autoResumeRemoteCwd={tab.auto_resume_remote_cwd}
                   autoResumeCommand={tab.auto_resume_command}
                   autoResumeRememberedCommand={tab.auto_resume_remembered_command}
+                  triggerVariables={tab.trigger_variables}
                 />
               {/each}
             {/each}

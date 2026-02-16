@@ -21,6 +21,8 @@
   import { open as shellOpen } from '@tauri-apps/plugin-shell';
   import { isModKey, modSymbol } from '$lib/utils/platform';
   import { buildShellIntegrationSnippet, buildInstallSnippet } from '$lib/utils/shellIntegration';
+  import ResizableTextarea from '$lib/components/ResizableTextarea.svelte';
+  import { processOutput, cleanupTab, loadTabVariables, interpolateVariables, getVariables, clearTabVariables } from '$lib/stores/triggers.svelte';
 
   interface Props {
     workspaceId: string;
@@ -36,9 +38,10 @@
     autoResumeRemoteCwd?: string | null;
     autoResumeCommand?: string | null;
     autoResumeRememberedCommand?: string | null;
+    triggerVariables?: Record<string, string>;
   }
 
-  let { workspaceId, paneId, tabId, visible, initialScrollback, restoreCwd, restoreSshCommand, restoreRemoteCwd, autoResumeCwd, autoResumeSshCommand, autoResumeRemoteCwd, autoResumeCommand, autoResumeRememberedCommand }: Props = $props();
+  let { workspaceId, paneId, tabId, visible, initialScrollback, restoreCwd, restoreSshCommand, restoreRemoteCwd, autoResumeCwd, autoResumeSshCommand, autoResumeRemoteCwd, autoResumeCommand, autoResumeRememberedCommand, triggerVariables }: Props = $props();
 
   let containerRef: HTMLDivElement;
   let terminal: Terminal;
@@ -61,7 +64,8 @@
   // Inline prompt for auto-resume command
   let autoResumePrompt = $state<{ cwd: string | null; sshCmd: string | null; remoteCwd: string | null } | null>(null);
   let autoResumePromptValue = $state('');
-  let autoResumeManualResize = false;
+  let claudeSetupModal = $state(false);
+  let autoResumeTextarea = $state<{ focus: () => void } | undefined>();
   let autoResumeHeightBeforeMouse = 0;
 
   // Fit terminal with one fewer row for bottom breathing room.
@@ -197,6 +201,7 @@
     terminal.open(containerRef);
 
     // OSC 0 (icon name + title) and OSC 2 (title): shells/programs set window title
+    // promptCwd is auto-derived from title in terminalsStore.updateOsc()
     terminal.parser.registerOscHandler(0, (data) => {
       if (data) terminalsStore.updateOsc(tabId, { title: data });
       return true;
@@ -282,6 +287,7 @@
     unlistenOutput = await listen<number[]>(`pty-output-${ptyId}`, (event) => {
       const data = new Uint8Array(event.payload);
       terminal.write(data);
+      processOutput(tabId, data);
       // Ignore tiny writes (spinner frames, cursor blinks, status-line redraws)
       // that TUI apps like Claude Code emit periodically while idle.
       if (!visible && trackActivity && data.length > 64 && Date.now() > visibilityGraceUntil) {
@@ -338,7 +344,7 @@
           const cmd = buildSshCommand(ctx.sshCommand, ctx.remoteCwd);
           let payload = cmd + '\n';
           if (autoResumeCommand) {
-            payload += autoResumeCommand + '\n';
+            payload += interpolateVariables(tabId, autoResumeCommand, true) + '\n';
           }
           const bytes = Array.from(new TextEncoder().encode(payload));
           await writeTerminal(ptyId, bytes);
@@ -346,17 +352,20 @@
           logError(`Failed to replay SSH command: ${e}`);
         }
       }, 500);
-    } else if (autoResumeCommand && !splitCtx) {
-      // Local auto-resume: send command after shell starts
+    } else if (autoResumeCommand && (!splitCtx || splitCtx.fireAutoResume)) {
+      // Local auto-resume: send command after shell starts (also fires on reload)
       setTimeout(async () => {
         try {
-          const bytes = Array.from(new TextEncoder().encode(autoResumeCommand + '\n'));
+          const bytes = Array.from(new TextEncoder().encode(interpolateVariables(tabId, autoResumeCommand, true) + '\n'));
           await writeTerminal(ptyId, bytes);
         } catch (e) {
           logError(`Failed to replay auto-resume command: ${e}`);
         }
       }, 500);
     }
+
+    // Load persisted trigger variables into runtime map
+    if (triggerVariables) loadTabVariables(tabId, triggerVariables);
 
     // Register terminal instance with serialize addon for scrollback saving
     terminalsStore.register(tabId, terminal, ptyId, serializeAddon, searchAddon, workspaceId, paneId);
@@ -477,6 +486,7 @@
       killTerminal(ptyId).catch(e => logError(String(e)));
     }
     terminalsStore.unregister(tabId);
+    cleanupTab(tabId);
   });
 
   // Suppress false activity when terminal transitions to hidden —
@@ -484,6 +494,9 @@
   $effect(() => {
     if (!visible && initialized) {
       visibilityGraceUntil = Date.now() + 1000;
+      // Explicitly blur so hidden terminals don't retain keyboard focus.
+      // Without this, keyboard shortcuts (Cmd+R, etc.) can fire on the wrong tab.
+      terminal?.blur();
     }
   });
 
@@ -556,14 +569,15 @@
             const sshCommand = info.foreground_command;
             let remoteCwd: string | null = null;
 
-            const osc7Cwd = terminalsStore.getOsc(tabId)?.cwd ?? null;
+            const oscState = terminalsStore.getOsc(tabId);
+            const osc7Cwd = oscState?.cwd ?? null;
+            const promptCwd = oscState?.promptCwd ?? null;
             if (sshCommand) {
               const isOsc7Stale = osc7Cwd === cwd;
               const osc7RemoteCwd = (osc7Cwd && !isOsc7Stale) ? osc7Cwd : null;
-              if (osc7RemoteCwd) {
-                remoteCwd = osc7RemoteCwd;
-              } else {
-                // Fall back to prompt pattern extraction
+              remoteCwd = osc7RemoteCwd ?? promptCwd ?? null;
+              if (!remoteCwd) {
+                // Last resort: scan buffer for prompt pattern
                 const patterns = getCompiledPatterns(preferencesStore.promptPatterns);
                 const buffer = terminal.buffer.active;
                 const cursorLine = buffer.baseY + buffer.cursorY;
@@ -605,10 +619,13 @@
     const localCwd = info.cwd ?? null;
     let remoteCwd: string | null = null;
     if (sshCmd) {
-      const osc7Cwd = terminalsStore.getOsc(tabId)?.cwd ?? null;
+      const oscState = terminalsStore.getOsc(tabId);
+      const osc7Cwd = oscState?.cwd ?? null;
+      const promptCwd = oscState?.promptCwd ?? null;
       const isOsc7Stale = osc7Cwd === localCwd;
-      remoteCwd = (osc7Cwd && !isOsc7Stale) ? osc7Cwd : null;
+      remoteCwd = (osc7Cwd && !isOsc7Stale) ? osc7Cwd : promptCwd ?? null;
       if (!remoteCwd) {
+        // Last resort: scan buffer for prompt pattern
         const patterns = getCompiledPatterns(preferencesStore.promptPatterns);
         const buffer = terminal.buffer.active;
         const cursorLine = buffer.baseY + buffer.cursorY;
@@ -647,15 +664,9 @@
   // When auto-resume prompt opens: blur xterm so it stops competing, then focus the input
   $effect(() => {
     if (autoResumePrompt) {
-      autoResumeManualResize = false;
       terminal?.blur();
       requestAnimationFrame(() => {
-        const el = document.getElementById('auto-resume-cmd-input') as HTMLTextAreaElement | null;
-        if (el) {
-          el.focus();
-          el.style.height = 'auto';
-          el.style.height = Math.min(el.scrollHeight, 560) + 'px';
-        }
+        autoResumeTextarea?.focus();
       });
     }
   });
@@ -697,6 +708,12 @@
           terminalsStore.clearTerminal(tabId);
         },
       },
+      ...(getVariables(tabId)?.size ? [
+        {
+          label: 'Clear Trigger Variables',
+          action: () => { clearTabVariables(tabId); },
+        },
+      ] : []),
       { label: '', separator: true, action: () => {} },
       ...(isAutoResume ? [{
         label: 'Disable Auto-resume',
@@ -728,6 +745,10 @@
               logError(`Auto-resume failed: ${e}`);
             }
           },
+        },
+        {
+          label: 'Auto-resume + Claude\u2026',
+          action: () => { claudeSetupModal = true; },
         },
       ]),
       ...(preferencesStore.shellTitleIntegration || preferencesStore.shellIntegration ? [
@@ -770,68 +791,92 @@
       <span>Drop to paste path</span>
     </div>
   {/if}
-</div>
-
-{#if contextMenu}
-  <ContextMenu
-    items={getContextMenuItems()}
-    x={contextMenu.x}
-    y={contextMenu.y}
-    onclose={() => { contextMenu = null; terminal?.focus(); }}
-  />
-{/if}
-
-{#if autoResumePrompt}
-  <div class="auto-resume-prompt-backdrop">
+  {#if contextMenu}
+    <ContextMenu
+      items={getContextMenuItems()}
+      x={contextMenu.x}
+      y={contextMenu.y}
+      onclose={() => { contextMenu = null; terminal?.focus(); }}
+    />
+  {/if}
+  {#if autoResumePrompt}
+    <div class="auto-resume-prompt-backdrop">
     <div class="auto-resume-prompt">
-      <label class="auto-resume-prompt-label" for="auto-resume-cmd-input">Command to run after {autoResumePrompt.sshCmd ? 'connect' : 'start'}</label>
-      <!-- svelte-ignore a11y_autofocus -->
-      <div class="auto-resume-input-group">
-        <textarea
-          id="auto-resume-cmd-input"
-          class="auto-resume-prompt-input"
-          bind:value={autoResumePromptValue}
-          placeholder="e.g. claude --continue"
-          rows="1"
-          autofocus
-          autocapitalize="off"
-          spellcheck="false"
-          onkeydown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submitAutoResumePrompt(); if (e.key === 'Escape') cancelAutoResumePrompt(); }}
-          oninput={(e) => { if (!autoResumeManualResize) { const el = e.currentTarget; el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 560) + 'px'; } }}
-        ></textarea>
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="auto-resume-resize-handle" style="cursor: row-resize" onmousedown={(e) => {
-          e.preventDefault();
-          const textarea = document.getElementById('auto-resume-cmd-input') as HTMLTextAreaElement;
-          if (!textarea) return;
-          const startY = e.clientY;
-          const startH = textarea.offsetHeight;
-          function onMove(ev: MouseEvent) {
-            const h = Math.max(32, Math.min(560, startH + ev.clientY - startY));
-            textarea.style.height = h + 'px';
-          }
-          function onUp() {
-            autoResumeManualResize = true;
-            window.removeEventListener('mousemove', onMove);
-            window.removeEventListener('mouseup', onUp);
-          }
-          window.addEventListener('mousemove', onMove);
-          window.addEventListener('mouseup', onUp);
-        }}>
-          <svg class="auto-resume-resize-icon" width="16" height="4" viewBox="0 0 16 4" style="pointer-events: none">
-            <line x1="1" y1="1" x2="15" y2="1" stroke="currentColor" stroke-width="1" stroke-linecap="round" />
-            <line x1="1" y1="3" x2="15" y2="3" stroke="currentColor" stroke-width="1" stroke-linecap="round" />
-          </svg>
-        </div>
-      </div>
+      <label class="auto-resume-prompt-label">Command to run after {autoResumePrompt.sshCmd ? 'connect' : 'start'}</label>
+      <ResizableTextarea
+        bind:this={autoResumeTextarea}
+        value={autoResumePromptValue}
+        placeholder="e.g. claude --continue"
+        autofocus
+        onchange={(v) => { autoResumePromptValue = v; }}
+        onkeydown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submitAutoResumePrompt(); if (e.key === 'Escape') cancelAutoResumePrompt(); }}
+      />
       <div class="auto-resume-prompt-hint">{autoResumePrompt.sshCmd ? 'Leave empty for SSH + cwd only' : 'Leave empty for cwd only'} &middot; Each line sent as a separate command &middot; {modSymbol}Enter to save</div>
       <div class="auto-resume-prompt-actions">
+        <div class="auto-resume-presets">
+          <span class="auto-resume-presets-label">Presets</span>
+          <button class="auto-resume-prompt-btn preset" onclick={() => {
+            autoResumePromptValue = 'if [ -n "%claudeSessionId" ]; then claude --resume %claudeSessionId; elif [ -n "%claudeResumeCommand" ]; then %claudeResumeCommand; else claude --continue; fi';
+          }} title="Uses trigger variables %claudeSessionId and %claudeResumeCommand">Claude Resume</button>
+        </div>
+        <span style="flex: 1;"></span>
         <button class="auto-resume-prompt-btn cancel" onclick={cancelAutoResumePrompt}>Cancel</button>
         <button class="auto-resume-prompt-btn confirm" onclick={submitAutoResumePrompt}>Save</button>
       </div>
     </div>
   </div>
-{/if}
+  {/if}
+  {#if claudeSetupModal}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="claude-setup-backdrop" onclick={() => { claudeSetupModal = false; }} onkeydown={(e) => { if (e.key === 'Escape') claudeSetupModal = false; }}>
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="claude-setup-modal" onclick={(e) => e.stopPropagation()}>
+        <h3 class="claude-setup-title">Auto-resume + Claude</h3>
+        <div class="claude-setup-body">
+          <p>Automatically resume your Claude Code session when the terminal restarts.</p>
+          <h4>This will:</h4>
+          <ul>
+            <li>Enable the <strong>Claude Resume</strong> trigger &mdash; captures the <code>claude --resume</code> command when Claude exits</li>
+            <li>Enable the <strong>Claude Session ID</strong> trigger &mdash; captures the session UUID from <code>/status</code></li>
+            <li>Set an <strong>auto-resume command</strong> on this tab &mdash; resumes by session ID, falls back to the resume command, or starts <code>claude --continue</code></li>
+          </ul>
+          <h4>How it works:</h4>
+          <ol>
+            <li>Run Claude Code in this tab as usual</li>
+            <li>When Claude exits or you run <code>/status</code>, the triggers capture the session ID</li>
+            <li>If the terminal restarts (app relaunch, SSH reconnect), the auto-resume script uses the captured ID to reconnect to the same session</li>
+          </ol>
+          <p class="claude-setup-note">Triggers are global (configurable in Preferences &gt; Triggers) &mdash; they'll capture Claude session info in any tab. The auto-resume command is specific to this tab.</p>
+        </div>
+        <div class="claude-setup-actions">
+          <button class="claude-setup-btn cancel" onclick={() => { claudeSetupModal = false; }}>Cancel</button>
+          <button class="claude-setup-btn activate" onclick={async () => {
+            try {
+              const triggers = preferencesStore.triggers;
+              const needsUpdate = triggers.some(t =>
+                (t.default_id === 'claude-resume' || t.default_id === 'claude-session-id') && !t.enabled
+              );
+              if (needsUpdate) {
+                preferencesStore.setTriggers(triggers.map(t =>
+                  (t.default_id === 'claude-resume' || t.default_id === 'claude-session-id')
+                    ? { ...t, enabled: true }
+                    : t
+                ));
+              }
+              const ctx = await gatherAutoResumeContext();
+              const cmd = 'if [ -n "%claudeSessionId" ]; then claude --resume %claudeSessionId; elif [ -n "%claudeResumeCommand" ]; then %claudeResumeCommand; else claude --continue; fi';
+              await workspacesStore.setTabAutoResumeContext(workspaceId, paneId, tabId, ctx.cwd, ctx.sshCmd, ctx.remoteCwd, cmd);
+              isAutoResume = true;
+            } catch (e) {
+              logError(`Auto-resume + Claude setup failed: ${e}`);
+            }
+            claudeSetupModal = false;
+          }}>Activate</button>
+        </div>
+      </div>
+    </div>
+  {/if}
+</div>
 
 <style>
   .terminal-container {
@@ -911,57 +956,6 @@
     font-weight: 500;
   }
 
-  .auto-resume-input-group {
-    display: flex;
-    flex-direction: column;
-    border: 1px solid var(--bg-light);
-    border-radius: 4px;
-    transition: border-color 0.1s;
-  }
-
-  .auto-resume-input-group:focus-within {
-    border-color: var(--accent);
-  }
-
-  .auto-resume-prompt-input {
-    background: var(--bg-dark);
-    border: none;
-    border-radius: 4px 4px 0 0;
-    padding: 8px;
-    color: var(--fg);
-    font-family: inherit;
-    font-size: 13px;
-    outline: none;
-    resize: none;
-    min-height: 2.4em;
-    max-height: 560px;
-    overflow-y: auto;
-  }
-
-  .auto-resume-resize-handle {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 12px;
-    background: var(--bg-dark);
-    border-radius: 0 0 3px 3px;
-    user-select: none;
-  }
-
-  .auto-resume-resize-handle:hover {
-    background: var(--bg-light);
-  }
-
-  .auto-resume-resize-icon {
-    color: var(--bg-light);
-    transition: color 0.1s;
-  }
-
-  .auto-resume-resize-handle:hover .auto-resume-resize-icon {
-    color: var(--fg-dim);
-  }
-
-
   .auto-resume-prompt-hint {
     color: var(--fg-dim);
     font-size: 11px;
@@ -998,6 +992,132 @@
   }
 
   .auto-resume-prompt-btn.confirm:hover {
+    opacity: 0.9;
+  }
+
+  .auto-resume-presets {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .auto-resume-presets-label {
+    font-size: 11px;
+    color: var(--fg-dim);
+  }
+
+  .auto-resume-prompt-btn.preset {
+    background: var(--bg-dark);
+    color: var(--fg-dim);
+    border: 1px solid var(--bg-light);
+  }
+
+  .auto-resume-prompt-btn.preset:hover {
+    color: var(--fg);
+    border-color: var(--accent);
+  }
+
+  .claude-setup-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+  }
+
+  .claude-setup-modal {
+    background: var(--bg-medium);
+    border: 1px solid var(--bg-light);
+    border-radius: 8px;
+    padding: 20px 24px;
+    max-width: 480px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+  }
+
+  .claude-setup-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--fg);
+    margin: 0 0 12px 0;
+  }
+
+  .claude-setup-body {
+    font-size: 13px;
+    color: var(--fg);
+    line-height: 1.5;
+  }
+
+  .claude-setup-body p {
+    margin: 0 0 10px 0;
+  }
+
+  .claude-setup-body h4 {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--fg-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin: 14px 0 6px 0;
+  }
+
+  .claude-setup-body ul,
+  .claude-setup-body ol {
+    margin: 0 0 10px 0;
+    padding-left: 20px;
+  }
+
+  .claude-setup-body li {
+    margin-bottom: 4px;
+  }
+
+  .claude-setup-body code {
+    background: var(--bg-dark);
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 12px;
+    font-family: 'Menlo', Monaco, monospace;
+  }
+
+  .claude-setup-note {
+    font-size: 12px;
+    color: var(--fg-dim);
+    font-style: italic;
+  }
+
+  .claude-setup-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 16px;
+  }
+
+  .claude-setup-btn {
+    padding: 6px 18px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .claude-setup-btn.cancel {
+    background: var(--bg-light);
+    color: var(--fg);
+  }
+
+  .claude-setup-btn.cancel:hover {
+    background: #525a80;
+  }
+
+  .claude-setup-btn.activate {
+    background: var(--accent);
+    color: var(--bg-dark);
+  }
+
+  .claude-setup-btn.activate:hover {
     opacity: 0.9;
   }
 </style>

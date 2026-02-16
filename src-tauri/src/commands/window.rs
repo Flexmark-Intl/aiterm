@@ -140,8 +140,8 @@ pub fn open_preferences_window(window: tauri::WebviewWindow, app: tauri::AppHand
 
     let title = if cfg!(debug_assertions) { "Preferences (Dev)" } else { "Preferences" };
 
-    let pref_w: f64 = 600.0;
-    let pref_h: f64 = 500.0;
+    let pref_w: f64 = 900.0;
+    let pref_h: f64 = 650.0;
 
     let mut builder = WebviewWindowBuilder::new(&app, "preferences", url)
         .title(title)
@@ -238,6 +238,7 @@ pub(crate) fn clone_workspace_with_id_mapping(
                 notes: tab.notes.clone(),
                 notes_mode: tab.notes_mode.clone(),
                 notes_open: tab.notes_open,
+                trigger_variables: tab.trigger_variables.clone(),
             }
         }).collect();
 

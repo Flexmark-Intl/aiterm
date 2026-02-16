@@ -198,6 +198,9 @@ pub struct Tab {
     /// Whether the notes panel is open for this tab.
     #[serde(default)]
     pub notes_open: bool,
+    /// Trigger-extracted variables (persisted across restarts).
+    #[serde(default)]
+    pub trigger_variables: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -326,6 +329,10 @@ fn default_notify_min_duration() -> u32 {
     30
 }
 
+fn default_notification_mode() -> String {
+    "auto".to_string()
+}
+
 fn default_true() -> bool {
     true
 }
@@ -334,6 +341,58 @@ fn default_notes_width() -> u32 {
     320
 }
 
+fn default_trigger_cooldown() -> u32 {
+    5
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum TriggerActionType {
+    #[default]
+    Notify,
+    #[serde(rename = "send_command")]
+    SendCommand,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TriggerActionEntry {
+    pub action_type: TriggerActionType,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VariableMapping {
+    pub name: String,
+    pub group: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub template: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Trigger {
+    pub id: String,
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub pattern: String,
+    /// New: array of actions to execute on match
+    #[serde(default)]
+    pub actions: Vec<TriggerActionEntry>,
+    pub enabled: bool,
+    #[serde(default)]
+    pub workspaces: Vec<String>,
+    #[serde(default = "default_trigger_cooldown")]
+    pub cooldown: u32,
+    /// Variable extraction from capture groups (ordered)
+    #[serde(default)]
+    pub variables: Vec<VariableMapping>,
+    /// Links this trigger to an app-provided default template (e.g. "claude-resume").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_id: Option<String>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[serde(rename_all = "lowercase")]
@@ -368,6 +427,12 @@ pub struct Preferences {
     pub clone_ssh: bool,
     #[serde(default = "default_true")]
     pub clone_history: bool,
+    #[serde(default = "default_true")]
+    pub clone_notes: bool,
+    #[serde(default = "default_true")]
+    pub clone_auto_resume: bool,
+    #[serde(default = "default_true")]
+    pub clone_variables: bool,
     #[serde(default = "default_theme")]
     pub theme: String,
     #[serde(default)]
@@ -378,8 +443,12 @@ pub struct Preferences {
     pub custom_themes: Vec<serde_json::Value>,
     #[serde(default)]
     pub restore_session: bool,
-    #[serde(default)]
+    /// Legacy field kept for migration deserialization only.
+    #[serde(default, skip_serializing)]
+    #[allow(dead_code)]
     pub notify_on_completion: bool,
+    #[serde(default = "default_notification_mode")]
+    pub notification_mode: String,
     #[serde(default = "default_notify_min_duration")]
     pub notify_min_duration: u32,
     #[serde(default = "default_notes_font_size")]
@@ -390,6 +459,11 @@ pub struct Preferences {
     pub notes_width: u32,
     #[serde(default = "default_true")]
     pub notes_word_wrap: bool,
+    #[serde(default)]
+    pub triggers: Vec<Trigger>,
+    /// Default trigger IDs the user has intentionally deleted (prevents re-seeding).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hidden_default_triggers: Vec<String>,
 }
 
 impl Default for Preferences {
@@ -406,17 +480,23 @@ impl Default for Preferences {
             clone_scrollback: true,
             clone_ssh: true,
             clone_history: true,
+            clone_notes: true,
+            clone_auto_resume: true,
+            clone_variables: true,
             theme: default_theme(),
             shell_title_integration: false,
             shell_integration: false,
             custom_themes: Vec::new(),
             restore_session: false,
             notify_on_completion: false,
+            notification_mode: default_notification_mode(),
             notify_min_duration: default_notify_min_duration(),
             notes_font_size: default_notes_font_size(),
             notes_font_family: default_font_family(),
             notes_width: default_notes_width(),
             notes_word_wrap: true,
+            triggers: Vec::new(),
+            hidden_default_triggers: Vec::new(),
         }
     }
 }
@@ -440,6 +520,7 @@ impl Tab {
             notes: None,
             notes_mode: None,
             notes_open: false,
+            trigger_variables: HashMap::new(),
         }
     }
 }

@@ -12,8 +12,11 @@ const REGEX_SPECIAL = /[.*+?^${}()|[\]\\]/g;
  * All other characters are treated as literals (regex-escaped).
  * Whitespace in the pattern matches \s+ (flexible spacing).
  * The regex is anchored to end-of-line with \s*$.
+ *
+ * When `optionalPrompt` is true, \p compiles to [$#%>]? instead of [$#%>].
+ * Use this for matching terminal titles (which omit the prompt character).
  */
-export function compilePromptPattern(pattern: string): RegExp | null {
+export function compilePromptPattern(pattern: string, opts?: { optionalPrompt?: boolean }): RegExp | null {
   const dCount = (pattern.match(/\\d/g) || []).length;
   if (dCount !== 1) return null;
 
@@ -34,7 +37,7 @@ export function compilePromptPattern(pattern: string): RegExp | null {
         continue;
       }
       if (next === 'p') {
-        regex += '[$#%>]';
+        regex += opts?.optionalPrompt ? '[$#%>]?' : '[$#%>]';
         i += 2;
         continue;
       }
@@ -64,8 +67,21 @@ export function compilePromptPattern(pattern: string): RegExp | null {
   }
 }
 
+/**
+ * Extract the directory from a terminal title using compiled prompt patterns.
+ * Returns the first matched \d capture group, or the original title if none match.
+ */
+export function extractDirFromTitle(title: string, patterns: RegExp[]): string {
+  for (const re of patterns) {
+    const m = title.match(re);
+    if (m?.[1]) return m[1];
+  }
+  return title;
+}
+
 let cachedPatterns: string[] = [];
 let compiledPatterns: RegExp[] = [];
+let compiledTitlePatterns: RegExp[] = [];
 
 /**
  * Get compiled RegExps from user prompt patterns, with caching.
@@ -78,8 +94,22 @@ export function getCompiledPatterns(patterns: string[]): RegExp[] {
   ) {
     cachedPatterns = [...patterns];
     compiledPatterns = patterns
-      .map(compilePromptPattern)
+      .map(p => compilePromptPattern(p))
+      .filter((r): r is RegExp => r !== null);
+    compiledTitlePatterns = patterns
+      .map(p => compilePromptPattern(p, { optionalPrompt: true }))
       .filter((r): r is RegExp => r !== null);
   }
   return compiledPatterns;
+}
+
+/**
+ * Get compiled RegExps with \p made optional — for matching terminal titles
+ * which don't include the prompt character ($, #, %, >).
+ * Shares the same cache as getCompiledPatterns.
+ */
+export function getCompiledTitlePatterns(patterns: string[]): RegExp[] {
+  // Ensure cache is up to date
+  getCompiledPatterns(patterns);
+  return compiledTitlePatterns;
 }

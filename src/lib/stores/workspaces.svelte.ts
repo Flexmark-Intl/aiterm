@@ -6,6 +6,7 @@ import { preferencesStore } from '$lib/stores/preferences.svelte';
 import { activityStore } from '$lib/stores/activity.svelte';
 import { getCompiledPatterns } from '$lib/utils/promptPattern';
 import { error as logError } from '@tauri-apps/plugin-log';
+import { getVariables } from '$lib/stores/triggers.svelte';
 
 /**
  * Extract the remote cwd from the terminal prompt using user-configured patterns.
@@ -268,12 +269,34 @@ function createWorkspacesStore() {
         await commands.renameTab(workspaceId, newPane.id, newTabId, tabName, sourceTab.custom_name);
 
         // Copy notes
-        if (sourceTab.notes) {
+        if (preferencesStore.cloneNotes && sourceTab.notes) {
           await commands.setTabNotes(workspaceId, newPane.id, newTabId, sourceTab.notes);
         }
-        // Copy notes mode
-        if (sourceTab.notes_mode) {
+        if (preferencesStore.cloneNotes && sourceTab.notes_mode) {
           await commands.setTabNotesMode(workspaceId, newPane.id, newTabId, sourceTab.notes_mode);
+        }
+
+        // Copy trigger variables
+        if (preferencesStore.cloneVariables) {
+          const srcVars = getVariables(sourceTabId);
+          if (srcVars && srcVars.size > 0) {
+            const plain: Record<string, string> = {};
+            for (const [k, v] of srcVars) plain[k] = v;
+            await commands.setTabTriggerVariables(workspaceId, newPane.id, newTabId, plain).catch(e =>
+              logError(`Failed to copy trigger variables: ${e}`)
+            );
+          }
+        }
+
+        // Copy auto-resume settings
+        if (preferencesStore.cloneAutoResume && (sourceTab.auto_resume_cwd || sourceTab.auto_resume_ssh_command || sourceTab.auto_resume_command)) {
+          await this.setTabAutoResumeContext(
+            workspaceId, newPane.id, newTabId,
+            sourceTab.auto_resume_cwd,
+            sourceTab.auto_resume_ssh_command,
+            sourceTab.auto_resume_remote_cwd,
+            sourceTab.auto_resume_command,
+          );
         }
       }
       if (newTabId) {
@@ -288,16 +311,18 @@ function createWorkspacesStore() {
         // 4. Store split context for the new TerminalPane to consume on mount
         if (preferencesStore.cloneCwd || preferencesStore.cloneSsh) {
           // OSC 7 gives the most accurate cwd (works for both local and remote shells)
-          const osc7Cwd = terminalsStore.getOsc(sourceTabId)?.cwd ?? null;
+          const oscState = terminalsStore.getOsc(sourceTabId);
+          const osc7Cwd = oscState?.cwd ?? null;
+          const promptCwd = oscState?.promptCwd ?? null;
 
           let remoteCwd: string | null = null;
           if (sshCommand) {
             // SSH active: OSC 7 may be stale (from the local shell before SSH started)
             // or updated by the remote shell. Compare with the lsof-reported local cwd:
-            // if they match, OSC 7 is stale → fall back to prompt heuristic.
+            // if they match, OSC 7 is stale → fall back to promptCwd then buffer scan.
             const isOsc7Stale = osc7Cwd === cwd;
             const osc7RemoteCwd = (osc7Cwd && !isOsc7Stale) ? osc7Cwd : null;
-            remoteCwd = osc7RemoteCwd ?? (instance ? extractRemoteCwd(instance.terminal) : null);
+            remoteCwd = osc7RemoteCwd ?? promptCwd ?? (instance ? extractRemoteCwd(instance.terminal) : null);
           } else if (preferencesStore.cloneCwd) {
             // No SSH: OSC 7 reports local cwd, can supplement lsof
             cwd = cwd ?? osc7Cwd;
@@ -564,13 +589,15 @@ function createWorkspacesStore() {
     _storeSplitContext(sourceTabId: string, newTabId: string, cwd: string | null, sshCommand: string | null, instance: { terminal: import('@xterm/xterm').Terminal } | undefined) {
       if (!preferencesStore.cloneCwd && !preferencesStore.cloneSsh) return;
 
-      const osc7Cwd = terminalsStore.getOsc(sourceTabId)?.cwd ?? null;
+      const oscState = terminalsStore.getOsc(sourceTabId);
+      const osc7Cwd = oscState?.cwd ?? null;
+      const promptCwd = oscState?.promptCwd ?? null;
 
       let remoteCwd: string | null = null;
       if (sshCommand) {
         const isOsc7Stale = osc7Cwd === cwd;
         const osc7RemoteCwd = (osc7Cwd && !isOsc7Stale) ? osc7Cwd : null;
-        remoteCwd = osc7RemoteCwd ?? (instance ? extractRemoteCwd(instance.terminal) : null);
+        remoteCwd = osc7RemoteCwd ?? promptCwd ?? (instance ? extractRemoteCwd(instance.terminal) : null);
       } else if (preferencesStore.cloneCwd) {
         cwd = cwd ?? osc7Cwd;
       }
@@ -628,12 +655,34 @@ function createWorkspacesStore() {
       }
 
       // Copy notes
-      if (sourceTab.notes) {
+      if (preferencesStore.cloneNotes && sourceTab.notes) {
         await commands.setTabNotes(targetWsId, targetPane.id, newTab.id, sourceTab.notes);
       }
-      // Copy notes mode
-      if (sourceTab.notes_mode) {
+      if (preferencesStore.cloneNotes && sourceTab.notes_mode) {
         await commands.setTabNotesMode(targetWsId, targetPane.id, newTab.id, sourceTab.notes_mode);
+      }
+
+      // Copy trigger variables
+      if (preferencesStore.cloneVariables) {
+        const srcVars = getVariables(sourceTabId);
+        if (srcVars && srcVars.size > 0) {
+          const plain: Record<string, string> = {};
+          for (const [k, v] of srcVars) plain[k] = v;
+          await commands.setTabTriggerVariables(targetWsId, targetPane.id, newTab.id, plain).catch(e =>
+            logError(`Failed to copy trigger variables: ${e}`)
+          );
+        }
+      }
+
+      // Copy auto-resume settings
+      if (preferencesStore.cloneAutoResume && (sourceTab.auto_resume_cwd || sourceTab.auto_resume_ssh_command || sourceTab.auto_resume_command)) {
+        await this.setTabAutoResumeContext(
+          targetWsId, targetPane.id, newTab.id,
+          sourceTab.auto_resume_cwd,
+          sourceTab.auto_resume_ssh_command,
+          sourceTab.auto_resume_remote_cwd,
+          sourceTab.auto_resume_command,
+        );
       }
 
       // Store split context for the new terminal
@@ -700,10 +749,12 @@ function createWorkspacesStore() {
 
           let remoteCwd: string | null = null;
           if (ctx.sshCommand && ctx.instance) {
-            const osc7Cwd = terminalsStore.getOsc(tab.id)?.cwd ?? null;
+            const oscState = terminalsStore.getOsc(tab.id);
+            const osc7Cwd = oscState?.cwd ?? null;
+            const promptCwd = oscState?.promptCwd ?? null;
             const isOsc7Stale = osc7Cwd === ctx.cwd;
             const osc7RemoteCwd = (osc7Cwd && !isOsc7Stale) ? osc7Cwd : null;
-            remoteCwd = osc7RemoteCwd ?? extractRemoteCwd(ctx.instance.terminal);
+            remoteCwd = osc7RemoteCwd ?? promptCwd ?? extractRemoteCwd(ctx.instance.terminal);
           }
 
           tabContexts.push({
@@ -739,15 +790,16 @@ function createWorkspacesStore() {
       workspaces = data.workspaces;
     },
 
-    async duplicateTab(workspaceId: string, paneId: string, tabId: string, opts?: { skipScrollback?: boolean }) {
+    async duplicateTab(workspaceId: string, paneId: string, tabId: string, opts?: { shallow?: boolean }) {
       const ws = workspaces.find(w => w.id === workspaceId);
       const pane = ws?.panes.find(p => p.id === paneId);
       const sourceTab = pane?.tabs.find(t => t.id === tabId);
       if (!sourceTab) return;
 
+      const shallow = opts?.shallow ?? false;
+
       // 1. Gather context from source terminal
       const { instance, scrollback, cwd, sshCommand } = await this._gatherTabContext(tabId);
-      const useScrollback = opts?.skipScrollback ? null : scrollback;
 
       // 2. Compute duplicate name with incrementing index for custom names
       const dupName = sourceTab.custom_name
@@ -762,9 +814,9 @@ function createWorkspacesStore() {
         await commands.renameTab(workspaceId, paneId, newTab.id, dupName, true);
       }
 
-      // 5. Set scrollback
-      if (useScrollback) {
-        await commands.setTabScrollback(workspaceId, paneId, newTab.id, useScrollback);
+      // 5. Set scrollback (skip in shallow mode)
+      if (!shallow && scrollback) {
+        await commands.setTabScrollback(workspaceId, paneId, newTab.id, scrollback);
       }
 
       // 6. Copy history
@@ -776,13 +828,35 @@ function createWorkspacesStore() {
         }
       }
 
-      // 7. Copy notes
-      if (sourceTab.notes) {
+      // 7. Copy notes (skip in shallow mode)
+      if (!shallow && preferencesStore.cloneNotes && sourceTab.notes) {
         await commands.setTabNotes(workspaceId, paneId, newTab.id, sourceTab.notes);
       }
-      // 7b. Copy notes mode
-      if (sourceTab.notes_mode) {
+      if (!shallow && preferencesStore.cloneNotes && sourceTab.notes_mode) {
         await commands.setTabNotesMode(workspaceId, paneId, newTab.id, sourceTab.notes_mode);
+      }
+
+      // 7c. Copy trigger variables (always in shallow mode, pref-gated in full mode)
+      if (shallow || preferencesStore.cloneVariables) {
+        const srcVars = getVariables(tabId);
+        if (srcVars && srcVars.size > 0) {
+          const plain: Record<string, string> = {};
+          for (const [k, v] of srcVars) plain[k] = v;
+          await commands.setTabTriggerVariables(workspaceId, paneId, newTab.id, plain).catch(e =>
+            logError(`Failed to copy trigger variables: ${e}`)
+          );
+        }
+      }
+
+      // 7d. Copy auto-resume settings (skip in shallow mode)
+      if (!shallow && preferencesStore.cloneAutoResume && (sourceTab.auto_resume_cwd || sourceTab.auto_resume_ssh_command || sourceTab.auto_resume_command)) {
+        await this.setTabAutoResumeContext(
+          workspaceId, paneId, newTab.id,
+          sourceTab.auto_resume_cwd,
+          sourceTab.auto_resume_ssh_command,
+          sourceTab.auto_resume_remote_cwd,
+          sourceTab.auto_resume_command,
+        );
       }
 
       // 8. Store split context for the new TerminalPane to consume on mount
@@ -804,6 +878,59 @@ function createWorkspacesStore() {
       }
     },
 
+    async reloadTab(workspaceId: string, paneId: string, tabId: string) {
+      const ws = workspaces.find(w => w.id === workspaceId);
+      const pane = ws?.panes.find(p => p.id === paneId);
+      const sourceTab = pane?.tabs.find(t => t.id === tabId);
+      if (!ws || !pane || !sourceTab) return;
+
+      // Remember exact name and position before duplication
+      const tabName = sourceTab.name;
+      const isCustom = sourceTab.custom_name;
+      const sourceIndex = pane.tabs.findIndex(t => t.id === tabId);
+
+      // Deep duplicate: clones scrollback, CWD, SSH, notes, history, auto-resume, variables
+      await this.duplicateTab(workspaceId, paneId, tabId);
+
+      // Reload state to get the new tab
+      const freshData = await commands.getWindowData();
+      const freshWs = freshData.workspaces.find(w => w.id === workspaceId);
+      const freshPane = freshWs?.panes.find(p => p.id === paneId);
+      if (!freshWs || !freshPane) return;
+
+      // Find the new tab (duplicateTab places it right after source)
+      const newTab = freshPane.tabs[sourceIndex + 1];
+      if (!newTab) return;
+
+      // Mark split context so auto-resume command fires on mount (reload = full restore)
+      const splitCtx = terminalsStore.consumeSplitContext(newTab.id);
+      if (splitCtx) {
+        terminalsStore.setSplitContext(newTab.id, { ...splitCtx, fireAutoResume: true });
+      }
+
+      // Restore exact name (duplicateTab may have appended " (2)" for custom names)
+      if (isCustom) {
+        await commands.renameTab(workspaceId, paneId, newTab.id, tabName, true);
+      }
+
+      // Move new tab into the old tab's position and delete the old one
+      const currentIds = freshPane.tabs.map(t => t.id);
+      const reordered = currentIds.filter(id => id !== newTab.id);
+      reordered.splice(sourceIndex, 0, newTab.id);
+      reordered.splice(reordered.indexOf(tabId), 1);
+      await commands.reorderTabs(workspaceId, paneId, reordered);
+
+      await commands.setActiveTab(workspaceId, paneId, newTab.id);
+      await commands.deleteTab(workspaceId, paneId, tabId);
+
+      // Final state reload
+      const data = await commands.getWindowData();
+      const updatedWs = data.workspaces.find(w => w.id === workspaceId);
+      if (updatedWs) {
+        workspaces = workspaces.map(w => w.id === workspaceId ? updatedWs : w);
+      }
+    },
+
     async duplicateWindow() {
       // Gather context for ALL terminals in current window
       const tabContexts: commands.TabContext[] = [];
@@ -816,10 +943,12 @@ function createWorkspacesStore() {
             // Also detect remote cwd
             let remoteCwd: string | null = null;
             if (ctx.sshCommand && ctx.instance) {
-              const osc7Cwd = terminalsStore.getOsc(tab.id)?.cwd ?? null;
+              const oscState = terminalsStore.getOsc(tab.id);
+              const osc7Cwd = oscState?.cwd ?? null;
+              const promptCwd = oscState?.promptCwd ?? null;
               const isOsc7Stale = osc7Cwd === ctx.cwd;
               const osc7RemoteCwd = (osc7Cwd && !isOsc7Stale) ? osc7Cwd : null;
-              remoteCwd = osc7RemoteCwd ?? extractRemoteCwd(ctx.instance.terminal);
+              remoteCwd = osc7RemoteCwd ?? promptCwd ?? extractRemoteCwd(ctx.instance.terminal);
             }
 
             tabContexts.push({

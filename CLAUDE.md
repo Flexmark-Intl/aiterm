@@ -26,10 +26,14 @@ src/                          # Frontend (Svelte/TypeScript)
 │   │   ├── workspaces.svelte.ts
 │   │   ├── terminals.svelte.ts
 │   │   ├── preferences.svelte.ts
-│   │   └── activity.svelte.ts
+│   │   ├── activity.svelte.ts
+│   │   ├── triggers.svelte.ts    # Trigger engine (pattern matching, variables)
+│   │   ├── toasts.svelte.ts      # In-app toast notification store
+│   │   └── notificationDispatch.ts # Routes to toast or OS notification
 │   ├── utils/                # Pure utility modules
 │   │   ├── shellIntegration.ts  # Remote shell hook snippets
-│   │   └── promptPattern.ts     # PS1 prompt pattern matching
+│   │   ├── promptPattern.ts     # PS1 prompt pattern matching
+│   │   └── ansi.ts              # ANSI escape code stripping
 │   └── tauri/                # Tauri IPC layer
 │       ├── commands.ts       # invoke() wrappers
 │       └── types.ts          # TypeScript interfaces matching Rust
@@ -132,16 +136,27 @@ Pane
 Tab
 ├── id, name, custom_name (bool — true if user explicitly renamed)
 ├── pty_id (links to running terminal)
-└── scrollback (serialized terminal state)
+├── scrollback (serialized terminal state)
+└── trigger_variables (persisted variable map from triggers)
 
 SplitNode = SplitLeaf { pane_id } | SplitBranch { id, direction, ratio, children }
+
+Trigger
+├── id, name, description, pattern (regex)
+├── actions: TriggerActionEntry[] (notify, send_command)
+├── variables: VariableMapping[] (capture group → named variable)
+├── enabled, cooldown, workspaces (scope filter)
+└── default_id (links to app-provided default template, if any)
 
 Preferences
 ├── font_size, font_family
 ├── cursor_style, cursor_blink
 ├── auto_save_interval, scrollback_limit
 ├── prompt_patterns (PS1-like patterns for remote cwd detection)
-├── clone_cwd, clone_scrollback, clone_ssh, clone_history
+├── clone_cwd, clone_scrollback, clone_ssh, clone_history, clone_notes, clone_auto_resume, clone_variables
+├── notification_mode (auto, in_app, native, disabled)
+├── triggers: Trigger[]
+└── hidden_default_triggers (IDs of deleted app-provided defaults)
 ```
 
 ## Portal Pattern (Terminal Persistence)
@@ -245,6 +260,29 @@ Controlled by `cfg!(debug_assertions)` in `state/persistence.rs` → `app_data_s
 - **Terminal lifecycle**: Created in TerminalPane onMount, PTY spawned immediately
 - **Scrollback**: Saved on destroy, periodically (based on preferences), and on app close
 
+## Triggers
+
+Triggers watch terminal output for regex patterns and fire actions. Configured in Preferences > Triggers.
+
+- **Engine**: `src/lib/stores/triggers.svelte.ts` — `processOutput()` called from TerminalPane's PTY listener
+- **Flow**: raw PTY bytes → ANSI-stripped → appended to per-tab sliding buffer (4KB cap) → each trigger's regex tested against buffer → matched portion consumed
+- **Actions**: `notify` (dispatches via notification system), `send_command` (writes to PTY)
+- **Variables**: Capture groups extracted into named variables (`%varName`), persisted per-tab via `trigger_variables`
+- **Variable interpolation**: `interpolateVariables(tabId, text)` replaces `%varName` tokens — used in tab titles, auto-resume commands, notification messages
+- **Cooldown**: Per-trigger per-tab, prevents rapid re-firing
+- **Default triggers**: App-provided templates (e.g. `claude-resume`, `claude-session-id`) with stable `default_id`. Seeded on Preferences page mount. Users can edit them; "Reset" button restores template values. Deleted defaults tracked in `hidden_default_triggers`.
+
+## Notifications
+
+Three-mode notification system controlled by `notification_mode` preference:
+
+- **auto** (default): In-app toasts when window is focused, OS notifications when unfocused
+- **in_app**: Always show in-app toasts
+- **native**: Always use OS notifications
+- **disabled**: No notifications
+
+Architecture: `notificationDispatch.ts` routes `dispatch(title, body, type)` calls based on mode + focus state. Toast UI in `Toast.svelte` (rendered in `+layout.svelte`), store in `toasts.svelte.ts` (max 3 visible, 5s auto-dismiss).
+
 ## Keyboard Shortcuts
 
 | Shortcut | Action |
@@ -255,6 +293,7 @@ Controlled by `cfg!(debug_assertions)` in `state/persistence.rs` → `app_data_s
 | Cmd+Shift+[ | Previous tab |
 | Cmd+Shift+] | Next tab |
 | Cmd+Shift+T | Duplicate tab |
+| Cmd+Shift+R | Reload tab (duplicate + close original) |
 | Cmd+N | New workspace |
 | Cmd+, | Preferences |
 | Cmd+/ | Help |

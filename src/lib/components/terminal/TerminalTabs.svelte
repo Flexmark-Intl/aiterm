@@ -6,6 +6,10 @@
   import { terminalsStore } from '$lib/stores/terminals.svelte';
   import type { OscState } from '$lib/stores/terminals.svelte';
   import { modLabel } from '$lib/utils/platform';
+  import { preferencesStore } from '$lib/stores/preferences.svelte';
+  import { getCompiledTitlePatterns, extractDirFromTitle } from '$lib/utils/promptPattern';
+  import { onVariablesChange, interpolateVariables } from '$lib/stores/triggers.svelte';
+  import Icon from '$lib/components/Icon.svelte';
 
   interface Props {
     workspaceId: string;
@@ -30,13 +34,36 @@
   });
   onDestroy(unsubOsc);
 
+  // Track trigger variable changes for reactive tab title updates
+  let varVersion = $state(0);
+  const unsubVars = onVariablesChange((tabId: string) => {
+    if (pane.tabs.some(t => t.id === tabId)) {
+      varVersion++;
+    }
+  });
+  onDestroy(unsubVars);
+
   function displayName(tab: Tab): string {
+    // Read varVersion to subscribe this derived value to variable changes
+    void varVersion;
     if (tab.custom_name) {
-      if (tab.name.includes('%title')) {
+      let result = tab.name;
+      if (result.includes('%title') || result.includes('%dir')) {
         const oscTitle = oscTitles.get(tab.id);
-        return oscTitle ? tab.name.replace('%title', oscTitle) : tab.name;
+        if (!oscTitle && !result.includes('%')) return result;
+        if (oscTitle) {
+          if (result.includes('%title')) result = result.replace('%title', oscTitle);
+          if (result.includes('%dir')) {
+            const patterns = getCompiledTitlePatterns(preferencesStore.promptPatterns);
+            result = result.replace('%dir', extractDirFromTitle(oscTitle, patterns));
+          }
+        }
       }
-      return tab.name;
+      // Interpolate %varName from trigger variables
+      if (result.includes('%')) {
+        result = interpolateVariables(tab.id, result);
+      }
+      return result;
     }
     return oscTitles.get(tab.id) ?? tab.name;
   }
@@ -91,7 +118,7 @@
 
   async function handleDuplicateTab(tabId: string, e: MouseEvent) {
     e.stopPropagation();
-    await workspacesStore.duplicateTab(workspaceId, pane.id, tabId, { skipScrollback: e.metaKey || e.ctrlKey });
+    await workspacesStore.duplicateTab(workspaceId, pane.id, tabId, { shallow: e.altKey });
   }
 
   async function handleCloseTab(tabId: string, e: MouseEvent) {
@@ -132,6 +159,12 @@
     // Only primary button, skip if editing or clicking close button
     if (e.button !== 0 || editingId === tabId) return;
     if ((e.target as HTMLElement).closest('.close-btn') || (e.target as HTMLElement).closest('.duplicate-btn')) return;
+    // Alt+click tab → shallow duplicate (name, cwd, history, variables only)
+    if (e.altKey) {
+      e.preventDefault();
+      workspacesStore.duplicateTab(workspaceId, pane.id, tabId, { shallow: true });
+      return;
+    }
     pendingDragTabId = tabId;
     dragStartX = e.clientX;
     dragStartY = e.clientY;
@@ -318,7 +351,7 @@
     <div
       class="tab"
       class:active={tab.id === pane.active_tab_id}
-      class:unclamped={editingId === tab.id || tab.custom_name}
+      class:unclamped={editingId === tab.id || tab.custom_name || oscTitles.has(tab.id)}
       class:activity={!shellState && hasActivity}
       class:completed={shellState?.state === 'completed' && shellState?.exitCode === 0}
       class:failed={shellState?.state === 'completed' && shellState?.exitCode !== 0}
@@ -349,7 +382,7 @@
             onblur={finishEditing}
             onkeydown={handleKeydown}
             class="edit-input"
-            placeholder="Use %title for dynamic title"
+            placeholder="%title, %dir, or %varName for dynamic name"
             autofocus
           />
         </div>
@@ -397,12 +430,7 @@
         onclick={() => workspacesStore.toggleNotes(pane.active_tab_id!)}
         title="Toggle notes ({modLabel}+E)"
       >
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M9 1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V5L9 1Z"/>
-          <path d="M9 1v4h4"/>
-          <path d="M6 9h4"/>
-          <path d="M6 12h2"/>
-        </svg>
+        <Icon name="notes" />
       </button>
     {/if}
   {/if}

@@ -2,12 +2,7 @@ import { activityStore } from './activity.svelte';
 import { preferencesStore } from './preferences.svelte';
 import { workspacesStore } from './workspaces.svelte';
 import { terminalsStore } from './terminals.svelte';
-import {
-  isPermissionGranted,
-  requestPermission,
-  sendNotification,
-} from '@tauri-apps/plugin-notification';
-import { info as logInfo } from '@tauri-apps/plugin-log';
+import { dispatch } from './notificationDispatch';
 
 /** Tracks when each tab's command started (for duration check). */
 const commandStartTimes = new Map<string, number>();
@@ -34,7 +29,7 @@ function getTabName(tabId: string): string {
 }
 
 async function handleCommandComplete(tabId: string, exitCode: number) {
-  if (!preferencesStore.notifyOnCompletion) return;
+  if (preferencesStore.notificationMode === 'disabled') return;
   if (isTabVisible(tabId)) return;
 
   const startTime = commandStartTimes.get(tabId);
@@ -48,20 +43,13 @@ async function handleCommandComplete(tabId: string, exitCode: number) {
 
   commandStartTimes.delete(tabId);
 
-  let granted = await isPermissionGranted();
-  if (!granted) {
-    const permission = await requestPermission();
-    granted = permission === 'granted';
-  }
-  if (!granted) return;
-
   const name = getTabName(tabId);
   const body = exitCode === 0
     ? `"${name}" has finished`
     : `"${name}" has finished (exit code ${exitCode})`;
 
-  logInfo(`Sending notification: ${body}`);
-  sendNotification({ title: 'Command Completed', body });
+  const type = exitCode === 0 ? 'success' as const : 'error' as const;
+  await dispatch('Command Completed', body, type);
 }
 
 function handleCommandStart(tabId: string) {

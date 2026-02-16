@@ -3,6 +3,8 @@ import type { SerializeAddon } from '@xterm/addon-serialize';
 import type { SearchAddon } from '@xterm/addon-search';
 import { setTabScrollback, killTerminal } from '$lib/tauri/commands';
 import { error as logError } from '@tauri-apps/plugin-log';
+import { getCompiledTitlePatterns } from '$lib/utils/promptPattern';
+import { preferencesStore } from '$lib/stores/preferences.svelte';
 
 /**
  * Per-terminal state collected from OSC escape sequences.
@@ -20,6 +22,8 @@ export interface OscState {
   cwd: string | null;
   /** Hostname from the OSC 7 URL — used to distinguish local vs remote cwd. */
   cwdHost: string | null;
+  /** Remote cwd extracted from title via prompt pattern matching. */
+  promptCwd: string | null;
 }
 
 interface TerminalInstance {
@@ -37,6 +41,8 @@ export interface SplitContext {
   cwd: string | null;
   sshCommand: string | null;
   remoteCwd: string | null;
+  /** When true, fire auto-resume command even though this is a split context (used by reload tab). */
+  fireAutoResume?: boolean;
 }
 
 function createTerminalsStore() {
@@ -79,7 +85,7 @@ function createTerminalsStore() {
       instances.set(tabId, {
         terminal, ptyId, serializeAddon, searchAddon,
         workspaceId, paneId, tabId,
-        osc: { title: null, cwd: null, cwdHost: null },
+        osc: { title: null, cwd: null, cwdHost: null, promptCwd: null },
       });
     },
 
@@ -97,6 +103,15 @@ function createTerminalsStore() {
     updateOsc(tabId: string, patch: Partial<OscState>) {
       const instance = instances.get(tabId);
       if (!instance) return;
+      // Auto-derive promptCwd from title via prompt patterns (with \p optional,
+      // since terminal titles omit the prompt character)
+      if (patch.title) {
+        const patterns = getCompiledTitlePatterns(preferencesStore.promptPatterns);
+        for (const re of patterns) {
+          const m = patch.title.match(re);
+          if (m?.[1]) { patch.promptCwd = m[1]; break; }
+        }
+      }
       Object.assign(instance.osc, patch);
       emitOscChange(tabId, instance.osc);
     },

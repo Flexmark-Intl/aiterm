@@ -7,6 +7,7 @@
   import { workspacesStore } from '$lib/stores/workspaces.svelte';
   import { terminalsStore } from '$lib/stores/terminals.svelte';
   import HelpModal from '$lib/components/HelpModal.svelte';
+  import Toast from '$lib/components/Toast.svelte';
   import { preferencesStore } from '$lib/stores/preferences.svelte';
   import { getTheme, applyUiTheme } from '$lib/themes';
   import { error as logError, info as logInfo } from '@tauri-apps/plugin-log';
@@ -43,6 +44,14 @@
     let detachConsole: (() => void) | undefined;
     attachConsole().then(detach => { detachConsole = detach; });
 
+    // Disable default browser context menu globally, except in notes panel
+    // where native cut/copy/paste is useful.
+    // To re-enable in dev for Inspect Element, change to: if (!import.meta.env.DEV)
+    document.addEventListener('contextmenu', (e) => {
+      if ((e.target as Element)?.closest?.('.notes-panel')) return;
+      e.preventDefault();
+    }, true);
+
     // Load preferences
     preferencesStore.load().catch((e: unknown) => logError(`Failed to load preferences: ${e}`));
 
@@ -75,6 +84,17 @@
       }
       await invoke('exit_app');
     }).then(unlisten => { unlistenQuit = unlisten; });
+
+    // Listen for reload-tab menu event — duplicate tab with same context, close old
+    let unlistenReloadTab: (() => void) | undefined;
+    listen('reload-tab', () => {
+      const ws = workspacesStore.activeWorkspace;
+      const pane = workspacesStore.activePane;
+      const tab = workspacesStore.activeTab;
+      if (ws && pane && tab) {
+        workspacesStore.reloadTab(ws.id, pane.id, tab.id);
+      }
+    }).then(unlisten => { unlistenReloadTab = unlisten; });
 
     // Handle single-window close (traffic light / Cmd+W on last tab+pane).
     let unlistenClose: (() => void) | undefined;
@@ -123,6 +143,19 @@
       }
 
       const isMeta = isModKey(e);
+
+      // Cmd+Shift+R - Reload tab
+      if (isMeta && e.shiftKey && e.key.toLowerCase() === 'r') {
+        e.preventDefault();
+        e.stopPropagation();
+        const ws = workspacesStore.activeWorkspace;
+        const pane = workspacesStore.activePane;
+        const tab = workspacesStore.activeTab;
+        if (ws && pane && tab) {
+          workspacesStore.reloadTab(ws.id, pane.id, tab.id);
+        }
+        return;
+      }
 
       // Cmd+Shift+T - Duplicate tab
       if (isMeta && e.shiftKey && e.key.toLowerCase() === 't') {
@@ -370,6 +403,7 @@
       window.removeEventListener('keydown', handleKeydown, true);
       unlistenClose?.();
       unlistenQuit?.();
+      unlistenReloadTab?.();
       unlistenPrefs?.();
       detachConsole?.();
     };
@@ -379,3 +413,4 @@
 {@render children()}
 
 <HelpModal open={showHelp} onclose={() => showHelp = false} />
+<Toast />

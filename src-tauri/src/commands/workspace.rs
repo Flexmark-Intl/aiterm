@@ -606,6 +606,28 @@ pub fn duplicate_workspace(
 }
 
 #[tauri::command]
+pub fn set_tab_trigger_variables(
+    window: tauri::Window,
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+    pane_id: String,
+    tab_id: String,
+    vars: HashMap<String, String>,
+) -> Result<(), String> {
+    let label = window.label().to_string();
+    let mut app_data = state.app_data.write();
+    let win = app_data.window_mut(&label).ok_or("Window not found")?;
+    if let Some(workspace) = win.workspaces.iter_mut().find(|w| w.id == workspace_id) {
+        if let Some(pane) = workspace.panes.iter_mut().find(|p| p.id == pane_id) {
+            if let Some(tab) = pane.tabs.iter_mut().find(|t| t.id == tab_id) {
+                tab.trigger_variables = vars;
+            }
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub fn copy_tab_history(source_tab_id: String, dest_tab_id: String) -> Result<(), String> {
     let data_dir = dirs::data_dir().ok_or("No data directory")?;
     let history_dir = data_dir.join(app_data_slug()).join("history");
@@ -621,4 +643,20 @@ pub fn copy_tab_history(source_tab_id: String, dest_tab_id: String) -> Result<()
     }
 
     Ok(())
+}
+
+/// Return all workspace id/name pairs across all windows (for preferences UI).
+#[tauri::command]
+pub fn get_all_workspaces(state: State<'_, Arc<AppState>>) -> Vec<(String, String)> {
+    let app_data = state.app_data.read();
+    let mut result = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for win in &app_data.windows {
+        for ws in &win.workspaces {
+            if seen.insert(ws.id.clone()) {
+                result.push((ws.id.clone(), ws.name.clone()));
+            }
+        }
+    }
+    result
 }

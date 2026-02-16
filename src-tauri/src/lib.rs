@@ -62,7 +62,7 @@ pub fn run() {
         }
     }
 
-    let mut builder = tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(build_log_plugin().build())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
@@ -78,9 +78,7 @@ pub fn run() {
         });
 
     #[cfg(all(feature = "mcp-bridge", debug_assertions))]
-    {
-        builder = builder.plugin(tauri_plugin_mcp_bridge::init());
-    }
+    let builder = builder.plugin(tauri_plugin_mcp_bridge::init());
 
     builder
         .manage(app_state.clone())
@@ -125,6 +123,7 @@ pub fn run() {
             let reload_all_item = MenuItem::with_id(app, "reload_all", "Reload All Windows", true, None::<&str>)?;
             let new_window_item = MenuItem::with_id(app, "new_window", "New Window", true, Some("CmdOrCtrl+N"))?;
             let duplicate_window_item = MenuItem::with_id(app, "duplicate_window", "Duplicate Window", true, Some("CmdOrCtrl+Shift+N"))?;
+            let reload_tab_item = MenuItem::with_id(app, "reload_tab", "Reload Current Tab", true, None::<&str>)?;
             let reload_window_item = MenuItem::with_id(app, "reload_window", "Reload Current Window", true, None::<&str>)?;
 
             let app_menu = SubmenuBuilder::new(app, "aiTerm")
@@ -145,6 +144,7 @@ pub fn run() {
                 .item(&new_window_item)
                 .item(&duplicate_window_item)
                 .separator()
+                .item(&reload_tab_item)
                 .item(&reload_all_item)
                 .build()?;
 
@@ -182,6 +182,15 @@ pub fn run() {
                     "preferences" => {
                         if let Some(win) = app_handle.get_webview_window("main") {
                             let _ = commands::window::open_preferences_window(win, app_handle.clone());
+                        }
+                    }
+                    "reload_tab" => {
+                        // Emit event so the focused window can reload the active tab's PTY
+                        for (_, win) in app_handle.webview_windows() {
+                            if win.is_focused().unwrap_or(false) {
+                                let _ = win.emit("reload-tab", ());
+                                break;
+                            }
                         }
                     }
                     "reload_all" => {
@@ -247,6 +256,8 @@ pub fn run() {
             commands::workspace::copy_tab_history,
             commands::workspace::set_tab_restore_context,
             commands::workspace::set_tab_auto_resume_context,
+            commands::workspace::set_tab_trigger_variables,
+            commands::workspace::get_all_workspaces,
             commands::window::get_window_data,
             commands::window::create_window,
             commands::window::duplicate_window,
