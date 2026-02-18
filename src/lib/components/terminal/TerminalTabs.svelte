@@ -23,8 +23,14 @@
   let editingOriginalName = '';
   let editInput = $state<HTMLInputElement | null>(null);
 
-  // Track OSC titles for tabs in this pane
+  // Track OSC titles for tabs in this pane.
+  // Seed from existing terminal state so titles survive component recreation
+  // (e.g., workspace switch destroys and recreates SplitPane → TerminalTabs).
   let oscTitles = $state<Map<string, string>>(new Map());
+  for (const tab of pane.tabs) {
+    const osc = terminalsStore.getOsc(tab.id);
+    if (osc?.title) oscTitles.set(tab.id, osc.title);
+  }
 
   const unsubOsc = terminalsStore.onOscChange((tabId: string, osc: OscState) => {
     if (osc.title && pane.tabs.some(t => t.id === tabId)) {
@@ -61,7 +67,7 @@
       }
       // Interpolate %varName from trigger variables
       if (result.includes('%')) {
-        result = interpolateVariables(tab.id, result);
+        result = interpolateVariables(tab.id, result, true);
       }
       return result;
     }
@@ -137,6 +143,22 @@
 
   async function handleTabClick(tabId: string) {
     await workspacesStore.setActiveTab(workspaceId, pane.id, tabId);
+    scrollTabIntoView(tabId);
+  }
+
+  function scrollTabIntoView(tabId: string) {
+    requestAnimationFrame(() => {
+      const el = tabsBarEl?.querySelector<HTMLElement>(`[data-tab-id="${tabId}"]`);
+      if (!el || !tabsBarEl) return;
+      const barRect = tabsBarEl.getBoundingClientRect();
+      const tabRect = el.getBoundingClientRect();
+      // If tab is fully visible, do nothing
+      if (tabRect.left >= barRect.left && tabRect.right <= barRect.right) return;
+      // Scroll so the tab is roughly centered
+      const tabCenter = el.offsetLeft + el.offsetWidth / 2;
+      const barCenter = tabsBarEl.clientWidth / 2;
+      tabsBarEl.scrollTo({ left: tabCenter - barCenter, behavior: 'smooth' });
+    });
   }
 
   // Pointer-based drag reordering (HTML5 drag-and-drop is unreliable in Tauri WKWebView)
@@ -151,9 +173,16 @@
   let lastPointerX = 0;
   let lastPointerY = 0;
   let pendingDragTabId: string | null = null;
+  let justDragged = false;
   let ghost: HTMLElement | null = null;
   let cursorBadge: HTMLElement | null = null;
   let tabsBarEl: HTMLElement;
+
+  // Scroll active tab into view when it changes (e.g. Cmd+1-9 shortcuts)
+  $effect(() => {
+    const activeId = pane.active_tab_id;
+    if (activeId) scrollTabIntoView(activeId);
+  });
 
   function handlePointerDown(e: PointerEvent, tabId: string) {
     // Only primary button, skip if editing or clicking close button
@@ -271,6 +300,8 @@
   function handlePointerUp(e: PointerEvent) {
     (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
 
+    const wasDragging = !!dragTabId;
+
     if (dragTabId && dropWorkspaceId) {
       // Drop onto a workspace — copy (Alt/Option) or move
       const tabId = dragTabId;
@@ -300,6 +331,23 @@
     }
 
     clearDragState();
+
+    // After any drag, re-focus the active terminal. During the drag the pointer
+    // capture moves focus away from the xterm canvas, and the DOM reorder of
+    // slot elements can corrupt xterm.js rendering. Wait for Svelte to settle
+    // the DOM, then refresh + focus.
+    if (wasDragging && pane.active_tab_id) {
+      justDragged = true;
+      // Clear flag after the click event that follows pointerup
+      requestAnimationFrame(() => { justDragged = false; });
+      tick().then(() => {
+        const instance = terminalsStore.get(pane.active_tab_id!);
+        if (instance) {
+          instance.terminal.refresh(0, instance.terminal.rows - 1);
+          instance.terminal.focus();
+        }
+      });
+    }
   }
 
   function createGhost(e: PointerEvent) {
@@ -343,24 +391,29 @@
   }
 </script>
 
-<div class="tabs-bar" bind:this={tabsBarEl} data-tauri-drag-region>
+<div class="tabs-bar" bind:this={tabsBarEl} data-tauri-drag-region
+  onwheel={(e) => { if (tabsBarEl) { e.preventDefault(); tabsBarEl.scrollLeft += e.deltaY || e.deltaX; } }}
+>
   {#each pane.tabs as tab, index (tab.id)}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     {@const shellState = tab.id !== pane.active_tab_id ? activityStore.getShellState(tab.id) : undefined}
     {@const hasActivity = tab.id !== pane.active_tab_id && activityStore.hasActivity(tab.id)}
+    {@const tabState = tab.id !== pane.active_tab_id ? activityStore.getTabState(tab.id) : undefined}
     <div
       class="tab"
       class:active={tab.id === pane.active_tab_id}
       class:unclamped={editingId === tab.id || tab.custom_name || oscTitles.has(tab.id)}
-      class:activity={!shellState && hasActivity}
-      class:completed={shellState?.state === 'completed' && shellState?.exitCode === 0}
-      class:failed={shellState?.state === 'completed' && shellState?.exitCode !== 0}
-      class:prompt={shellState?.state === 'prompt'}
+      class:activity={!shellState && !tabState && hasActivity}
+      class:completed={!tabState && shellState?.state === 'completed' && shellState?.exitCode === 0}
+      class:failed={!tabState && shellState?.state === 'completed' && shellState?.exitCode !== 0}
+      class:prompt={!tabState && shellState?.state === 'prompt'}
+      class:tab-alert={tabState === 'alert'}
+      class:tab-question={tabState === 'question'}
       class:dragging={dragTabId === tab.id}
       class:drop-before={dropTargetIndex === index && dropSide === 'before' && dragTabId !== tab.id}
       class:drop-after={dropTargetIndex === index && dropSide === 'after' && dragTabId !== tab.id}
       data-tab-id={tab.id}
-      onclick={() => { if (!dragTabId) handleTabClick(tab.id); }}
+      onclick={() => { if (!dragTabId && !justDragged) handleTabClick(tab.id); }}
       ondblclick={(e) => startEditing(tab, e)}
       onpointerdown={(e) => handlePointerDown(e, tab.id)}
       onpointermove={handlePointerMove}
@@ -387,7 +440,11 @@
           />
         </div>
       {:else}
-        {#if shellState?.state === 'completed'}
+        {#if tabState === 'alert'}
+          <span class="indicator alert-indicator">&#x2757;</span>
+        {:else if tabState === 'question'}
+          <span class="indicator question-indicator">&#x2753;</span>
+        {:else if shellState?.state === 'completed'}
           <span class="indicator" class:completed-indicator={shellState.exitCode === 0} class:failed-indicator={shellState.exitCode !== 0}>{shellState.exitCode === 0 ? '\u2713' : '\u2717'}</span>
         {:else if shellState?.state === 'prompt'}
           <span class="indicator prompt-indicator">\u203A</span>
@@ -446,6 +503,13 @@
     padding: 0 4px;
     gap: 2px;
     -webkit-app-region: drag;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+
+  .tabs-bar::-webkit-scrollbar {
+    display: none;
   }
 
   .tab {
@@ -459,6 +523,7 @@
     max-width: 180px;
     transition: background 0.1s, padding-right 0.15s ease, border-color 0.1s;
     -webkit-app-region: no-drag;
+    flex-shrink: 0;
   }
 
   .tab.unclamped {
@@ -488,6 +553,14 @@
   }
 
   .tab.prompt {
+    box-shadow: inset 0 -2px 0 var(--yellow, #e0af68);
+  }
+
+  .tab.tab-alert {
+    box-shadow: inset 0 -2px 0 var(--red, #f7768e);
+  }
+
+  .tab.tab-question {
     box-shadow: inset 0 -2px 0 var(--yellow, #e0af68);
   }
 
@@ -577,6 +650,14 @@
     color: var(--yellow, #e0af68);
   }
 
+  .alert-indicator {
+    font-size: 11px;
+  }
+
+  .question-indicator {
+    font-size: 11px;
+  }
+
   .tab-name {
     overflow: hidden;
     text-overflow: ellipsis;
@@ -651,6 +732,7 @@
   }
 
   .new-tab-btn {
+    flex-shrink: 0;
     padding: 4px 10px;
     margin-left: 5px;
     border-radius: 4px;

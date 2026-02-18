@@ -258,6 +258,8 @@ pub fn run() {
             commands::workspace::set_tab_auto_resume_context,
             commands::workspace::set_tab_trigger_variables,
             commands::workspace::get_all_workspaces,
+            commands::workspace::list_system_sounds,
+            commands::workspace::play_system_sound,
             commands::window::get_window_data,
             commands::window::create_window,
             commands::window::duplicate_window,

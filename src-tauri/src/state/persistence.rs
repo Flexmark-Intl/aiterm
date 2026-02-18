@@ -1,7 +1,13 @@
 use std::fs;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::workspace::{AppData, Layout, SplitDirection, SplitNode, WindowData};
+
+/// Tracks whether the last load_state() successfully parsed a real state file.
+/// When false, save_state() will NOT overwrite the backup — preserving the last
+/// known-good backup from being clobbered by a default/empty state.
+static LOADED_SUCCESSFULLY: AtomicBool = AtomicBool::new(false);
 
 pub fn app_data_slug() -> &'static str {
     if cfg!(debug_assertions) {
@@ -23,6 +29,37 @@ fn get_temp_path() -> Option<PathBuf> {
     dirs::data_dir().map(|p| p.join(app_data_slug()).join("aiterm-state.tmp.json"))
 }
 
+/// Patch raw JSON to migrate old action_type values before deserialization.
+/// "alert" and "question" were briefly used as standalone action types before
+/// being consolidated into "set_tab_state" with a separate tab_state field.
+fn migrate_json(contents: &str) -> String {
+    // Replace "action_type":"alert" with "action_type":"set_tab_state","tab_state":"alert"
+    // and same for "question". Only matches inside action entries.
+    contents
+        .replace(r#""action_type":"alert""#, r#""action_type":"set_tab_state","tab_state":"alert""#)
+        .replace(r#""action_type":"question""#, r#""action_type":"set_tab_state","tab_state":"question""#)
+}
+
+fn parse_state(contents: &str) -> Result<AppData, serde_json::Error> {
+    let migrated = migrate_json(contents);
+    serde_json::from_str::<AppData>(&migrated)
+}
+
+fn get_corrupt_path() -> Option<PathBuf> {
+    dirs::data_dir().map(|p| p.join(app_data_slug()).join("aiterm-state.corrupt.json"))
+}
+
+/// Preserve a corrupt state file so the user can recover data manually.
+fn preserve_corrupt(source: &PathBuf) {
+    if let Some(corrupt_path) = get_corrupt_path() {
+        if let Err(e) = fs::copy(source, &corrupt_path) {
+            log::warn!("Failed to preserve corrupt state file: {}", e);
+        } else {
+            log::info!("Preserved corrupt state file at {:?}", corrupt_path);
+        }
+    }
+}
+
 pub fn load_state() -> AppData {
     let Some(path) = get_state_path() else {
         log::warn!("No data directory found");
@@ -37,10 +74,14 @@ pub fn load_state() -> AppData {
     }
 
     match fs::read_to_string(&path) {
-        Ok(contents) => match serde_json::from_str::<AppData>(&contents) {
-            Ok(data) => data,
+        Ok(contents) => match parse_state(&contents) {
+            Ok(data) => {
+                LOADED_SUCCESSFULLY.store(true, Ordering::Relaxed);
+                data
+            }
             Err(e) => {
                 log::error!("Failed to parse state file: {}. Trying backup.", e);
+                preserve_corrupt(&path);
                 load_from_backup()
             }
         },
@@ -63,13 +104,15 @@ fn load_from_backup() -> AppData {
     }
 
     match fs::read_to_string(&backup_path) {
-        Ok(contents) => match serde_json::from_str::<AppData>(&contents) {
+        Ok(contents) => match parse_state(&contents) {
             Ok(data) => {
                 log::info!("Successfully loaded from backup");
+                LOADED_SUCCESSFULLY.store(true, Ordering::Relaxed);
                 data
             }
             Err(e) => {
                 log::error!("Backup also corrupt: {}. Using defaults.", e);
+                preserve_corrupt(&backup_path);
                 AppData::default()
             }
         },
@@ -166,8 +209,10 @@ pub fn save_state(data: &AppData) -> Result<(), String> {
     // Write to temp file first
     fs::write(&temp_path, &json).map_err(|e| format!("Failed to write temp file: {}", e))?;
 
-    // Copy current state to backup (if it exists)
-    if path.exists() {
+    // Only back up the current file if we know it was loaded successfully.
+    // This prevents a failed-parse → default-state → save cycle from
+    // clobbering the last known-good backup.
+    if path.exists() && LOADED_SUCCESSFULLY.load(Ordering::Relaxed) {
         if let Err(e) = fs::copy(&path, &backup_path) {
             log::warn!("Failed to create backup: {}", e);
         }

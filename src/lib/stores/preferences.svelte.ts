@@ -32,6 +32,11 @@ function createPreferencesStore() {
   let notesFontFamily = $state('Menlo');
   let notesWidth = $state(320);
   let notesWordWrap = $state(true);
+  let toastFontSize = $state(14);
+  let toastWidth = $state(400);
+  let toastDuration = $state(8);
+  let notificationSound = $state('default');
+  let notificationVolume = $state(50);
   let triggers = $state<Trigger[]>([]);
   let hiddenDefaultTriggers = $state<string[]>([]);
 
@@ -63,6 +68,11 @@ function createPreferencesStore() {
     get notesFontFamily() { return notesFontFamily; },
     get notesWidth() { return notesWidth; },
     get notesWordWrap() { return notesWordWrap; },
+    get toastFontSize() { return toastFontSize; },
+    get toastWidth() { return toastWidth; },
+    get toastDuration() { return toastDuration; },
+    get notificationSound() { return notificationSound; },
+    get notificationVolume() { return notificationVolume; },
     get triggers() { return triggers; },
     get hiddenDefaultTriggers() { return hiddenDefaultTriggers; },
 
@@ -98,6 +108,11 @@ function createPreferencesStore() {
       notesFontFamily = prefs.notes_font_family ?? 'Menlo';
       notesWidth = prefs.notes_width ?? 320;
       notesWordWrap = prefs.notes_word_wrap ?? true;
+      toastFontSize = prefs.toast_font_size ?? 14;
+      toastWidth = prefs.toast_width ?? 400;
+      toastDuration = prefs.toast_duration ?? 8;
+      notificationSound = prefs.notification_sound ?? 'default';
+      notificationVolume = prefs.notification_volume ?? 50;
       triggers = prefs.triggers ?? [];
       hiddenDefaultTriggers = prefs.hidden_default_triggers ?? [];
       _resolveReady();
@@ -223,6 +238,31 @@ function createPreferencesStore() {
       await this.save();
     },
 
+    async setToastFontSize(value: number) {
+      toastFontSize = Math.max(10, Math.min(24, value));
+      await this.save();
+    },
+
+    async setToastWidth(value: number) {
+      toastWidth = Math.max(280, Math.min(600, value));
+      await this.save();
+    },
+
+    async setToastDuration(value: number) {
+      toastDuration = Math.max(3, Math.min(30, value));
+      await this.save();
+    },
+
+    async setNotificationSound(value: string) {
+      notificationSound = value;
+      await this.save();
+    },
+
+    async setNotificationVolume(value: number) {
+      notificationVolume = Math.max(0, Math.min(100, value));
+      await this.save();
+    },
+
     async setTriggers(value: Trigger[]) {
       triggers = value;
       await this.save();
@@ -281,6 +321,11 @@ function createPreferencesStore() {
       notesFontFamily = prefs.notes_font_family ?? 'Menlo';
       notesWidth = prefs.notes_width ?? 320;
       notesWordWrap = prefs.notes_word_wrap ?? true;
+      toastFontSize = prefs.toast_font_size ?? 14;
+      toastWidth = prefs.toast_width ?? 400;
+      toastDuration = prefs.toast_duration ?? 8;
+      notificationSound = prefs.notification_sound ?? 'default';
+      notificationVolume = prefs.notification_volume ?? 50;
       triggers = prefs.triggers ?? [];
       hiddenDefaultTriggers = prefs.hidden_default_triggers ?? [];
     },
@@ -313,6 +358,11 @@ function createPreferencesStore() {
         notes_font_family: notesFontFamily,
         notes_width: notesWidth,
         notes_word_wrap: notesWordWrap,
+        toast_font_size: toastFontSize,
+        toast_width: toastWidth,
+        toast_duration: toastDuration,
+        notification_sound: notificationSound,
+        notification_volume: notificationVolume,
         triggers,
         hidden_default_triggers: hiddenDefaultTriggers,
       };

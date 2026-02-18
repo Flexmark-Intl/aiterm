@@ -23,6 +23,7 @@
   import { buildShellIntegrationSnippet, buildInstallSnippet } from '$lib/utils/shellIntegration';
   import ResizableTextarea from '$lib/components/ResizableTextarea.svelte';
   import { processOutput, cleanupTab, loadTabVariables, interpolateVariables, getVariables, clearTabVariables } from '$lib/stores/triggers.svelte';
+  import { dispatch } from '$lib/stores/notificationDispatch';
 
   interface Props {
     workspaceId: string;
@@ -226,10 +227,9 @@
       return true;
     });
 
-    // OSC 133: shell integration — command completion detection
-    // Always registered: remote shells may already emit OSC 133.
+    // Shell integration handler — shared by OSC 133 (FinalTerm) and OSC 633 (VS Code)
     // Gated on trackActivity to ignore sequences replayed from restored scrollback.
-    terminal.parser.registerOscHandler(133, (data) => {
+    function handleShellIntegration(data: string): boolean {
       if (!trackActivity) return true;
       const parts = data.split(';');
       const cmd = parts[0];
@@ -241,6 +241,44 @@
       }
       if (cmd === 'B' || cmd === 'C') {
         activityStore.setShellState(tabId, null);
+      }
+      return true;
+    }
+    terminal.parser.registerOscHandler(133, handleShellIntegration);
+    terminal.parser.registerOscHandler(633, handleShellIntegration);
+
+    // OSC 9: notification — programs emit \e]9;message\a to request a notification
+    terminal.parser.registerOscHandler(9, (data) => {
+      if (!trackActivity || !data) return true;
+      const oscState = terminalsStore.getOsc(tabId);
+      const title = oscState?.title || 'Terminal';
+      dispatch(title, data, 'info');
+      return true;
+    });
+
+    // OSC 52: clipboard set — \e]52;c;base64data\a writes to system clipboard
+    // Ignores query requests (? payload) for security.
+    terminal.parser.registerOscHandler(52, (data) => {
+      if (!trackActivity) return true;
+      const semi = data.indexOf(';');
+      if (semi < 0) return true;
+      const payload = data.slice(semi + 1);
+      if (!payload || payload === '?') return true;
+      try {
+        const decoded = atob(payload);
+        clipboardWriteText(decoded).catch(e => logError(String(e)));
+      } catch {
+        // invalid base64 — ignore
+      }
+      return true;
+    });
+
+    // OSC 1337: iTerm2 extensions — only handle CurrentDir for cwd reporting
+    terminal.parser.registerOscHandler(1337, (data) => {
+      const match = data.match(/^CurrentDir=(.+)$/);
+      if (match) {
+        const cwd = match[1];
+        if (cwd) terminalsStore.updateOsc(tabId, { cwd, cwdHost: null });
       }
       return true;
     });
@@ -510,6 +548,7 @@
       untrack(() => {
         activityStore.clearActive(tabId);
         activityStore.clearShellState(tabId);
+        activityStore.clearTabState(tabId);
       });
     }
   });
@@ -816,7 +855,7 @@
         <div class="auto-resume-presets">
           <span class="auto-resume-presets-label">Presets</span>
           <button class="auto-resume-prompt-btn preset" onclick={() => {
-            autoResumePromptValue = 'if [ -n "%claudeSessionId" ]; then claude --resume %claudeSessionId; elif [ -n "%claudeResumeCommand" ]; then %claudeResumeCommand; else claude --continue; fi';
+            autoResumePromptValue = 'if [ -n "%claudeSessionId" ]; then claude --resume %claudeSessionId; elif [ -n "%claudeResumeCommand" ]; then eval %claudeResumeCommand; else claude --continue; fi';
           }} title="Uses trigger variables %claudeSessionId and %claudeResumeCommand">Claude Resume</button>
         </div>
         <span style="flex: 1;"></span>
@@ -864,7 +903,7 @@
                 ));
               }
               const ctx = await gatherAutoResumeContext();
-              const cmd = 'if [ -n "%claudeSessionId" ]; then claude --resume %claudeSessionId; elif [ -n "%claudeResumeCommand" ]; then %claudeResumeCommand; else claude --continue; fi';
+              const cmd = 'if [ -n "%claudeSessionId" ]; then claude --resume %claudeSessionId; elif [ -n "%claudeResumeCommand" ]; then eval %claudeResumeCommand; else claude --continue; fi';
               await workspacesStore.setTabAutoResumeContext(workspaceId, paneId, tabId, ctx.cwd, ctx.sshCmd, ctx.remoteCwd, cmd);
               isAutoResume = true;
             } catch (e) {

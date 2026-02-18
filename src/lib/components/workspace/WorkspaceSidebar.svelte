@@ -15,6 +15,13 @@
     return activityStore.hasAnyActivity(tabIds);
   }
 
+  function workspaceTabState(workspaceId: string): 'alert' | 'question' | null {
+    const ws = workspacesStore.workspaces.find(w => w.id === workspaceId);
+    if (!ws) return null;
+    const tabIds = ws.panes.flatMap(p => p.tabs.map(t => t.id));
+    return activityStore.getWorkspaceTabState(tabIds);
+  }
+
   let appVersion = $state('');
   getVersion().then(v => { appVersion = v; });
 
@@ -316,7 +323,11 @@
           />
         {:else}
           <span class="workspace-indicator">
-            {#if workspace.id === workspacesStore.activeWorkspaceId}
+            {#if workspaceTabState(workspace.id) === 'alert'}
+              <span class="state-emoji">&#x2757;</span>
+            {:else if workspaceTabState(workspace.id) === 'question'}
+              <span class="state-emoji">&#x2753;</span>
+            {:else if workspace.id === workspacesStore.activeWorkspaceId}
               >
             {:else if workspaceHasActivity(workspace.id)}
               <span class="activity-dot"></span>
@@ -514,6 +525,11 @@
     border-radius: 50%;
     background: var(--green, #9ece6a);
     flex-shrink: 0;
+  }
+
+  .state-emoji {
+    font-size: 10px;
+    line-height: 1;
   }
 
   .workspace-name {

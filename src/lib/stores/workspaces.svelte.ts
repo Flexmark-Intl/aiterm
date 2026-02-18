@@ -47,27 +47,27 @@ function updateRatioInTree(node: SplitNode, splitId: string, ratio: number): Spl
 
 /**
  * Compute a deduplicated name for a duplicated custom-named tab.
- * Strips trailing " N" to get the base, finds the highest existing index
- * among all tab names in the workspace, and returns "base N+1".
+ * Strips leading "N " to get the base, finds the highest existing index
+ * among all tab names in the workspace, and returns "N+1 base".
  */
 function nextDuplicateName(sourceName: string, existingNames: string[]): string {
-  const baseMatch = sourceName.match(/^(.+?)\s+(\d+)$/);
-  const baseName = baseMatch ? baseMatch[1] : sourceName;
+  const baseMatch = sourceName.match(/^(\d+)\s+(.+)$/);
+  const baseName = baseMatch ? baseMatch[2] : sourceName;
 
   let maxIndex = 0;
   for (const name of existingNames) {
     if (name === baseName) {
       maxIndex = Math.max(maxIndex, 1);
     } else {
-      const m = name.match(/^(.+?)\s+(\d+)$/);
-      if (m && m[1] === baseName) {
-        maxIndex = Math.max(maxIndex, parseInt(m[2], 10));
+      const m = name.match(/^(\d+)\s+(.+)$/);
+      if (m && m[2] === baseName) {
+        maxIndex = Math.max(maxIndex, parseInt(m[1], 10));
       }
     }
   }
 
   if (maxIndex === 0) return sourceName;
-  return `${baseName} ${maxIndex + 1}`;
+  return `${maxIndex + 1} ${baseName}`;
 }
 
 /** Collect all tab names across all panes in a workspace. */

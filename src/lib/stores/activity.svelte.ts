@@ -1,3 +1,5 @@
+import type { TabStateName } from '$lib/tauri/types';
+
 export interface ShellState {
   state: 'prompt' | 'completed';
   exitCode?: number;
@@ -9,6 +11,7 @@ type CommandCompleteListener = (tabId: string, exitCode: number) => void;
 function createActivityStore() {
   let active = $state<Set<string>>(new Set());
   let shellStates = $state<Map<string, ShellState>>(new Map());
+  let tabStates = $state<Map<string, TabStateName>>(new Map());
 
   const commandStartListeners = new Set<CommandStartListener>();
   const commandCompleteListeners = new Set<CommandCompleteListener>();
@@ -80,6 +83,38 @@ function createActivityStore() {
     onCommandComplete(fn: CommandCompleteListener): () => void {
       commandCompleteListeners.add(fn);
       return () => { commandCompleteListeners.delete(fn); };
+    },
+
+    // Tab state (alert / question) — set by trigger actions, cleared on tab focus
+
+    getTabState(tabId: string): TabStateName | undefined {
+      return tabStates.get(tabId);
+    },
+
+    setTabState(tabId: string, state: TabStateName) {
+      const current = tabStates.get(tabId);
+      // Alert overwrites question; same state is a no-op
+      if (current === state) return;
+      if (current === 'alert' && state === 'question') return;
+      tabStates = new Map(tabStates);
+      tabStates.set(tabId, state);
+    },
+
+    clearTabState(tabId: string) {
+      if (!tabStates.has(tabId)) return;
+      tabStates = new Map(tabStates);
+      tabStates.delete(tabId);
+    },
+
+    /** Returns the highest-priority tab state across the given tabs, or null. */
+    getWorkspaceTabState(tabIds: string[]): TabStateName | null {
+      let hasQuestion = false;
+      for (const id of tabIds) {
+        const s = tabStates.get(id);
+        if (s === 'alert') return 'alert';
+        if (s === 'question') hasQuestion = true;
+      }
+      return hasQuestion ? 'question' : null;
     },
   };
 }

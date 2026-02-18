@@ -1,5 +1,7 @@
 import { preferencesStore } from '$lib/stores/preferences.svelte';
 import { terminalsStore } from '$lib/stores/terminals.svelte';
+import { workspacesStore } from '$lib/stores/workspaces.svelte';
+import { activityStore } from '$lib/stores/activity.svelte';
 import { writeTerminal, setTabTriggerVariables } from '$lib/tauri/commands';
 import { stripAnsi } from '$lib/utils/ansi';
 import { dispatch } from './notificationDispatch';
@@ -24,14 +26,25 @@ const variableMap = new Map<string, Map<string, string>>();
 type VarChangeCallback = (tabId: string, vars: Map<string, string>) => void;
 const varChangeListeners = new Set<VarChangeCallback>();
 
-function getRegex(pattern: string): RegExp | null {
-  if (regexCache.has(pattern)) return regexCache.get(pattern)!;
+function getRegex(pattern: string, plainText = false): RegExp | null {
+  const cacheKey = plainText ? `__pt__${pattern}` : pattern;
+  if (regexCache.has(cacheKey)) return regexCache.get(cacheKey)!;
   try {
-    const re = new RegExp(pattern, 's');
-    regexCache.set(pattern, re);
+    let src = pattern;
+    if (plainText) {
+      // Plain-text mode: escape regex metacharacters, then replace whitespace
+      // runs with \s* so the pattern matches TUI output where spaces between
+      // words are produced by cursor positioning (stripped as ANSI) rather than
+      // literal space characters.
+      src = pattern
+        .replace(/[.*+?^${}()|[\]\\]/g, '\\$&') // escape regex specials
+        .replace(/\\?\s+/g, '\\s*');              // whitespace → optional gap
+    }
+    const re = new RegExp(src, 's');
+    regexCache.set(cacheKey, re);
     return re;
   } catch {
-    regexCache.set(pattern, null);
+    regexCache.set(cacheKey, null);
     return null;
   }
 }
@@ -39,6 +52,20 @@ function getRegex(pattern: string): RegExp | null {
 function getWorkspaceIdForTab(tabId: string): string | null {
   const instance = terminalsStore.get(tabId);
   return instance?.workspaceId ?? null;
+}
+
+/** Resolve the display title for a tab: OSC title → tab name fallback. */
+function getTabTitle(tabId: string): string {
+  const oscTitle = terminalsStore.getOsc(tabId)?.title;
+  if (oscTitle) return oscTitle;
+  // Fall back to tab name from workspace data
+  const instance = terminalsStore.get(tabId);
+  if (instance) {
+    const ws = workspacesStore.workspaces.find(w => w.id === instance.workspaceId);
+    const tab = ws?.panes.flatMap(p => p.tabs).find(t => t.id === tabId);
+    if (tab) return tab.name;
+  }
+  return 'Terminal';
 }
 
 function checkCooldown(triggerId: string, tabId: string, cooldownSecs: number): boolean {
@@ -105,7 +132,7 @@ function extractAndStoreVariables(
 }
 
 async function fireTrigger(
-  trigger: { id: string; name: string; actions: { action_type: string; command: string | null; message: string | null }[]; variables: { name: string; group: number; template?: string }[] },
+  trigger: { id: string; name: string; actions: { action_type: string; command: string | null; message: string | null; tab_state: string | null }[]; variables: { name: string; group: number; template?: string }[] },
   tabId: string,
   match: RegExpMatchArray,
 ) {
@@ -135,13 +162,17 @@ async function fireTrigger(
       try {
         let body = entry.message || `Trigger "${trigger.name}" fired`;
         const vars = variableMap.get(tabId);
-        if (vars) {
-          body = body.replace(/%([\w]+)/g, (m: string, name: string) => vars.has(name) ? vars.get(name)! : m);
-        }
-        await dispatch(body, '', 'info');
+        body = body.replace(/%([\w]+)/g, (m: string, name: string) => {
+          if (name === 'title') return getTabTitle(tabId);
+          return vars?.has(name) ? vars.get(name)! : m;
+        });
+        await dispatch(body, '', 'info', { tabId });
       } catch (e) {
         logError(`Trigger "${trigger.name}" notification failed: ${e}`);
       }
+    } else if (entry.action_type === 'set_tab_state') {
+      const state = (entry.tab_state || 'alert') as import('$lib/tauri/types').TabStateName;
+      activityStore.setTabState(tabId, state);
     }
   }
 }
@@ -174,7 +205,7 @@ export function processOutput(tabId: string, data: Uint8Array) {
     // Cooldown check
     if (!checkCooldown(trigger.id, tabId, trigger.cooldown)) continue;
 
-    const re = getRegex(trigger.pattern);
+    const re = getRegex(trigger.pattern, trigger.plain_text);
     if (!re) continue;
 
     const match = buffer.match(re);

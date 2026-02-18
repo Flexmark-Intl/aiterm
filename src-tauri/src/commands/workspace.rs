@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{Emitter, State};
 
@@ -659,4 +660,119 @@ pub fn get_all_workspaces(state: State<'_, Arc<AppState>>) -> Vec<(String, Strin
         }
     }
     result
+}
+
+/// Return the list of directories where system sounds live on this platform.
+fn system_sound_dirs() -> Vec<PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        vec![
+            PathBuf::from("/System/Library/Sounds"),
+            PathBuf::from("/Library/Sounds"),
+        ]
+    }
+    #[cfg(target_os = "linux")]
+    {
+        vec![
+            PathBuf::from("/usr/share/sounds/freedesktop/stereo"),
+            PathBuf::from("/usr/share/sounds"),
+        ]
+    }
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(windir) = std::env::var_os("SystemRoot") {
+            vec![PathBuf::from(windir).join("Media")]
+        } else {
+            vec![PathBuf::from("C:\\Windows\\Media")]
+        }
+    }
+}
+
+#[tauri::command]
+pub fn list_system_sounds() -> Vec<String> {
+    let mut names = Vec::new();
+    for dir in system_sound_dirs() {
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if let Some(ext) = path.extension() {
+                    let ext_lower = ext.to_string_lossy().to_lowercase();
+                    if matches!(ext_lower.as_str(), "aiff" | "aif" | "wav" | "ogg" | "mp3") {
+                        if let Some(stem) = path.file_stem() {
+                            names.push(stem.to_string_lossy().to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    names.sort();
+    names.dedup();
+    names
+}
+
+#[tauri::command]
+pub fn play_system_sound(name: String, volume: u32) -> Result<(), String> {
+    // Find the sound file
+    for dir in system_sound_dirs() {
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if let Some(stem) = path.file_stem() {
+                    if stem.to_string_lossy() == name {
+                        // Spawn playback in background (non-blocking)
+                        let vol = (volume as f64 / 100.0).min(1.0);
+                        #[cfg(target_os = "macos")]
+                        {
+                            let vol_str = format!("{:.2}", vol);
+                            std::thread::spawn(move || {
+                                let _ = std::process::Command::new("afplay")
+                                    .arg("-v")
+                                    .arg(&vol_str)
+                                    .arg(&path)
+                                    .output();
+                            });
+                            return Ok(());
+                        }
+                        #[cfg(target_os = "linux")]
+                        {
+                            std::thread::spawn(move || {
+                                // Try paplay first (PulseAudio), fall back to aplay
+                                let vol_pa = format!("{}", (vol * 65536.0) as u32);
+                                let result = std::process::Command::new("paplay")
+                                    .arg("--volume")
+                                    .arg(&vol_pa)
+                                    .arg(&path)
+                                    .output();
+                                if result.is_err() {
+                                    let _ = std::process::Command::new("aplay")
+                                        .arg(&path)
+                                        .output();
+                                }
+                            });
+                            return Ok(());
+                        }
+                        #[cfg(target_os = "windows")]
+                        {
+                            std::thread::spawn(move || {
+                                let _ = std::process::Command::new("powershell")
+                                    .arg("-c")
+                                    .arg(format!(
+                                        "(New-Object Media.SoundPlayer '{}').PlaySync()",
+                                        path.display()
+                                    ))
+                                    .output();
+                            });
+                            return Ok(());
+                        }
+                        #[allow(unreachable_code)]
+                        {
+                            return Err("Unsupported platform".to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Err(format!("Sound '{}' not found", name))
 }

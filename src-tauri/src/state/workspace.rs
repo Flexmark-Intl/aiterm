@@ -326,7 +326,7 @@ fn default_theme() -> String {
 }
 
 fn default_notify_min_duration() -> u32 {
-    30
+    5
 }
 
 fn default_notification_mode() -> String {
@@ -341,6 +341,45 @@ fn default_notes_width() -> u32 {
     320
 }
 
+fn default_toast_font_size() -> u32 {
+    14
+}
+
+fn default_toast_width() -> u32 {
+    400
+}
+
+fn default_toast_duration() -> u32 {
+    8
+}
+
+fn default_notification_sound() -> String {
+    "default".to_string()
+}
+
+fn default_notification_volume() -> u32 {
+    50
+}
+
+/// Deserialize notification_sound: accepts string or bool (migration from old format).
+fn deserialize_notification_sound<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize;
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StringOrBool {
+        Str(String),
+        Bool(bool),
+    }
+    match StringOrBool::deserialize(deserializer)? {
+        StringOrBool::Str(s) => Ok(s),
+        StringOrBool::Bool(true) => Ok("default".to_string()),
+        StringOrBool::Bool(false) => Ok("none".to_string()),
+    }
+}
+
 fn default_trigger_cooldown() -> u32 {
     5
 }
@@ -352,6 +391,8 @@ pub enum TriggerActionType {
     Notify,
     #[serde(rename = "send_command")]
     SendCommand,
+    #[serde(rename = "set_tab_state")]
+    SetTabState,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -361,6 +402,8 @@ pub struct TriggerActionEntry {
     pub command: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tab_state: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -389,6 +432,10 @@ pub struct Trigger {
     /// Variable extraction from capture groups (ordered)
     #[serde(default)]
     pub variables: Vec<VariableMapping>,
+    /// When true, the pattern is plain text matched against TUI-normalized output
+    /// (spaces in the pattern match any gap caused by cursor positioning).
+    #[serde(default)]
+    pub plain_text: bool,
     /// Links this trigger to an app-provided default template (e.g. "claude-resume").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_id: Option<String>,
@@ -459,6 +506,17 @@ pub struct Preferences {
     pub notes_width: u32,
     #[serde(default = "default_true")]
     pub notes_word_wrap: bool,
+    #[serde(default = "default_toast_font_size")]
+    pub toast_font_size: u32,
+    #[serde(default = "default_toast_width")]
+    pub toast_width: u32,
+    #[serde(default = "default_toast_duration")]
+    pub toast_duration: u32,
+    #[serde(default = "default_notification_sound")]
+    #[serde(deserialize_with = "deserialize_notification_sound")]
+    pub notification_sound: String,
+    #[serde(default = "default_notification_volume")]
+    pub notification_volume: u32,
     #[serde(default)]
     pub triggers: Vec<Trigger>,
     /// Default trigger IDs the user has intentionally deleted (prevents re-seeding).
@@ -495,6 +553,11 @@ impl Default for Preferences {
             notes_font_family: default_font_family(),
             notes_width: default_notes_width(),
             notes_word_wrap: true,
+            toast_font_size: default_toast_font_size(),
+            toast_width: default_toast_width(),
+            toast_duration: default_toast_duration(),
+            notification_sound: default_notification_sound(),
+            notification_volume: default_notification_volume(),
             triggers: Vec::new(),
             hidden_default_triggers: Vec::new(),
         }

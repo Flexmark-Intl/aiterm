@@ -1,12 +1,13 @@
 <script lang="ts">
   import { preferencesStore } from '$lib/stores/preferences.svelte';
-  import type { CursorStyle, Trigger, TriggerActionType, TriggerActionEntry, VariableMapping } from '$lib/tauri/types';
+  import type { CursorStyle, Trigger, TriggerActionType, TriggerActionEntry, VariableMapping, TabStateName } from '$lib/tauri/types';
   import { builtinThemes, getTheme, isBuiltinTheme } from '$lib/themes';
   import ThemeEditor from '$lib/components/ThemeEditor.svelte';
   import ResizableTextarea from '$lib/components/ResizableTextarea.svelte';
+  import Tooltip from '$lib/components/Tooltip.svelte';
   import Icon from '$lib/components/Icon.svelte';
   import { modLabel, isModKey } from '$lib/utils/platform';
-  import { getAllWorkspaces } from '$lib/tauri/commands';
+  import { getAllWorkspaces, listSystemSounds, playSystemSound } from '$lib/tauri/commands';
   import { tick, onMount } from 'svelte';
   import { slide } from 'svelte/transition';
   import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -18,25 +19,50 @@
       description: 'Captures the claude --resume command and session ID when Claude Code exits. Useful for setting up auto-resume to reconnect to the same session.',
       pattern: 'Resume this session with:.*?(claude --resume (?:"[^"\\n]+"|([^\\s"\\n]+)))',
       actions: [
-        { action_type: 'notify', command: null, message: 'Captured: %claudeResumeCommand' },
+        { action_type: 'notify', command: null, message: 'Captured: %claudeResumeCommand', tab_state: null },
       ],
       cooldown: 1,
       variables: [
         { name: 'claudeResumeCommand', group: 1 },
         { name: 'claudeSessionId', group: 2 },
       ],
+      plain_text: false,
     },
     'claude-session-id': {
       name: 'Claude Session ID',
       description: 'Captures the session UUID from Claude Code\'s /status command when run. Useful for when you want to setup a resume command based on the Session ID.',
       pattern: 'Session\\s*ID:\\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})',
       actions: [
-        { action_type: 'notify', command: null, message: 'Captured: claudeSessionId `%claudeSessionId`' },
+        { action_type: 'notify', command: null, message: 'Captured: claudeSessionId `%claudeSessionId`', tab_state: null },
       ],
       cooldown: 0,
       variables: [
         { name: 'claudeSessionId', group: 1 },
       ],
+      plain_text: false,
+    },
+    'claude-question': {
+      name: 'Claude Question',
+      description: 'Detects when Claude Code is prompting for user input (plan approval, permission requests). Sets the tab state to "question" so the tab indicator shows it needs attention.',
+      pattern: 'Would you like to proceed?',
+      actions: [
+        { action_type: 'set_tab_state', command: null, message: null, tab_state: 'question' },
+      ],
+      cooldown: 1,
+      variables: [],
+      plain_text: true,
+    },
+    'claude-plan-ready': {
+      name: 'Claude Plan Ready',
+      description: 'Detects when Claude has a plan ready for review. Sets the tab state to "question" and sends a notification so you know to switch back.',
+      pattern: 'has written up a plan and is ready to execute',
+      actions: [
+        { action_type: 'set_tab_state', command: null, message: null, tab_state: 'question' },
+        { action_type: 'notify', command: null, message: 'Claude has a plan ready for review', tab_state: null },
+      ],
+      cooldown: 1,
+      variables: [],
+      plain_text: true,
     },
   };
 
@@ -46,7 +72,8 @@
       const be = b[i];
       return ae.action_type === be.action_type
         && (ae.command ?? null) === (be.command ?? null)
-        && (ae.message ?? null) === (be.message ?? null);
+        && (ae.message ?? null) === (be.message ?? null)
+        && (ae.tab_state ?? null) === (be.tab_state ?? null);
     });
   }
 
@@ -90,11 +117,17 @@
 
   // Workspace list for trigger scope multiselect
   let allWorkspaces = $state<{ id: string; name: string }[]>([]);
+  // System sounds for notification sound picker
+  let systemSounds = $state<string[]>([]);
   onMount(async () => {
     try {
       const pairs = await getAllWorkspaces();
       allWorkspaces = pairs.map(([id, name]) => ({ id, name }));
     } catch { /* preferences may open before main window */ }
+
+    try {
+      systemSounds = await listSystemSounds();
+    } catch { /* sound listing may fail on some platforms */ }
 
     // Wait for preferences to finish loading before seeding defaults
     await preferencesStore.ready;
@@ -147,7 +180,7 @@
     }
   }
 
-  const sectionIds = ['appearance', 'terminal', 'ui', 'panels', 'notes', 'triggers'] as const;
+  const sectionIds = ['appearance', 'terminal', 'ui', 'panels', 'notes', 'notifications', 'triggers'] as const;
   type SectionId = typeof sectionIds[number];
   const saved = localStorage.getItem('prefs-section');
   let activeSection = $state<SectionId>(
@@ -161,6 +194,7 @@
     { id: 'ui' as const, label: 'Scrollback' },
     { id: 'panels' as const, label: 'Panels' },
     { id: 'notes' as const, label: 'Notes' },
+    { id: 'notifications' as const, label: 'Notifications' },
     { id: 'triggers' as const, label: 'Triggers' },
   ];
 
@@ -177,6 +211,7 @@
       workspaces: [],
       cooldown: 5,
       variables: [],
+      plain_text: false,
     };
     preferencesStore.setTriggers([...preferencesStore.triggers, trigger]);
     expandedTriggerId = trigger.id;
@@ -485,54 +520,6 @@
           </button>
         </div>
 
-        <h3 class="section-heading" style="margin-top: 20px;">Notifications</h3>
-
-        <div class="setting" style="align-items: flex-start;">
-          <div>
-            <label for="notification-mode">Notification Mode</label>
-            <p class="setting-hint">
-              {#if preferencesStore.notificationMode === 'auto'}
-                In-app toasts when focused, OS notifications when unfocused.
-              {:else if preferencesStore.notificationMode === 'in_app'}
-                Always show in-app toasts inside the window.
-              {:else if preferencesStore.notificationMode === 'native'}
-                Always use OS notifications.
-              {:else}
-                Notifications are disabled.
-              {/if}
-              Requires shell integration to be set up.
-            </p>
-          </div>
-          <select
-            id="notification-mode"
-            value={preferencesStore.notificationMode}
-            onchange={(e) => preferencesStore.setNotificationMode(e.currentTarget.value)}
-          >
-            <option value="auto">Auto</option>
-            <option value="in_app">In-App Only</option>
-            <option value="native">Native Only</option>
-            <option value="disabled">Disabled</option>
-          </select>
-        </div>
-
-        {#if preferencesStore.notificationMode !== 'disabled'}
-          <div class="setting">
-            <label for="notify-duration">Minimum Duration</label>
-            <select
-              id="notify-duration"
-              value={preferencesStore.notifyMinDuration}
-              onchange={(e) => preferencesStore.setNotifyMinDuration(parseInt(e.currentTarget.value))}
-            >
-              <option value={0}>Always</option>
-              <option value={3}>3 seconds</option>
-              <option value={5}>5 seconds</option>
-              <option value={10}>10 seconds</option>
-              <option value={15}>15 seconds</option>
-              <option value={30}>30 seconds</option>
-              <option value={60}>60 seconds</option>
-            </select>
-          </div>
-        {/if}
         <h3 class="section-heading" style="margin-top: 20px;">Prompt Patterns</h3>
         <p class="section-desc">
           Patterns for detecting the remote directory when splitting SSH panes.
@@ -770,6 +757,162 @@
           </button>
         </div>
 
+      {:else if activeSection === 'notifications'}
+        <div class="setting" style="align-items: flex-start;">
+          <div>
+            <label for="notification-mode">Notification Mode</label>
+            <p class="setting-hint">
+              {#if preferencesStore.notificationMode === 'auto'}
+                In-app toasts when focused, OS notifications when unfocused.
+              {:else if preferencesStore.notificationMode === 'in_app'}
+                Always show in-app toasts inside the window.
+              {:else if preferencesStore.notificationMode === 'native'}
+                Always use OS notifications.
+              {:else}
+                Notifications are disabled.
+              {/if}
+            </p>
+          </div>
+          <select
+            id="notification-mode"
+            value={preferencesStore.notificationMode}
+            onchange={(e) => preferencesStore.setNotificationMode(e.currentTarget.value)}
+          >
+            <option value="auto">Auto</option>
+            <option value="in_app">In-App Only</option>
+            <option value="native">Native Only</option>
+            <option value="disabled">Disabled</option>
+          </select>
+        </div>
+
+        {#if preferencesStore.notificationMode !== 'disabled'}
+          <div class="setting">
+            <label for="notification-sound">Sound</label>
+            <div class="sound-picker">
+              <select
+                id="notification-sound"
+                value={preferencesStore.notificationSound}
+                onchange={(e) => {
+                  const val = e.currentTarget.value;
+                  preferencesStore.setNotificationSound(val);
+                  if (val !== 'none') {
+                    import('$lib/stores/notificationDispatch').then(m => m.playNotificationSoundPreview());
+                  }
+                }}
+              >
+                <option value="none">None</option>
+                <option value="default">Default (Built-in)</option>
+                {#each systemSounds as sound}
+                  <option value={sound}>{sound}</option>
+                {/each}
+              </select>
+              {#if preferencesStore.notificationSound !== 'none'}
+                <button
+                  class="preview-sound-btn"
+                  onclick={() => {
+                    import('$lib/stores/notificationDispatch').then(m => m.playNotificationSoundPreview());
+                  }}
+                  title="Preview sound"
+                >&#9654;</button>
+              {/if}
+            </div>
+          </div>
+
+          {#if preferencesStore.notificationSound !== 'none'}
+            <div class="setting">
+              <label for="notification-volume">Volume</label>
+              <div class="volume-wrapper">
+                <input
+                  type="range"
+                  id="notification-volume"
+                  class="volume-slider"
+                  min="0"
+                  max="100"
+                  value={preferencesStore.notificationVolume}
+                  oninput={(e) => preferencesStore.setNotificationVolume(parseInt(e.currentTarget.value))}
+                />
+                <span class="volume-label">{preferencesStore.notificationVolume}%</span>
+              </div>
+            </div>
+          {/if}
+
+          <div class="setting" style="align-items: flex-start;">
+            <div>
+              <label for="notify-duration">Command Threshold</label>
+              <p class="setting-hint">
+                Only notify on command completion if it ran longer than this.
+              </p>
+            </div>
+            <select
+              id="notify-duration"
+              value={preferencesStore.notifyMinDuration}
+              onchange={(e) => preferencesStore.setNotifyMinDuration(parseInt(e.currentTarget.value))}
+            >
+              <option value={0}>Always</option>
+              <option value={3}>3 seconds</option>
+              <option value={5}>5 seconds</option>
+              <option value={10}>10 seconds</option>
+              <option value={15}>15 seconds</option>
+              <option value={30}>30 seconds</option>
+              <option value={60}>60 seconds</option>
+            </select>
+          </div>
+        {/if}
+
+        {#if preferencesStore.notificationMode !== 'disabled' && preferencesStore.notificationMode !== 'native'}
+          <h3 class="section-heading" style="margin-top: 20px;">In-App Toast</h3>
+
+          <div class="setting">
+            <label for="toast-duration">Display Duration</label>
+            <select
+              id="toast-duration"
+              value={preferencesStore.toastDuration}
+              onchange={(e) => preferencesStore.setToastDuration(parseInt(e.currentTarget.value))}
+            >
+              <option value={3}>3 seconds</option>
+              <option value={5}>5 seconds</option>
+              <option value={8}>8 seconds</option>
+              <option value={10}>10 seconds</option>
+              <option value={15}>15 seconds</option>
+              <option value={30}>30 seconds</option>
+            </select>
+          </div>
+
+          <div class="setting">
+            <label for="toast-font-size">Font Size</label>
+            <div class="number-input-wrapper">
+              <button class="number-btn" onclick={() => preferencesStore.setToastFontSize(preferencesStore.toastFontSize - 1)}>−</button>
+              <input
+                type="number"
+                id="toast-font-size"
+                class="number-input"
+                min="10"
+                max="24"
+                value={preferencesStore.toastFontSize}
+                onchange={(e) => preferencesStore.setToastFontSize(parseInt(e.currentTarget.value) || 14)}
+              />
+              <button class="number-btn" onclick={() => preferencesStore.setToastFontSize(preferencesStore.toastFontSize + 1)}>+</button>
+            </div>
+          </div>
+
+          <div class="setting">
+            <label for="toast-width">Max Width</label>
+            <div class="number-input-wrapper">
+              <button class="number-btn" onclick={() => preferencesStore.setToastWidth(preferencesStore.toastWidth - 20)}>−</button>
+              <input
+                type="number"
+                id="toast-width"
+                class="number-input"
+                min="280"
+                max="600"
+                value={preferencesStore.toastWidth}
+                onchange={(e) => preferencesStore.setToastWidth(parseInt(e.currentTarget.value) || 400)}
+              />
+              <button class="number-btn" onclick={() => preferencesStore.setToastWidth(preferencesStore.toastWidth + 20)}>+</button>
+            </div>
+          </div>
+        {/if}
+
       {:else if activeSection === 'triggers'}
         <p class="section-desc">
           Triggers watch terminal output for regex patterns and react with actions.
@@ -849,14 +992,31 @@
                   <h4 class="trigger-section-heading">When</h4>
 
                   <div class="trigger-field">
-                    <label>Pattern <span class="field-hint">(regex, supports multiline)</span></label>
+                    <div class="pattern-label-row">
+                      <label>
+                        Pattern
+                        {#if trigger.plain_text}
+                          <span class="field-hint">(spaces match TUI gaps)</span>
+                        {:else}
+                          <span class="field-hint">(regex, supports multiline)</span>
+                        {/if}
+                      </label>
+                      <Tooltip text="Match what you see on screen. TUI apps like Claude Code position text with escape codes — plain text mode ignores those gaps so your pattern matches the visible words.">
+                        <label class="plain-text-toggle">
+                          <input type="checkbox" checked={trigger.plain_text} onchange={() => updateTrigger(trigger.id, { plain_text: !trigger.plain_text })} />
+                          Plain text
+                        </label>
+                      </Tooltip>
+                    </div>
                     <ResizableTextarea
                       value={trigger.pattern}
-                      placeholder={"e.g. error|fail\nor multiline: Resume.*?--resume ([a-z0-9\\-]*)"}
+                      placeholder={trigger.plain_text
+                        ? "e.g. Would you like to proceed?"
+                        : "e.g. error|fail\nor multiline: Resume.*?--resume ([a-z0-9\\-]*)"}
                       rows={2}
                       maxHeight={200}
                       mono
-                      invalid={!isValidRegex(trigger.pattern)}
+                      invalid={!trigger.plain_text && !isValidRegex(trigger.pattern)}
                       onchange={(v) => updateTrigger(trigger.id, { pattern: v })}
                     />
                   </div>
@@ -986,14 +1146,21 @@
                         class="pattern-input action-type-select"
                         value={entry.action_type}
                         onchange={(e) => {
+                          const newType = e.currentTarget.value as TriggerActionType;
                           const actions = trigger.actions.map((a, i) =>
-                            i === ai ? { ...a, action_type: e.currentTarget.value as TriggerActionType } : a
+                            i === ai ? {
+                              ...a,
+                              action_type: newType,
+                              // Default tab_state when switching to set_tab_state
+                              tab_state: newType === 'set_tab_state' ? (a.tab_state ?? 'alert') : a.tab_state,
+                            } : a
                           );
                           updateTrigger(trigger.id, { actions });
                         }}
                       >
                         <option value="notify">Notify</option>
                         <option value="send_command">Send Command</option>
+                        <option value="set_tab_state">Change Tab State</option>
                       </select>
                       {#if entry.action_type === 'send_command'}
                         <input
@@ -1013,7 +1180,7 @@
                           type="text"
                           class="pattern-input action-command-input"
                           value={entry.message ?? ''}
-                          placeholder="message (%vars supported)"
+                          placeholder="message (%vars, %title supported)"
                           onchange={(e) => {
                             const actions = trigger.actions.map((a, i) =>
                               i === ai ? { ...a, message: e.currentTarget.value || null } : a
@@ -1021,6 +1188,20 @@
                             updateTrigger(trigger.id, { actions });
                           }}
                         />
+                      {:else if entry.action_type === 'set_tab_state'}
+                        <select
+                          class="pattern-input action-type-select"
+                          value={entry.tab_state ?? 'alert'}
+                          onchange={(e) => {
+                            const actions = trigger.actions.map((a, i) =>
+                              i === ai ? { ...a, tab_state: e.currentTarget.value as TabStateName } : a
+                            );
+                            updateTrigger(trigger.id, { actions });
+                          }}
+                        >
+                          <option value="alert">Alert</option>
+                          <option value="question">Question</option>
+                        </select>
                       {/if}
                       <button
                         class="pattern-delete"
@@ -1035,7 +1216,7 @@
                   <button
                     class="add-pattern-btn"
                     onclick={() => {
-                      const actions = [...trigger.actions, { action_type: 'notify' as TriggerActionType, command: null, message: null }];
+                      const actions = [...trigger.actions, { action_type: 'notify' as TriggerActionType, command: null, message: null, tab_state: null }];
                       updateTrigger(trigger.id, { actions });
                     }}
                   >+ Add Action</button>
@@ -1620,6 +1801,26 @@
     opacity: 0.7;
   }
 
+  .pattern-label-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .plain-text-toggle {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: var(--fg-dim);
+    cursor: pointer;
+  }
+
+  .plain-text-toggle input[type="checkbox"] {
+    margin: 0;
+    cursor: pointer;
+  }
+
   .pattern-input.mono {
     font-family: 'Menlo', Monaco, monospace;
   }
@@ -1727,5 +1928,50 @@
   .var-template-input {
     flex: 1;
     min-width: 0;
+  }
+
+  .sound-picker {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .preview-sound-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    background: var(--bg-dark);
+    border: 1px solid var(--bg-light);
+    border-radius: 4px;
+    color: var(--fg-dim);
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  .preview-sound-btn:hover {
+    border-color: var(--accent);
+    color: var(--fg);
+  }
+
+  .volume-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .volume-slider {
+    width: 120px;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+
+  .volume-label {
+    font-size: 12px;
+    color: var(--fg-dim);
+    min-width: 32px;
+    text-align: right;
   }
 </style>

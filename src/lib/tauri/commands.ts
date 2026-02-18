@@ -214,6 +214,15 @@ export async function setTabAutoResumeContext(
   return invoke('set_tab_auto_resume_context', { workspaceId, paneId, tabId, cwd, sshCommand, remoteCwd, command });
 }
 
+// Sound commands
+export async function listSystemSounds(): Promise<string[]> {
+  return invoke('list_system_sounds');
+}
+
+export async function playSystemSound(name: string, volume: number): Promise<void> {
+  return invoke('play_system_sound', { name, volume });
+}
+
 // Window commands
 export async function getWindowData(): Promise<WindowData> {
   return invoke('get_window_data');

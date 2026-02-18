@@ -52,12 +52,15 @@ export interface Workspace {
 
 export type CursorStyle = 'block' | 'underline' | 'bar';
 
-export type TriggerActionType = 'notify' | 'send_command';
+export type TriggerActionType = 'notify' | 'send_command' | 'set_tab_state';
+
+export type TabStateName = 'alert' | 'question';
 
 export interface TriggerActionEntry {
   action_type: TriggerActionType;
   command: string | null;
   message: string | null;
+  tab_state: TabStateName | null;
 }
 
 export interface VariableMapping {
@@ -76,6 +79,7 @@ export interface Trigger {
   workspaces: string[];
   cooldown: number;
   variables: VariableMapping[];
+  plain_text: boolean;
   default_id?: string | null;
 }
 
@@ -106,6 +110,11 @@ export interface Preferences {
   notes_font_family: string;
   notes_width: number;
   notes_word_wrap: boolean;
+  toast_font_size: number;
+  toast_width: number;
+  toast_duration: number;
+  notification_sound: string;
+  notification_volume: number;
   triggers: Trigger[];
   hidden_default_triggers: string[];
 }
