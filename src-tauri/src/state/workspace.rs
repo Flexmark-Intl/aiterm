@@ -405,6 +405,8 @@ pub enum TriggerActionType {
     SendCommand,
     #[serde(rename = "set_tab_state")]
     SetTabState,
+    #[serde(rename = "enable_auto_resume")]
+    EnableAutoResume,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -450,6 +452,9 @@ pub struct Trigger {
     /// (spaces in the pattern match any gap caused by cursor positioning).
     #[serde(default)]
     pub plain_text: bool,
+    /// Match mode: "regex" | "plain_text" | "variable". When present, takes precedence over plain_text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub match_mode: Option<String>,
     /// Links this trigger to an app-provided default template (e.g. "claude-resume").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_id: Option<String>,

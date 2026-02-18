@@ -12,6 +12,9 @@
   import { slide } from 'svelte/transition';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { DEFAULT_TRIGGERS, seedDefaultTriggers as seedDefaults } from '$lib/triggers/defaults';
+  import { resolveMatchMode } from '$lib/stores/triggers.svelte';
+  import { parseCondition } from '$lib/triggers/variableCondition';
+  import type { MatchMode } from '$lib/tauri/types';
 
   function actionsEqual(a: TriggerActionEntry[], b: TriggerActionEntry[]): boolean {
     if (a.length !== b.length) return false;
@@ -45,6 +48,7 @@
       || trigger.pattern !== tmpl.pattern
       || trigger.cooldown !== tmpl.cooldown
       || trigger.plain_text !== tmpl.plain_text
+      || resolveMatchMode(trigger) !== resolveMatchMode(tmpl)
       || !actionsEqual(trigger.actions, tmpl.actions)
       || !variablesEqual(trigger.variables, tmpl.variables);
   }
@@ -60,6 +64,7 @@
       pattern: tmpl.pattern,
       cooldown: tmpl.cooldown,
       plain_text: tmpl.plain_text,
+      match_mode: tmpl.match_mode ?? null,
       actions: structuredClone(tmpl.actions),
       variables: structuredClone(tmpl.variables),
     });
@@ -124,6 +129,7 @@
       cooldown: 5,
       variables: [],
       plain_text: false,
+      match_mode: 'regex',
     };
     preferencesStore.setTriggers([...preferencesStore.triggers, trigger]);
     expandedTriggerId = trigger.id;
@@ -173,6 +179,11 @@
   function isValidRegex(pattern: string): boolean {
     if (!pattern) return true;
     try { new RegExp(pattern); return true; } catch { return false; }
+  }
+
+  function isValidCondition(pattern: string): boolean {
+    if (!pattern) return true;
+    try { parseCondition(pattern); return true; } catch { return false; }
   }
 
   /** Count capture groups in a regex pattern (0 if invalid). */
@@ -886,6 +897,7 @@
             </div>
 
             {#if expandedTriggerId === trigger.id}
+              {@const mode = resolveMatchMode(trigger)}
               <div class="trigger-body" transition:slide={{ duration: 150 }}>
                 <div class="trigger-field">
                   <label>Name</label>
@@ -917,28 +929,41 @@
                     <div class="pattern-label-row">
                       <label>
                         Pattern
-                        {#if trigger.plain_text}
+                        {#if mode === 'plain_text'}
                           <span class="field-hint">(spaces match TUI gaps)</span>
+                        {:else if mode === 'variable'}
+                          <span class="field-hint">(fires on false&rarr;true transition)</span>
                         {:else}
                           <span class="field-hint">(regex, supports multiline)</span>
                         {/if}
                       </label>
-                      <Tooltip text="Match what you see on screen. TUI apps like Claude Code position text with escape codes — plain text mode ignores those gaps so your pattern matches the visible words. Use (option A|option B) for alternation.">
-                        <label class="plain-text-toggle">
-                          <input type="checkbox" checked={trigger.plain_text} onchange={() => updateTrigger(trigger.id, { plain_text: !trigger.plain_text })} />
-                          Plain text
-                        </label>
-                      </Tooltip>
+                      <select
+                        class="match-mode-select"
+                        value={mode}
+                        onchange={(e) => {
+                          const newMode = e.currentTarget.value as MatchMode;
+                          updateTrigger(trigger.id, {
+                            match_mode: newMode,
+                            plain_text: newMode === 'plain_text',
+                          });
+                        }}
+                      >
+                        <option value="regex">Regex</option>
+                        <option value="plain_text">Plain Text</option>
+                        <option value="variable">Variable Match</option>
+                      </select>
                     </div>
                     <ResizableTextarea
                       value={trigger.pattern}
-                      placeholder={trigger.plain_text
+                      placeholder={mode === 'plain_text'
                         ? "e.g. Would you like to proceed?"
-                        : "e.g. error|fail\nor multiline: Resume.*?--resume ([a-z0-9\\-]*)"}
+                        : mode === 'variable'
+                          ? "e.g. claudeSessionId || claudeResumeCommand"
+                          : "e.g. error|fail\nor multiline: Resume.*?--resume ([a-z0-9\\-]*)"}
                       rows={2}
                       maxHeight={200}
                       mono
-                      invalid={!trigger.plain_text && !isValidRegex(trigger.pattern)}
+                      invalid={mode === 'regex' ? !isValidRegex(trigger.pattern) : mode === 'variable' ? !isValidCondition(trigger.pattern) : false}
                       onchange={(v) => updateTrigger(trigger.id, { pattern: v })}
                     />
                   </div>
@@ -983,6 +1008,7 @@
                   </div>
                 </div>
 
+                {#if resolveMatchMode(trigger) !== 'variable'}
                 <div class="trigger-section">
                   <h4 class="trigger-section-heading">Capture <span class="field-hint">use %varName in tab titles and auto-resume commands</span></h4>
 
@@ -1058,6 +1084,7 @@
                     }}
                   >+ Add Variable</button>
                 </div>
+                {/if}
 
                 <div class="trigger-section">
                   <h4 class="trigger-section-heading">Then</h4>
@@ -1083,6 +1110,7 @@
                         <option value="notify">Notify</option>
                         <option value="send_command">Send Command</option>
                         <option value="set_tab_state">Change Tab State</option>
+                        <option value="enable_auto_resume">Enable Auto-Resume</option>
                       </select>
                       {#if entry.action_type === 'send_command'}
                         <input
@@ -1127,6 +1155,19 @@
                         <Tooltip text={"%title — OSC title (set by program)\n%tab — tab name from workspace\n%tabtitle — full tab display name\n%varName — trigger capture variables"}>
                           <span class="notify-help">?</span>
                         </Tooltip>
+                      {:else if entry.action_type === 'enable_auto_resume'}
+                        <input
+                          type="text"
+                          class="pattern-input mono action-command-input"
+                          value={entry.command ?? ''}
+                          placeholder="auto-resume command (%vars supported)"
+                          onchange={(e) => {
+                            const actions = trigger.actions.map((a, i) =>
+                              i === ai ? { ...a, command: e.currentTarget.value || null } : a
+                            );
+                            updateTrigger(trigger.id, { actions });
+                          }}
+                        />
                       {:else if entry.action_type === 'set_tab_state'}
                         <select
                           class="pattern-input action-type-select"
@@ -1746,18 +1787,20 @@
     justify-content: space-between;
   }
 
-  .plain-text-toggle {
-    display: flex;
-    align-items: center;
-    gap: 5px;
+  .match-mode-select {
     font-size: 11px;
+    padding: 2px 6px;
+    min-width: auto;
+    background: var(--bg-dark);
+    border: 1px solid var(--bg-light);
+    border-radius: 4px;
     color: var(--fg-dim);
     cursor: pointer;
   }
 
-  .plain-text-toggle input[type="checkbox"] {
-    margin: 0;
-    cursor: pointer;
+  .match-mode-select:hover {
+    border-color: var(--accent);
+    color: var(--fg);
   }
 
   .pattern-input.mono {

@@ -41,6 +41,7 @@
           <li><strong>Compacting</strong> &mdash; notifies you when Claude is compacting the conversation</li>
           <li><strong>Compaction Complete</strong> &mdash; alerts the tab when compaction finishes</li>
           <li><strong>Resume &amp; Session ID</strong> &mdash; captures session info for auto-resume</li>
+          <li><strong>Auto-Resume</strong> &mdash; automatically enables auto-resume on a tab when a Claude session ID or resume command is captured</li>
         </ul>
 
         <p class="hint">You can customize or disable individual triggers anytime in Preferences &gt; Triggers.</p>

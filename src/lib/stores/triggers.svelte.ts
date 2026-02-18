@@ -2,11 +2,13 @@ import { preferencesStore } from '$lib/stores/preferences.svelte';
 import { terminalsStore } from '$lib/stores/terminals.svelte';
 import { workspacesStore } from '$lib/stores/workspaces.svelte';
 import { activityStore } from '$lib/stores/activity.svelte';
-import { writeTerminal, setTabTriggerVariables } from '$lib/tauri/commands';
+import { writeTerminal, setTabTriggerVariables, getPtyInfo, cleanSshCommand } from '$lib/tauri/commands';
 import { stripAnsi } from '$lib/utils/ansi';
-import { getCompiledTitlePatterns, extractDirFromTitle } from '$lib/utils/promptPattern';
+import { getCompiledTitlePatterns, getCompiledPatterns, extractDirFromTitle } from '$lib/utils/promptPattern';
 import { dispatch } from './notificationDispatch';
 import { error as logError } from '@tauri-apps/plugin-log';
+import { parseCondition, evaluateCondition } from '$lib/triggers/variableCondition';
+import type { Trigger, MatchMode } from '$lib/tauri/types';
 
 const BUFFER_CAP = 4096;
 
@@ -22,6 +24,16 @@ const regexCache = new Map<string, RegExp | null>();
 
 // Runtime variable storage: tabId → Map<varName, value>
 const variableMap = new Map<string, Map<string, string>>();
+
+// Variable trigger transition tracking: triggerId → tabId → last evaluated result
+// Only fires on false→true transition to prevent repeated firing.
+const variableTransitions = new Map<string, Map<string, boolean>>();
+
+/** Resolve the effective match mode for a trigger (migration compat). */
+export function resolveMatchMode(trigger: { match_mode?: MatchMode | null; plain_text?: boolean }): MatchMode {
+  if (trigger.match_mode) return trigger.match_mode;
+  return trigger.plain_text ? 'plain_text' : 'regex';
+}
 
 // Change listeners for reactive UI updates
 type VarChangeCallback = (tabId: string, vars: Map<string, string>) => void;
@@ -203,23 +215,16 @@ function extractAndStoreVariables(
   }
 }
 
-async function fireTrigger(
-  trigger: { id: string; name: string; actions: { action_type: string; command: string | null; title: string | null; message: string | null; tab_state: string | null }[]; variables: { name: string; group: number; template?: string }[] },
+/** Execute all actions for a trigger. Called by both regex and variable trigger paths. */
+async function executeActions(
+  trigger: { id: string; name: string; actions: { action_type: string; command: string | null; title: string | null; message: string | null; tab_state: string | null }[] },
   tabId: string,
-  match: RegExpMatchArray,
 ) {
-  markFired(trigger.id, tabId);
-
-  // Extract variables (always, independent of actions)
-  extractAndStoreVariables(tabId, match, trigger.variables);
-
-  // Execute each action
   for (const entry of trigger.actions) {
     if (entry.action_type === 'send_command' && entry.command) {
       const instance = terminalsStore.get(tabId);
       if (!instance) continue;
       try {
-        // Interpolate %varName in command from tab's variables
         let cmd = entry.command;
         const vars = variableMap.get(tabId);
         if (vars) {
@@ -248,6 +253,94 @@ async function fireTrigger(
     } else if (entry.action_type === 'set_tab_state') {
       const state = (entry.tab_state || 'alert') as import('$lib/tauri/types').TabStateName;
       activityStore.setTabState(tabId, state);
+    } else if (entry.action_type === 'enable_auto_resume') {
+      await handleEnableAutoResume(tabId, entry.command ?? '');
+    }
+  }
+}
+
+async function fireTrigger(
+  trigger: { id: string; name: string; actions: { action_type: string; command: string | null; title: string | null; message: string | null; tab_state: string | null }[]; variables: { name: string; group: number; template?: string }[] },
+  tabId: string,
+  match: RegExpMatchArray,
+) {
+  markFired(trigger.id, tabId);
+
+  // Extract variables (always, independent of actions)
+  extractAndStoreVariables(tabId, match, trigger.variables);
+
+  // Execute actions
+  await executeActions(trigger, tabId);
+}
+
+/** Handle enable_auto_resume action: gather PTY info and set auto-resume context. */
+async function handleEnableAutoResume(tabId: string, commandTemplate: string) {
+  const instance = terminalsStore.get(tabId);
+  if (!instance) return;
+  try {
+    const info = await getPtyInfo(instance.ptyId);
+    const sshCmd = info.foreground_command ? cleanSshCommand(info.foreground_command) : null;
+    const localCwd = info.cwd ?? null;
+    let remoteCwd: string | null = null;
+
+    if (sshCmd) {
+      const oscState = terminalsStore.getOsc(tabId);
+      const osc7Cwd = oscState?.cwd ?? null;
+      const promptCwd = oscState?.promptCwd ?? null;
+      const isOsc7Stale = osc7Cwd === localCwd;
+      remoteCwd = (osc7Cwd && !isOsc7Stale) ? osc7Cwd : promptCwd ?? null;
+    }
+
+    const cmd = interpolateVariables(tabId, commandTemplate, true);
+    await workspacesStore.setTabAutoResumeContext(
+      instance.workspaceId, instance.paneId, tabId,
+      localCwd, sshCmd, remoteCwd, cmd || null,
+    );
+  } catch (e) {
+    logError(`enable_auto_resume failed for tab ${tabId}: ${e}`);
+  }
+}
+
+/** Evaluate variable-mode triggers for a tab. Called after regex triggers finish. */
+function evaluateVariableTriggers(tabId: string) {
+  const triggers = preferencesStore.triggers;
+  const wsId = getWorkspaceIdForTab(tabId);
+  const vars = variableMap.get(tabId) ?? new Map<string, string>();
+
+  for (const trigger of triggers) {
+    if (!trigger.enabled || !trigger.pattern) continue;
+    if (resolveMatchMode(trigger) !== 'variable') continue;
+
+    // Workspace scope filter
+    if (trigger.workspaces.length > 0 && wsId) {
+      if (!trigger.workspaces.includes(wsId)) continue;
+    }
+
+    // Cooldown check
+    if (!checkCooldown(trigger.id, tabId, trigger.cooldown)) continue;
+
+    // Parse and evaluate condition
+    let result: boolean;
+    try {
+      const node = parseCondition(trigger.pattern);
+      result = evaluateCondition(node, vars);
+    } catch {
+      continue; // invalid condition — skip
+    }
+
+    // Get previous result
+    let tabTransitions = variableTransitions.get(trigger.id);
+    if (!tabTransitions) {
+      tabTransitions = new Map();
+      variableTransitions.set(trigger.id, tabTransitions);
+    }
+    const prev = tabTransitions.get(tabId) ?? false;
+    tabTransitions.set(tabId, result);
+
+    // Only fire on false→true transition
+    if (result && !prev) {
+      markFired(trigger.id, tabId);
+      executeActions(trigger, tabId);
     }
   }
 }
@@ -272,6 +365,9 @@ export function processOutput(tabId: string, data: Uint8Array) {
   for (const trigger of triggers) {
     if (!trigger.enabled || !trigger.pattern) continue;
 
+    // Skip variable-mode triggers — they're evaluated after the regex loop
+    if (resolveMatchMode(trigger) === 'variable') continue;
+
     // Workspace scope filter (by ID)
     if (trigger.workspaces.length > 0 && wsId) {
       if (!trigger.workspaces.includes(wsId)) continue;
@@ -280,7 +376,7 @@ export function processOutput(tabId: string, data: Uint8Array) {
     // Cooldown check
     if (!checkCooldown(trigger.id, tabId, trigger.cooldown)) continue;
 
-    const re = getRegex(trigger.pattern, trigger.plain_text);
+    const re = getRegex(trigger.pattern, resolveMatchMode(trigger) === 'plain_text');
     if (!re) continue;
 
     const match = buffer.match(re);
@@ -292,6 +388,10 @@ export function processOutput(tabId: string, data: Uint8Array) {
   }
 
   buffers.set(tabId, buffer);
+
+  // Evaluate variable-mode triggers after all regex triggers have run
+  // (variables may have been updated by regex trigger extractions above)
+  evaluateVariableTriggers(tabId);
 }
 
 /** Called when a terminal is destroyed to clean up per-tab state. */
@@ -301,15 +401,44 @@ export function cleanupTab(tabId: string) {
   for (const tabMap of cooldowns.values()) {
     tabMap.delete(tabId);
   }
+  for (const tabMap of variableTransitions.values()) {
+    tabMap.delete(tabId);
+  }
 }
 
-/** Load persisted trigger variables into runtime map (called on mount). */
+/** Load persisted trigger variables into runtime map (called on mount).
+ *  Seeds variable transition state without firing to prevent false positives on restart. */
 export function loadTabVariables(tabId: string, vars: Record<string, string>) {
   if (!vars || !Object.keys(vars).length) return;
   const map = new Map<string, string>();
   for (const [k, v] of Object.entries(vars)) map.set(k, v);
   variableMap.set(tabId, map);
   notifyVarChange(tabId);
+
+  // Seed variable transitions to prevent false-positive firing on app restart
+  initializeVariableTransitions(tabId, map);
+}
+
+/** Seed variable transitions with current evaluation results (no firing). */
+function initializeVariableTransitions(tabId: string, vars: Map<string, string>) {
+  const triggers = preferencesStore.triggers;
+  for (const trigger of triggers) {
+    if (!trigger.enabled || !trigger.pattern) continue;
+    if (resolveMatchMode(trigger) !== 'variable') continue;
+
+    try {
+      const node = parseCondition(trigger.pattern);
+      const result = evaluateCondition(node, vars);
+      let tabMap = variableTransitions.get(trigger.id);
+      if (!tabMap) {
+        tabMap = new Map();
+        variableTransitions.set(trigger.id, tabMap);
+      }
+      tabMap.set(tabId, result);
+    } catch {
+      // invalid condition — skip
+    }
+  }
 }
 
 /** Get a single variable value for a tab. */

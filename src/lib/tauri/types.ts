@@ -61,7 +61,9 @@ export interface Workspace {
 
 export type CursorStyle = 'block' | 'underline' | 'bar';
 
-export type TriggerActionType = 'notify' | 'send_command' | 'set_tab_state';
+export type TriggerActionType = 'notify' | 'send_command' | 'set_tab_state' | 'enable_auto_resume';
+
+export type MatchMode = 'regex' | 'plain_text' | 'variable';
 
 export type TabStateName = 'alert' | 'question';
 
@@ -90,6 +92,7 @@ export interface Trigger {
   cooldown: number;
   variables: VariableMapping[];
   plain_text: boolean;
+  match_mode?: MatchMode | null;
   default_id?: string | null;
 }
 

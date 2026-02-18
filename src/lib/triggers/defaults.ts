@@ -1,7 +1,10 @@
-import type { Trigger } from '$lib/tauri/types';
+import type { Trigger, MatchMode } from '$lib/tauri/types';
+
+/** Shared Claude resume command — used by auto-resume presets and the claude-auto-resume trigger. */
+export const CLAUDE_RESUME_COMMAND = 'if [ -n "%claudeSessionId" ]; then claude --resume %claudeSessionId; elif [ -n "%claudeResumeCommand" ]; then eval %claudeResumeCommand; else claude --continue; fi';
 
 /** App-provided default trigger templates. Keyed by stable default_id. */
-export const DEFAULT_TRIGGERS: Record<string, Omit<Trigger, 'id' | 'enabled' | 'workspaces' | 'default_id'>> = {
+export const DEFAULT_TRIGGERS: Record<string, Omit<Trigger, 'id' | 'enabled' | 'workspaces' | 'default_id'> & { match_mode?: MatchMode }> = {
   'claude-resume': {
     name: 'Claude Resume',
     description: 'Captures the claude --resume command and session ID when Claude Code exits. Useful for setting up auto-resume to reconnect to the same session.',
@@ -74,6 +77,18 @@ export const DEFAULT_TRIGGERS: Record<string, Omit<Trigger, 'id' | 'enabled' | '
     cooldown: 0.2,
     variables: [],
     plain_text: true,
+  },
+  'claude-auto-resume': {
+    name: 'Claude Auto-Resume',
+    description: 'Automatically enables auto-resume when a Claude session ID or resume command is captured.',
+    match_mode: 'variable',
+    pattern: 'claudeSessionId || claudeResumeCommand',
+    actions: [
+      { action_type: 'enable_auto_resume', command: CLAUDE_RESUME_COMMAND, title: null, message: null, tab_state: null },
+    ],
+    cooldown: 5,
+    variables: [],
+    plain_text: false,
   },
 };
 

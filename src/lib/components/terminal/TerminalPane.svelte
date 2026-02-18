@@ -24,6 +24,7 @@
   import ResizableTextarea from '$lib/components/ResizableTextarea.svelte';
   import { processOutput, cleanupTab, loadTabVariables, interpolateVariables, getVariables, clearTabVariables } from '$lib/stores/triggers.svelte';
   import { dispatch } from '$lib/stores/notificationDispatch';
+  import { CLAUDE_RESUME_COMMAND } from '$lib/triggers/defaults';
 
   interface Props {
     workspaceId: string;
@@ -872,7 +873,7 @@
         <div class="auto-resume-presets">
           <span class="auto-resume-presets-label">Presets</span>
           <button class="auto-resume-prompt-btn preset" onclick={() => {
-            autoResumePromptValue = 'if [ -n "%claudeSessionId" ]; then claude --resume %claudeSessionId; elif [ -n "%claudeResumeCommand" ]; then eval %claudeResumeCommand; else claude --continue; fi';
+            autoResumePromptValue = CLAUDE_RESUME_COMMAND;
           }} title="Uses trigger variables %claudeSessionId and %claudeResumeCommand">Claude Resume</button>
         </div>
         <span style="flex: 1;"></span>
@@ -920,8 +921,7 @@
                 ));
               }
               const ctx = await gatherAutoResumeContext();
-              const cmd = 'if [ -n "%claudeSessionId" ]; then claude --resume %claudeSessionId; elif [ -n "%claudeResumeCommand" ]; then eval %claudeResumeCommand; else claude --continue; fi';
-              await workspacesStore.setTabAutoResumeContext(workspaceId, paneId, tabId, ctx.cwd, ctx.sshCmd, ctx.remoteCwd, cmd);
+              await workspacesStore.setTabAutoResumeContext(workspaceId, paneId, tabId, ctx.cwd, ctx.sshCmd, ctx.remoteCwd, CLAUDE_RESUME_COMMAND);
               isAutoResume = true;
             } catch (e) {
               logError(`Auto-resume + Claude setup failed: ${e}`);
