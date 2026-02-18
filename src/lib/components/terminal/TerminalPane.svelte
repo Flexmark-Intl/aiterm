@@ -229,6 +229,8 @@
 
     // Shell integration handler — shared by OSC 133 (FinalTerm) and OSC 633 (VS Code)
     // Gated on trackActivity to ignore sequences replayed from restored scrollback.
+    let commandStartedAt = 0;
+    const MIN_COMPLETION_MS = 2000; // Only show completed indicator for commands that ran 2s+
     function handleShellIntegration(data: string): boolean {
       if (!trackActivity) return true;
       const parts = data.split(';');
@@ -236,10 +238,15 @@
       if (cmd === 'A') {
         activityStore.setShellState(tabId, 'prompt');
       } else if (cmd === 'D') {
-        const exitCode = parts[1] ? parseInt(parts[1], 10) : 0;
-        activityStore.setShellState(tabId, 'completed', exitCode);
+        const elapsed = commandStartedAt ? Date.now() - commandStartedAt : 0;
+        if (elapsed >= MIN_COMPLETION_MS) {
+          const exitCode = parts[1] ? parseInt(parts[1], 10) : 0;
+          activityStore.setShellState(tabId, 'completed', exitCode);
+        }
+        // For short commands, just let the subsequent A set 'prompt'
       }
       if (cmd === 'B' || cmd === 'C') {
+        commandStartedAt = Date.now();
         activityStore.setShellState(tabId, null);
       }
       return true;

@@ -406,7 +406,6 @@
       class:activity={!shellState && !tabState && hasActivity}
       class:completed={!tabState && shellState?.state === 'completed' && shellState?.exitCode === 0}
       class:failed={!tabState && shellState?.state === 'completed' && shellState?.exitCode !== 0}
-      class:prompt={!tabState && shellState?.state === 'prompt'}
       class:tab-alert={tabState === 'alert'}
       class:tab-question={tabState === 'question'}
       class:dragging={dragTabId === tab.id}
@@ -446,8 +445,6 @@
           <span class="indicator question-indicator">&#x2753;</span>
         {:else if shellState?.state === 'completed'}
           <span class="indicator" class:completed-indicator={shellState.exitCode === 0} class:failed-indicator={shellState.exitCode !== 0}>{shellState.exitCode === 0 ? '\u2713' : '\u2717'}</span>
-        {:else if shellState?.state === 'prompt'}
-          <span class="indicator prompt-indicator">\u203A</span>
         {:else if hasActivity}
           <span class="activity-dot"></span>
         {/if}
@@ -552,10 +549,6 @@
     box-shadow: inset 0 -2px 0 var(--red, #f7768e);
   }
 
-  .tab.prompt {
-    box-shadow: inset 0 -2px 0 var(--yellow, #e0af68);
-  }
-
   .tab.tab-alert {
     box-shadow: inset 0 -2px 0 var(--red, #f7768e);
   }
@@ -644,10 +637,6 @@
 
   .failed-indicator {
     color: var(--red, #f7768e);
-  }
-
-  .prompt-indicator {
-    color: var(--yellow, #e0af68);
   }
 
   .alert-indicator {
