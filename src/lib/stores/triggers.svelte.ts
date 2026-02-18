@@ -4,6 +4,7 @@ import { workspacesStore } from '$lib/stores/workspaces.svelte';
 import { activityStore } from '$lib/stores/activity.svelte';
 import { writeTerminal, setTabTriggerVariables } from '$lib/tauri/commands';
 import { stripAnsi } from '$lib/utils/ansi';
+import { getCompiledTitlePatterns, extractDirFromTitle } from '$lib/utils/promptPattern';
 import { dispatch } from './notificationDispatch';
 import { error as logError } from '@tauri-apps/plugin-log';
 
@@ -26,19 +27,61 @@ const variableMap = new Map<string, Map<string, string>>();
 type VarChangeCallback = (tabId: string, vars: Map<string, string>) => void;
 const varChangeListeners = new Set<VarChangeCallback>();
 
+/** Escape a plain-text fragment: metacharacters escaped, whitespace → \s*. */
+function escapePlainSegment(text: string): string {
+  return text
+    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/\\?\s+/g, '\\s*');
+}
+
+/**
+ * Build a hybrid regex source from a plain-text pattern.
+ * Alternation groups like (foo|bar) are preserved as regex alternation
+ * using non-capturing groups (?:...|...), while everything else is escaped.
+ * Each alternative inside parens still gets plain-text treatment.
+ */
+function buildHybridSource(pattern: string): string {
+  let result = '';
+  let i = 0;
+
+  while (i < pattern.length) {
+    if (pattern[i] === '(') {
+      const close = pattern.indexOf(')', i + 1);
+      if (close === -1) {
+        // Unmatched paren — escape rest as literal
+        result += escapePlainSegment(pattern.slice(i));
+        break;
+      }
+      const inner = pattern.slice(i + 1, close);
+      if (inner.includes('|')) {
+        // Alternation group — preserve structure, escape each alternative
+        const alternatives = inner.split('|');
+        result += '(?:' + alternatives.map(a => escapePlainSegment(a)).join('|') + ')';
+      } else {
+        // No alternation — treat parens + content as literal
+        result += escapePlainSegment(pattern.slice(i, close + 1));
+      }
+      i = close + 1;
+    } else {
+      const nextParen = pattern.indexOf('(', i);
+      const end = nextParen === -1 ? pattern.length : nextParen;
+      result += escapePlainSegment(pattern.slice(i, end));
+      i = end;
+    }
+  }
+
+  return result;
+}
+
 function getRegex(pattern: string, plainText = false): RegExp | null {
   const cacheKey = plainText ? `__pt__${pattern}` : pattern;
   if (regexCache.has(cacheKey)) return regexCache.get(cacheKey)!;
   try {
     let src = pattern;
     if (plainText) {
-      // Plain-text mode: escape regex metacharacters, then replace whitespace
-      // runs with \s* so the pattern matches TUI output where spaces between
-      // words are produced by cursor positioning (stripped as ANSI) rather than
-      // literal space characters.
-      src = pattern
-        .replace(/[.*+?^${}()|[\]\\]/g, '\\$&') // escape regex specials
-        .replace(/\\?\s+/g, '\\s*');              // whitespace → optional gap
+      // Hybrid plain-text mode: escape metacharacters and convert whitespace
+      // to \s* for TUI gap tolerance, but preserve (a|b) alternation groups.
+      src = buildHybridSource(pattern);
     }
     const re = new RegExp(src, 's');
     regexCache.set(cacheKey, re);
@@ -54,11 +97,13 @@ function getWorkspaceIdForTab(tabId: string): string | null {
   return instance?.workspaceId ?? null;
 }
 
-/** Resolve the display title for a tab: OSC title → tab name fallback. */
-function getTabTitle(tabId: string): string {
-  const oscTitle = terminalsStore.getOsc(tabId)?.title;
-  if (oscTitle) return oscTitle;
-  // Fall back to tab name from workspace data
+/** Get the raw OSC title set by the running program. */
+function getOscTitle(tabId: string): string {
+  return terminalsStore.getOsc(tabId)?.title ?? '';
+}
+
+/** Get the tab's stored name from workspace data. */
+function getTabName(tabId: string): string {
   const instance = terminalsStore.get(tabId);
   if (instance) {
     const ws = workspacesStore.workspaces.find(w => w.id === instance.workspaceId);
@@ -66,6 +111,33 @@ function getTabTitle(tabId: string): string {
     if (tab) return tab.name;
   }
   return 'Terminal';
+}
+
+/** Compute the full display name as shown in the tab header (custom name with interpolation). */
+function getTabDisplayName(tabId: string): string {
+  const instance = terminalsStore.get(tabId);
+  if (!instance) return 'Terminal';
+  const ws = workspacesStore.workspaces.find(w => w.id === instance.workspaceId);
+  const tab = ws?.panes.flatMap(p => p.tabs).find(t => t.id === tabId);
+  if (!tab) return 'Terminal';
+
+  const oscTitle = terminalsStore.getOsc(tabId)?.title;
+
+  if (tab.custom_name) {
+    let result = tab.name;
+    if (oscTitle) {
+      if (result.includes('%title')) result = result.replace('%title', oscTitle);
+      if (result.includes('%dir')) {
+        const patterns = getCompiledTitlePatterns(preferencesStore.promptPatterns);
+        result = result.replace('%dir', extractDirFromTitle(oscTitle, patterns));
+      }
+    }
+    if (result.includes('%')) {
+      result = interpolateVariables(tabId, result, true);
+    }
+    return result;
+  }
+  return oscTitle ?? tab.name;
 }
 
 function checkCooldown(triggerId: string, tabId: string, cooldownSecs: number): boolean {
@@ -132,7 +204,7 @@ function extractAndStoreVariables(
 }
 
 async function fireTrigger(
-  trigger: { id: string; name: string; actions: { action_type: string; command: string | null; message: string | null; tab_state: string | null }[]; variables: { name: string; group: number; template?: string }[] },
+  trigger: { id: string; name: string; actions: { action_type: string; command: string | null; title: string | null; message: string | null; tab_state: string | null }[]; variables: { name: string; group: number; template?: string }[] },
   tabId: string,
   match: RegExpMatchArray,
 ) {
@@ -160,13 +232,16 @@ async function fireTrigger(
       }
     } else if (entry.action_type === 'notify') {
       try {
-        let body = entry.message || `Trigger "${trigger.name}" fired`;
         const vars = variableMap.get(tabId);
-        body = body.replace(/%([\w]+)/g, (m: string, name: string) => {
-          if (name === 'title') return getTabTitle(tabId);
+        const interpolate = (text: string) => text.replace(/%([\w]+)/g, (m: string, name: string) => {
+          if (name === 'title') return getOscTitle(tabId);
+          if (name === 'tab') return getTabName(tabId);
+          if (name === 'tabtitle') return getTabDisplayName(tabId);
           return vars?.has(name) ? vars.get(name)! : m;
         });
-        await dispatch(body, '', 'info', { tabId });
+        const title = interpolate(entry.title || '%tabtitle');
+        const body = interpolate(entry.message || '');
+        await dispatch(title, body, 'info', { tabId });
       } catch (e) {
         logError(`Trigger "${trigger.name}" notification failed: ${e}`);
       }

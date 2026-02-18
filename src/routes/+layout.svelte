@@ -7,7 +7,9 @@
   import { workspacesStore } from '$lib/stores/workspaces.svelte';
   import { terminalsStore } from '$lib/stores/terminals.svelte';
   import HelpModal from '$lib/components/HelpModal.svelte';
+  import ClaudeIntegrationModal from '$lib/components/ClaudeIntegrationModal.svelte';
   import Toast from '$lib/components/Toast.svelte';
+  import { seedDefaultTriggers } from '$lib/triggers/defaults';
   import { preferencesStore } from '$lib/stores/preferences.svelte';
   import { getTheme, applyUiTheme } from '$lib/themes';
   import { error as logError, info as logInfo } from '@tauri-apps/plugin-log';
@@ -24,6 +26,32 @@
 
   let { children }: Props = $props();
   let showHelp = $state(false);
+  let showClaudeIntegration = $state(false);
+
+  function dismissClaudeIntegration() {
+    showClaudeIntegration = false;
+    preferencesStore.setClaudeTriggersPrompted(true);
+  }
+
+  function enableClaudeIntegration() {
+    // Seed defaults if they don't exist yet, then enable all of them
+    const seeded = seedDefaultTriggers(
+      preferencesStore.triggers,
+      preferencesStore.hiddenDefaultTriggers,
+      true, // enableAll
+    ) ?? preferencesStore.triggers;
+    // Also enable any existing defaults that were disabled
+    const updated = seeded.map(t =>
+      t.default_id ? { ...t, enabled: true } : t
+    );
+    preferencesStore.setTriggers(updated);
+    dismissClaudeIntegration();
+  }
+
+  function askLaterClaudeIntegration() {
+    // Just close without setting the prompted flag — will ask again next launch
+    showClaudeIntegration = false;
+  }
 
   // Apply UI theme reactively (runs outside onMount so it reacts to changes)
   $effect(() => {
@@ -52,8 +80,14 @@
       e.preventDefault();
     }, true);
 
-    // Load preferences
-    preferencesStore.load().catch((e: unknown) => logError(`Failed to load preferences: ${e}`));
+    // Load preferences, then check if Claude integration prompt is needed
+    preferencesStore.load().then(() => {
+      if (!preferencesStore.claudeTriggersPrompted) {
+        const defaults = preferencesStore.triggers.filter(t => t.default_id);
+        const allDisabled = defaults.length === 0 || defaults.every(t => !t.enabled);
+        if (allDisabled) showClaudeIntegration = true;
+      }
+    }).catch((e: unknown) => logError(`Failed to load preferences: ${e}`));
 
     // Listen for cross-window preference changes
     let unlistenPrefs: (() => void) | undefined;
@@ -134,6 +168,12 @@
     function handleKeydown(e: KeyboardEvent) {
       // Escape - close open modals
       if (e.key === 'Escape') {
+        if (showClaudeIntegration) {
+          e.preventDefault();
+          e.stopPropagation();
+          askLaterClaudeIntegration();
+          return;
+        }
         if (showHelp) {
           e.preventDefault();
           e.stopPropagation();
@@ -413,4 +453,5 @@
 {@render children()}
 
 <HelpModal open={showHelp} onclose={() => showHelp = false} />
+<ClaudeIntegrationModal open={showClaudeIntegration} onclose={dismissClaudeIntegration} onenable={enableClaudeIntegration} onlater={askLaterClaudeIntegration} />
 <Toast />

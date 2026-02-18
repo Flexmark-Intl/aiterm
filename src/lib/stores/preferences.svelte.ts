@@ -37,8 +37,11 @@ function createPreferencesStore() {
   let toastDuration = $state(8);
   let notificationSound = $state('default');
   let notificationVolume = $state(50);
+  let migrateTabNotes = $state(true);
+  let notesScope = $state<'tab' | 'workspace'>('tab');
   let triggers = $state<Trigger[]>([]);
   let hiddenDefaultTriggers = $state<string[]>([]);
+  let claudeTriggersPrompted = $state(false);
 
   return {
     /** Resolves once the initial load() has completed. */
@@ -73,8 +76,11 @@ function createPreferencesStore() {
     get toastDuration() { return toastDuration; },
     get notificationSound() { return notificationSound; },
     get notificationVolume() { return notificationVolume; },
+    get migrateTabNotes() { return migrateTabNotes; },
+    get notesScope() { return notesScope; },
     get triggers() { return triggers; },
     get hiddenDefaultTriggers() { return hiddenDefaultTriggers; },
+    get claudeTriggersPrompted() { return claudeTriggersPrompted; },
 
     async load() {
       const prefs = await commands.getPreferences();
@@ -113,8 +119,11 @@ function createPreferencesStore() {
       toastDuration = prefs.toast_duration ?? 8;
       notificationSound = prefs.notification_sound ?? 'default';
       notificationVolume = prefs.notification_volume ?? 50;
+      migrateTabNotes = prefs.migrate_tab_notes ?? true;
+      notesScope = (prefs.notes_scope === 'workspace' ? 'workspace' : 'tab');
       triggers = prefs.triggers ?? [];
       hiddenDefaultTriggers = prefs.hidden_default_triggers ?? [];
+      claudeTriggersPrompted = prefs.claude_triggers_prompted ?? false;
       _resolveReady();
     },
 
@@ -263,6 +272,16 @@ function createPreferencesStore() {
       await this.save();
     },
 
+    async setMigrateTabNotes(value: boolean) {
+      migrateTabNotes = value;
+      await this.save();
+    },
+
+    async setNotesScope(value: 'tab' | 'workspace') {
+      notesScope = value;
+      await this.save();
+    },
+
     async setTriggers(value: Trigger[]) {
       triggers = value;
       await this.save();
@@ -270,6 +289,11 @@ function createPreferencesStore() {
 
     async setHiddenDefaultTriggers(value: string[]) {
       hiddenDefaultTriggers = value;
+      await this.save();
+    },
+
+    async setClaudeTriggersPrompted(value: boolean) {
+      claudeTriggersPrompted = value;
       await this.save();
     },
 
@@ -326,8 +350,11 @@ function createPreferencesStore() {
       toastDuration = prefs.toast_duration ?? 8;
       notificationSound = prefs.notification_sound ?? 'default';
       notificationVolume = prefs.notification_volume ?? 50;
+      migrateTabNotes = prefs.migrate_tab_notes ?? true;
+      notesScope = (prefs.notes_scope === 'workspace' ? 'workspace' : 'tab');
       triggers = prefs.triggers ?? [];
       hiddenDefaultTriggers = prefs.hidden_default_triggers ?? [];
+      claudeTriggersPrompted = prefs.claude_triggers_prompted ?? false;
     },
 
     async save() {
@@ -363,8 +390,11 @@ function createPreferencesStore() {
         toast_duration: toastDuration,
         notification_sound: notificationSound,
         notification_volume: notificationVolume,
+        migrate_tab_notes: migrateTabNotes,
+        notes_scope: notesScope === 'workspace' ? 'workspace' : null,
         triggers,
         hidden_default_triggers: hiddenDefaultTriggers,
+        claude_triggers_prompted: claudeTriggersPrompted,
       };
       await commands.setPreferences(prefs);
     }

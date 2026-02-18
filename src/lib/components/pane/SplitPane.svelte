@@ -124,6 +124,7 @@
 
       {#if pane.active_tab_id && workspacesStore.isNotesVisible(pane.active_tab_id)}
         {@const activeTab = pane.tabs.find(t => t.id === pane.active_tab_id)}
+        {@const ws = workspacesStore.workspaces.find(w => w.id === workspaceId)}
         {#if activeTab}
           {#key activeTab.id}
             <NotesPanel
@@ -132,6 +133,7 @@
               paneId={pane.id}
               notes={activeTab.notes}
               notesMode={activeTab.notes_mode}
+              workspaceNotes={ws?.workspace_notes ?? []}
               onclose={() => workspacesStore.toggleNotes(activeTab.id)}
             />
           {/key}

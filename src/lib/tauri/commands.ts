@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { AppData, DuplicateWorkspaceResult, Pane, Preferences, SplitDirection, Tab, WindowData, Workspace } from './types';
+import type { AppData, DuplicateWorkspaceResult, Pane, Preferences, SplitDirection, Tab, WindowData, Workspace, WorkspaceNote } from './types';
 
 // Terminal commands
 export async function spawnTerminal(ptyId: string, tabId: string, cols: number, rows: number, cwd?: string | null): Promise<void> {
@@ -212,6 +212,19 @@ export async function setTabAutoResumeContext(
   command: string | null,
 ): Promise<void> {
   return invoke('set_tab_auto_resume_context', { workspaceId, paneId, tabId, cwd, sshCommand, remoteCwd, command });
+}
+
+// Workspace note commands
+export async function addWorkspaceNote(workspaceId: string, content: string, mode: string | null): Promise<WorkspaceNote> {
+  return invoke('add_workspace_note', { workspaceId, content, mode });
+}
+
+export async function updateWorkspaceNote(workspaceId: string, noteId: string, content: string, mode: string | null): Promise<void> {
+  return invoke('update_workspace_note', { workspaceId, noteId, content, mode });
+}
+
+export async function deleteWorkspaceNote(workspaceId: string, noteId: string): Promise<void> {
+  return invoke('delete_workspace_note', { workspaceId, noteId });
 }
 
 // Sound commands

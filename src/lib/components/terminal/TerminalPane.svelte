@@ -255,8 +255,11 @@
     terminal.parser.registerOscHandler(633, handleShellIntegration);
 
     // OSC 9: notification — programs emit \e]9;message\a to request a notification
+    // Some programs (e.g. Claude Code) emit OSC 9 with protocol data like "4;0;"
+    // that isn't a human-readable message — skip payloads that are only digits/semicolons.
     terminal.parser.registerOscHandler(9, (data) => {
       if (!trackActivity || !data) return true;
+      if (/^[\d;]*$/.test(data)) return true;
       const oscState = terminalsStore.getOsc(tabId);
       const title = oscState?.title || 'Terminal';
       dispatch(title, data, 'info');
@@ -299,6 +302,13 @@
     // Restore scrollback if available
     if (initialScrollback) {
       terminal.write(initialScrollback);
+
+      // Reset DEC private modes that programs may have enabled during the
+      // previous session. The serialize addon preserves mode state (e.g.
+      // ?1004h for focus reporting), which causes xterm.js to send escape
+      // sequences to the new shell before it's ready, producing garbled output.
+      terminal.write('\x1b[?1004l'); // Disable focus reporting
+      terminal.write('\x1b[?2004l'); // Disable bracketed paste (shell manages its own)
 
       // Check if the last line looks like a shell prompt — if so, erase it
       // to avoid a duplicate prompt when the new shell starts.

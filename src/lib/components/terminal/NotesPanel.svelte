@@ -5,6 +5,7 @@
   import { marked } from 'marked';
   import { open as shellOpen } from '@tauri-apps/plugin-shell';
   import Icon from '$lib/components/Icon.svelte';
+  import type { WorkspaceNote } from '$lib/tauri/types';
 
   interface Props {
     tabId: string;
@@ -12,15 +13,25 @@
     paneId: string;
     notes: string | null;
     notesMode: string | null;
+    workspaceNotes: WorkspaceNote[];
     onclose: () => void;
   }
 
-  let { tabId, workspaceId, paneId, notes, notesMode, onclose }: Props = $props();
+  let { tabId, workspaceId, paneId, notes, notesMode, workspaceNotes, onclose }: Props = $props();
 
+  // Scope is persisted in preferences so it survives app restarts
+  const scope = $derived(preferencesStore.notesScope);
   let value = $state(notes ?? '');
   let mode = $state<'source' | 'render'>((notesMode ?? 'source') as 'source' | 'render');
   let textareaEl = $state<HTMLTextAreaElement | null>(null);
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Workspace notes state
+  let editingNoteId = $state<string | null>(null);
+  let wsValue = $state('');
+  let wsMode = $state<'source' | 'render'>('source');
+  let wsSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  let deletingNoteId = $state<string | null>(null);
 
   const textareaStyle = $derived(
     `font-family: '${preferencesStore.fontFamily}', monospace; font-size: ${preferencesStore.fontSize}px; white-space: ${preferencesStore.notesWordWrap ? 'pre-wrap' : 'pre'}; overflow-x: ${preferencesStore.notesWordWrap ? 'hidden' : 'auto'};`
@@ -40,12 +51,13 @@
 
   const renderedHtml = $derived.by(() => {
     checkboxIndex = 0;
-    return marked.parse(value) as string;
+    const src = scope === 'tab' ? value : wsValue;
+    return marked.parse(src) as string;
   });
 
   // Focus at end of content when entering source mode
   $effect(() => {
-    if (mode === 'source' && textareaEl) {
+    if (scope === 'tab' && mode === 'source' && textareaEl) {
       textareaEl.focus();
       textareaEl.selectionStart = textareaEl.selectionEnd = textareaEl.value.length;
     }
@@ -57,8 +69,9 @@
     workspacesStore.setTabNotes(workspaceId, paneId, tabId, n);
   }
 
-  // Debounced auto-save: 1s after last keystroke
+  // Debounced auto-save for tab notes: 1s after last keystroke
   $effect(() => {
+    if (scope !== 'tab') return;
     void value;
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(() => save(), 1000);
@@ -67,12 +80,38 @@
     };
   });
 
+  // Debounced auto-save for workspace notes
+  $effect(() => {
+    if (scope !== 'workspace' || !editingNoteId) return;
+    void wsValue;
+    if (wsSaveTimer) clearTimeout(wsSaveTimer);
+    wsSaveTimer = setTimeout(() => saveWorkspaceNote(), 1000);
+    return () => {
+      if (wsSaveTimer) clearTimeout(wsSaveTimer);
+    };
+  });
+
+  function saveWorkspaceNote() {
+    const noteId = untrack(() => editingNoteId);
+    const content = untrack(() => wsValue);
+    const m = untrack(() => wsMode);
+    if (!noteId) return;
+    workspacesStore.updateWorkspaceNote(workspaceId, noteId, content, m);
+  }
+
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
       e.preventDefault();
       e.stopPropagation();
-      if (saveTimer) clearTimeout(saveTimer);
-      save();
+      if (scope === 'tab') {
+        if (saveTimer) clearTimeout(saveTimer);
+        save();
+      } else if (editingNoteId) {
+        if (wsSaveTimer) clearTimeout(wsSaveTimer);
+        saveWorkspaceNote();
+        wsView = 'list';
+        return;
+      }
       onclose();
     }
     if (e.key === 'Tab') {
@@ -80,7 +119,11 @@
       const target = e.target as HTMLTextAreaElement;
       const start = target.selectionStart;
       const end = target.selectionEnd;
-      value = value.substring(0, start) + '  ' + value.substring(end);
+      if (scope === 'tab') {
+        value = value.substring(0, start) + '  ' + value.substring(end);
+      } else {
+        wsValue = wsValue.substring(0, start) + '  ' + wsValue.substring(end);
+      }
       requestAnimationFrame(() => {
         target.selectionStart = target.selectionEnd = start + 2;
       });
@@ -88,82 +131,277 @@
   }
 
   function toggleMode() {
-    mode = mode === 'source' ? 'render' : 'source';
-    workspacesStore.setTabNotesMode(workspaceId, paneId, tabId, mode);
+    if (scope === 'tab') {
+      mode = mode === 'source' ? 'render' : 'source';
+      workspacesStore.setTabNotesMode(workspaceId, paneId, tabId, mode);
+    } else {
+      wsMode = wsMode === 'source' ? 'render' : 'source';
+      if (editingNoteId) {
+        workspacesStore.updateWorkspaceNote(workspaceId, editingNoteId, wsValue, wsMode);
+      }
+    }
+  }
+
+  function currentMode(): 'source' | 'render' {
+    return scope === 'tab' ? mode : wsMode;
+  }
+
+  // Drag-resize from left edge
+  let dragging = $state(false);
+  let dragStartX = 0;
+  let dragStartWidth = 0;
+
+  function handleResizePointerDown(e: PointerEvent) {
+    e.preventDefault();
+    dragging = true;
+    dragStartX = e.clientX;
+    dragStartWidth = preferencesStore.notesWidth;
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  }
+
+  function handleResizePointerMove(e: PointerEvent) {
+    if (!dragging) return;
+    const delta = dragStartX - e.clientX;
+    const newWidth = Math.max(200, Math.min(600, dragStartWidth + delta));
+    preferencesStore.setNotesWidth(newWidth);
+  }
+
+  function handleResizePointerUp() {
+    dragging = false;
+  }
+
+  function handleCheckboxToggle(src: string, idx: number): string {
+    let count = 0;
+    return src.replace(/- \[([ xX])\]/g, (match, ch) => {
+      if (count++ === idx) {
+        return ch === ' ' ? '- [x]' : '- [ ]';
+      }
+      return match;
+    });
   }
 
   function handleRenderClick(e: MouseEvent) {
     const target = e.target as HTMLElement;
 
-    // Handle checkbox toggles (clicking checkbox or its label text)
     const checkbox = target instanceof HTMLInputElement && target.type === 'checkbox'
       ? target
       : target.closest('li')?.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
     if (checkbox?.dataset.index != null) {
       e.preventDefault();
       const idx = parseInt(checkbox.dataset.index, 10);
-      let count = 0;
-      value = value.replace(/- \[([ xX])\]/g, (match, ch) => {
-        if (count++ === idx) {
-          return ch === ' ' ? '- [x]' : '- [ ]';
-        }
-        return match;
-      });
-      save();
+      if (scope === 'tab') {
+        value = handleCheckboxToggle(value, idx);
+        save();
+      } else {
+        wsValue = handleCheckboxToggle(wsValue, idx);
+        saveWorkspaceNote();
+      }
       return;
     }
 
-    // Handle link clicks
     const anchor = target.closest('a');
     if (anchor?.href) {
       e.preventDefault();
       shellOpen(anchor.href);
     }
   }
+
+  // Workspace note helpers
+  async function openNote(note: WorkspaceNote) {
+    editingNoteId = note.id;
+    wsValue = note.content;
+    wsMode = (note.mode ?? 'source') as 'source' | 'render';
+    wsView = 'editor';
+  }
+
+  async function createNewNote() {
+    const note = await workspacesStore.addWorkspaceNote(workspaceId, '', null);
+    if (note) {
+      editingNoteId = note.id;
+      wsValue = '';
+      wsMode = 'source';
+      wsView = 'editor';
+    }
+  }
+
+  async function confirmDeleteNote(noteId: string) {
+    await workspacesStore.deleteWorkspaceNote(workspaceId, noteId);
+    deletingNoteId = null;
+    if (editingNoteId === noteId) {
+      editingNoteId = null;
+    }
+  }
+
+  function noteTitle(content: string): string {
+    const firstLine = content.split('\n')[0]?.trim();
+    if (!firstLine) return 'Untitled';
+    return firstLine.length > 60 ? firstLine.slice(0, 60) + '...' : firstLine;
+  }
+
+  function relativeTime(isoDate: string): string {
+    const diff = Date.now() - new Date(isoDate).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    if (days === 1) return 'yesterday';
+    if (days < 30) return `${days}d ago`;
+    return new Date(isoDate).toLocaleDateString();
+  }
+
+  // Workspace sub-view: 'list' or 'editor'
+  let wsView = $state<'list' | 'editor'>('list');
+
+  // When switching to workspace scope, default to list view
+  $effect(() => {
+    if (scope === 'workspace') {
+      // If editing a note that was deleted, go back to list
+      if (editingNoteId && !workspaceNotes.find(n => n.id === editingNoteId)) {
+        editingNoteId = null;
+        wsView = 'list';
+      }
+    }
+  });
+
+  // Sort workspace notes by most recent first
+  const sortedWorkspaceNotes = $derived.by(() => {
+    return [...workspaceNotes].sort((a, b) =>
+      new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+    );
+  });
+
+  const showWsList = $derived(scope === 'workspace' && wsView === 'list');
+  const showWsEditor = $derived(scope === 'workspace' && wsView === 'editor');
+
 </script>
 
 <div class="notes-panel" style:width="{preferencesStore.notesWidth}px" style:min-width="{preferencesStore.notesWidth}px">
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="resize-handle"
+    onpointerdown={handleResizePointerDown}
+    onpointermove={handleResizePointerMove}
+    onpointerup={handleResizePointerUp}
+  ></div>
   <div class="notes-header">
-    <span class="notes-title">Notes</span>
-    <div class="header-actions">
+    <div class="scope-toggle">
       <button
-        class="mode-toggle"
-        class:active={mode === 'render'}
-        onclick={toggleMode}
-        title={mode === 'source' ? 'Preview' : 'Edit'}
-      >
-        {#if mode === 'source'}
-          <Icon name="eye" />
-        {:else}
-          <Icon name="pencil" />
-        {/if}
-      </button>
+        class="scope-btn"
+        class:active={scope === 'tab'}
+        onclick={() => preferencesStore.setNotesScope('tab')}
+        title="Tab notes"
+      >Tab</button>
+      <button
+        class="scope-btn"
+        class:active={scope === 'workspace'}
+        onclick={() => preferencesStore.setNotesScope('workspace')}
+        title="Workspace notes"
+      >Workspace</button>
+    </div>
+    <div class="header-actions">
+      {#if showWsEditor}
+        <button
+          class="header-list-btn"
+          onclick={() => {
+            if (wsSaveTimer) clearTimeout(wsSaveTimer);
+            if (editingNoteId) saveWorkspaceNote();
+            wsView = 'list';
+          }}
+          title="All workspace notes"
+        >
+          <Icon name="list" />
+        </button>
+      {/if}
+      {#if showWsList}
+        <!-- No mode toggle in list view -->
+      {:else}
+        <button
+          class="mode-toggle"
+          class:active={currentMode() === 'render'}
+          onclick={toggleMode}
+          title={currentMode() === 'source' ? 'Preview' : 'Edit'}
+        >
+          {#if currentMode() === 'source'}
+            <Icon name="eye" />
+          {:else}
+            <Icon name="pencil" />
+          {/if}
+        </button>
+      {/if}
       <button class="close-btn" onclick={() => {
         if (saveTimer) clearTimeout(saveTimer);
-        save();
+        if (wsSaveTimer) clearTimeout(wsSaveTimer);
+        if (scope === 'tab') save();
+        else if (editingNoteId) saveWorkspaceNote();
         onclose();
       }}>&times;</button>
     </div>
   </div>
 
-  {#if mode === 'source'}
-    <textarea
-      class="notes-textarea"
-      bind:value={value}
-      bind:this={textareaEl}
-      onkeydown={handleKeydown}
-      placeholder="Jot down commands, notes, connection details..."
-      spellcheck="false"
-      style={textareaStyle}
-    ></textarea>
-  {:else}
-    <!-- svelte-ignore a11y_click_events_have_key_events -->
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div
-      class="notes-render"
-      onclick={handleRenderClick}
-      style={renderStyle}
-    >{@html renderedHtml}</div>
+  {#if scope === 'tab'}
+    {#if mode === 'source'}
+      <textarea
+        class="notes-textarea"
+        bind:value={value}
+        bind:this={textareaEl}
+        onkeydown={handleKeydown}
+        placeholder="Jot down commands, notes, connection details..."
+        spellcheck="false"
+        style={textareaStyle}
+      ></textarea>
+    {:else}
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div
+        class="notes-render"
+        onclick={handleRenderClick}
+        style={renderStyle}
+      >{@html renderedHtml}</div>
+    {/if}
+  {:else if showWsList}
+    <div class="ws-notes-list">
+      <button class="new-note-btn" onclick={createNewNote}>+ New Note</button>
+      {#each sortedWorkspaceNotes as note (note.id)}
+        <div class="ws-note-card">
+          <button class="ws-note-content" onclick={() => openNote(note)}>
+            <span class="ws-note-title">{noteTitle(note.content)}</span>
+            <span class="ws-note-date">{relativeTime(note.updated_at)}</span>
+          </button>
+          <div class="ws-note-actions">
+            {#if deletingNoteId === note.id}
+              <span class="delete-confirm">
+                Delete?
+                <button class="confirm-yes" onclick={() => confirmDeleteNote(note.id)}>Yes</button>
+                <button class="confirm-no" onclick={() => deletingNoteId = null}>No</button>
+              </span>
+            {:else}
+              <button class="ws-note-delete" onclick={() => deletingNoteId = note.id} title="Delete note">&times;</button>
+            {/if}
+          </div>
+        </div>
+      {/each}
+    </div>
+  {:else if showWsEditor}
+    {#if wsMode === 'source'}
+      <textarea
+        class="notes-textarea"
+        bind:value={wsValue}
+        onkeydown={handleKeydown}
+        placeholder="Write workspace notes..."
+        spellcheck="false"
+        style={textareaStyle}
+      ></textarea>
+    {:else}
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div
+        class="notes-render"
+        onclick={handleRenderClick}
+        style={renderStyle}
+      >{@html renderedHtml}</div>
+    {/if}
   {/if}
 </div>
 
@@ -173,6 +411,23 @@
     flex-direction: column;
     background: var(--bg-medium);
     border-left: 1px solid var(--bg-light);
+    position: relative;
+  }
+
+  .resize-handle {
+    position: absolute;
+    top: 0;
+    left: -3px;
+    width: 6px;
+    height: 100%;
+    cursor: col-resize;
+    z-index: 10;
+  }
+
+  .resize-handle:hover,
+  .resize-handle:active {
+    background: var(--accent);
+    opacity: 0.3;
   }
 
   .notes-header {
@@ -184,18 +439,55 @@
     flex-shrink: 0;
   }
 
-  .notes-title {
-    font-size: 12px;
-    font-weight: 600;
+  .scope-toggle {
+    display: flex;
+    gap: 2px;
+    background: var(--bg-dark);
+    border-radius: 4px;
+    padding: 2px;
+  }
+
+  .scope-btn {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 3px;
     color: var(--fg-dim);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+    background: transparent;
+    transition: background 0.1s, color 0.1s;
+    cursor: pointer;
+    border: none;
+  }
+
+  .scope-btn:hover {
+    color: var(--fg);
+  }
+
+  .scope-btn.active {
+    background: var(--bg-light);
+    color: var(--fg);
   }
 
   .header-actions {
     display: flex;
     align-items: center;
     gap: 4px;
+  }
+
+  .header-list-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    color: var(--fg-dim);
+    border-radius: 4px;
+    transition: background 0.1s, color 0.1s;
+  }
+
+  .header-list-btn:hover {
+    background: var(--bg-light);
+    color: var(--fg);
   }
 
   .mode-toggle {
@@ -387,4 +679,122 @@
     background: var(--bg-medium);
     font-weight: 600;
   }
+
+  /* Workspace notes list */
+  .ws-notes-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+    background: var(--bg-dark);
+  }
+
+  .new-note-btn {
+    width: 100%;
+    padding: 8px;
+    margin-bottom: 8px;
+    background: transparent;
+    color: var(--accent);
+    border: 1px dashed var(--bg-light);
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+
+  .new-note-btn:hover {
+    background: var(--bg-medium);
+  }
+
+  .ws-note-card {
+    display: flex;
+    align-items: center;
+    border: 1px solid var(--bg-light);
+    border-radius: 6px;
+    margin-bottom: 4px;
+    overflow: hidden;
+  }
+
+  .ws-note-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 10px;
+    background: transparent;
+    border: none;
+    text-align: left;
+    cursor: pointer;
+    color: var(--fg);
+    min-width: 0;
+    transition: background 0.1s;
+  }
+
+  .ws-note-content:hover {
+    background: var(--bg-medium);
+  }
+
+  .ws-note-title {
+    font-size: 12px;
+    color: var(--fg);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .ws-note-date {
+    font-size: 10px;
+    color: var(--fg-dim);
+  }
+
+  .ws-note-actions {
+    padding: 0 8px;
+    flex-shrink: 0;
+  }
+
+  .ws-note-delete {
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--fg-dim);
+    border-radius: 4px;
+    font-size: 14px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: background 0.1s, color 0.1s;
+  }
+
+  .ws-note-delete:hover {
+    background: var(--bg-light);
+    color: var(--fg);
+  }
+
+  .delete-confirm {
+    font-size: 11px;
+    color: var(--fg-dim);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .confirm-yes, .confirm-no {
+    font-size: 11px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    border: none;
+    cursor: pointer;
+  }
+
+  .confirm-yes {
+    background: #f7768e;
+    color: var(--bg-dark);
+  }
+
+  .confirm-no {
+    background: var(--bg-light);
+    color: var(--fg);
+  }
+
 </style>

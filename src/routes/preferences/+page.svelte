@@ -11,60 +11,7 @@
   import { tick, onMount } from 'svelte';
   import { slide } from 'svelte/transition';
   import { getCurrentWindow } from '@tauri-apps/api/window';
-
-  /** App-provided default trigger templates. Keyed by stable default_id. */
-  const DEFAULT_TRIGGERS: Record<string, Omit<Trigger, 'id' | 'enabled' | 'workspaces' | 'default_id'>> = {
-    'claude-resume': {
-      name: 'Claude Resume',
-      description: 'Captures the claude --resume command and session ID when Claude Code exits. Useful for setting up auto-resume to reconnect to the same session.',
-      pattern: 'Resume this session with:.*?(claude --resume (?:"[^"\\n]+"|([^\\s"\\n]+)))',
-      actions: [
-        { action_type: 'notify', command: null, message: 'Captured: %claudeResumeCommand', tab_state: null },
-      ],
-      cooldown: 1,
-      variables: [
-        { name: 'claudeResumeCommand', group: 1 },
-        { name: 'claudeSessionId', group: 2 },
-      ],
-      plain_text: false,
-    },
-    'claude-session-id': {
-      name: 'Claude Session ID',
-      description: 'Captures the session UUID from Claude Code\'s /status command when run. Useful for when you want to setup a resume command based on the Session ID.',
-      pattern: 'Session\\s*ID:\\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})',
-      actions: [
-        { action_type: 'notify', command: null, message: 'Captured: claudeSessionId `%claudeSessionId`', tab_state: null },
-      ],
-      cooldown: 0,
-      variables: [
-        { name: 'claudeSessionId', group: 1 },
-      ],
-      plain_text: false,
-    },
-    'claude-question': {
-      name: 'Claude Question',
-      description: 'Detects when Claude Code is prompting for user input (plan approval, permission requests). Sets the tab state to "question" so the tab indicator shows it needs attention.',
-      pattern: 'Would you like to proceed?',
-      actions: [
-        { action_type: 'set_tab_state', command: null, message: null, tab_state: 'question' },
-      ],
-      cooldown: 1,
-      variables: [],
-      plain_text: true,
-    },
-    'claude-plan-ready': {
-      name: 'Claude Plan Ready',
-      description: 'Detects when Claude has a plan ready for review. Sets the tab state to "question" and sends a notification so you know to switch back.',
-      pattern: 'has written up a plan and is ready to execute',
-      actions: [
-        { action_type: 'set_tab_state', command: null, message: null, tab_state: 'question' },
-        { action_type: 'notify', command: null, message: 'Claude has a plan ready for review', tab_state: null },
-      ],
-      cooldown: 1,
-      variables: [],
-      plain_text: true,
-    },
-  };
+  import { DEFAULT_TRIGGERS, seedDefaultTriggers as seedDefaults } from '$lib/triggers/defaults';
 
   function actionsEqual(a: TriggerActionEntry[], b: TriggerActionEntry[]): boolean {
     if (a.length !== b.length) return false;
@@ -72,6 +19,7 @@
       const be = b[i];
       return ae.action_type === be.action_type
         && (ae.command ?? null) === (be.command ?? null)
+        && (ae.title ?? null) === (be.title ?? null)
         && (ae.message ?? null) === (be.message ?? null)
         && (ae.tab_state ?? null) === (be.tab_state ?? null);
     });
@@ -96,6 +44,7 @@
       || (trigger.description ?? '') !== (tmpl.description ?? '')
       || trigger.pattern !== tmpl.pattern
       || trigger.cooldown !== tmpl.cooldown
+      || trigger.plain_text !== tmpl.plain_text
       || !actionsEqual(trigger.actions, tmpl.actions)
       || !variablesEqual(trigger.variables, tmpl.variables);
   }
@@ -110,6 +59,7 @@
       description: tmpl.description ?? null,
       pattern: tmpl.pattern,
       cooldown: tmpl.cooldown,
+      plain_text: tmpl.plain_text,
       actions: structuredClone(tmpl.actions),
       variables: structuredClone(tmpl.variables),
     });
@@ -135,49 +85,11 @@
   });
 
   function seedDefaultTriggers() {
-    let existing = [...preferencesStore.triggers];
-    const hidden = preferencesStore.hiddenDefaultTriggers;
-    let changed = false;
-
-    for (const [defaultId, tmpl] of Object.entries(DEFAULT_TRIGGERS)) {
-      if (hidden.includes(defaultId)) continue;
-
-      // Already linked by default_id — backfill description if missing
-      const linked = existing.find(t => t.default_id === defaultId);
-      if (linked) {
-        if (!linked.description && tmpl.description) {
-          linked.description = tmpl.description;
-          changed = true;
-        }
-        continue;
-      }
-
-      // Adopt existing trigger that matches by name (migration for pre-default triggers)
-      const match = existing.find(t => !t.default_id && t.name === tmpl.name);
-      if (match) {
-        match.default_id = defaultId;
-        // Fill in description if the trigger predates the field
-        if (!match.description && tmpl.description) {
-          match.description = tmpl.description;
-        }
-        changed = true;
-        continue;
-      }
-
-      // Seed new default trigger (disabled)
-      existing = [{
-        id: crypto.randomUUID(),
-        ...structuredClone(tmpl),
-        enabled: false,
-        workspaces: [],
-        default_id: defaultId,
-      }, ...existing];
-      changed = true;
-    }
-
-    if (changed) {
-      preferencesStore.setTriggers(existing);
-    }
+    const result = seedDefaults(
+      preferencesStore.triggers,
+      preferencesStore.hiddenDefaultTriggers,
+    );
+    if (result) preferencesStore.setTriggers(result);
   }
 
   const sectionIds = ['appearance', 'terminal', 'ui', 'panels', 'notes', 'notifications', 'triggers'] as const;
@@ -240,6 +152,11 @@
       return;
     }
     doDeleteTrigger(id);
+  }
+
+  function restoreAllDefaults() {
+    preferencesStore.setHiddenDefaultTriggers([]);
+    seedDefaultTriggers();
   }
 
   function doDeleteTrigger(id: string) {
@@ -726,21 +643,21 @@
 
         <h3 class="section-heading">General</h3>
 
-        <div class="setting">
-          <label for="notes-width">Panel Width</label>
-          <div class="number-input-wrapper">
-            <button class="number-btn" onclick={() => preferencesStore.setNotesWidth(preferencesStore.notesWidth - 20)}>−</button>
-            <input
-              type="number"
-              id="notes-width"
-              class="number-input"
-              min="200"
-              max="600"
-              value={preferencesStore.notesWidth}
-              onchange={(e) => preferencesStore.setNotesWidth(parseInt(e.currentTarget.value) || 320)}
-            />
-            <button class="number-btn" onclick={() => preferencesStore.setNotesWidth(preferencesStore.notesWidth + 20)}>+</button>
+        <div class="setting" style="align-items: flex-start;">
+          <div>
+            <label for="migrate-tab-notes">Migrate Tab Notes</label>
+            <p class="setting-hint">When closing a tab, move its notes to the workspace.</p>
           </div>
+          <button
+            id="migrate-tab-notes"
+            class="toggle"
+            class:active={preferencesStore.migrateTabNotes}
+            onclick={() => preferencesStore.setMigrateTabNotes(!preferencesStore.migrateTabNotes)}
+            aria-pressed={preferencesStore.migrateTabNotes}
+            aria-label="Toggle migrate tab notes"
+          >
+            <span class="toggle-knob"></span>
+          </button>
         </div>
 
         <div class="setting">
@@ -919,7 +836,12 @@
           Each trigger has a cooldown to prevent firing in rapid loops.
         </p>
 
-        <button class="add-pattern-btn" style="margin-bottom: 12px;" onclick={addTrigger}>+ Add Trigger</button>
+        <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+          <button class="add-pattern-btn" onclick={addTrigger}>+ Add Trigger</button>
+          {#if preferencesStore.hiddenDefaultTriggers.length > 0}
+            <button class="add-pattern-btn" onclick={restoreAllDefaults}>Restore Defaults</button>
+          {/if}
+        </div>
 
         {#each preferencesStore.triggers as trigger (trigger.id)}
           <div class="trigger-card">
@@ -1001,7 +923,7 @@
                           <span class="field-hint">(regex, supports multiline)</span>
                         {/if}
                       </label>
-                      <Tooltip text="Match what you see on screen. TUI apps like Claude Code position text with escape codes — plain text mode ignores those gaps so your pattern matches the visible words.">
+                      <Tooltip text="Match what you see on screen. TUI apps like Claude Code position text with escape codes — plain text mode ignores those gaps so your pattern matches the visible words. Use (option A|option B) for alternation.">
                         <label class="plain-text-toggle">
                           <input type="checkbox" checked={trigger.plain_text} onchange={() => updateTrigger(trigger.id, { plain_text: !trigger.plain_text })} />
                           Plain text
@@ -1026,11 +948,11 @@
                       <label>Cooldown <span class="field-hint">(seconds)</span></label>
                       <input
                         type="text"
-                        inputmode="numeric"
+                        inputmode="decimal"
                         class="pattern-input no-spinner"
                         style="width: 80px;"
                         value={trigger.cooldown}
-                        onchange={(e) => updateTrigger(trigger.id, { cooldown: Math.max(0, parseInt(e.currentTarget.value) || 0) })}
+                        onchange={(e) => updateTrigger(trigger.id, { cooldown: Math.max(0, parseFloat(e.currentTarget.value) || 0) })}
                       />
                     </div>
                     <div class="trigger-field" style="flex: 1; min-width: 0;">
@@ -1176,18 +1098,35 @@
                           }}
                         />
                       {:else if entry.action_type === 'notify'}
-                        <input
-                          type="text"
-                          class="pattern-input action-command-input"
-                          value={entry.message ?? ''}
-                          placeholder="message (%vars, %title supported)"
-                          onchange={(e) => {
-                            const actions = trigger.actions.map((a, i) =>
-                              i === ai ? { ...a, message: e.currentTarget.value || null } : a
-                            );
-                            updateTrigger(trigger.id, { actions });
-                          }}
-                        />
+                        <div class="notify-fields">
+                          <input
+                            type="text"
+                            class="pattern-input action-command-input"
+                            value={entry.title ?? ''}
+                            placeholder="title (default: %tabtitle)"
+                            onchange={(e) => {
+                              const actions = trigger.actions.map((a, i) =>
+                                i === ai ? { ...a, title: e.currentTarget.value || null } : a
+                              );
+                              updateTrigger(trigger.id, { actions });
+                            }}
+                          />
+                          <input
+                            type="text"
+                            class="pattern-input action-command-input"
+                            value={entry.message ?? ''}
+                            placeholder="body"
+                            onchange={(e) => {
+                              const actions = trigger.actions.map((a, i) =>
+                                i === ai ? { ...a, message: e.currentTarget.value || null } : a
+                              );
+                              updateTrigger(trigger.id, { actions });
+                            }}
+                          />
+                        </div>
+                        <Tooltip text={"%title — OSC title (set by program)\n%tab — tab name from workspace\n%tabtitle — full tab display name\n%varName — trigger capture variables"}>
+                          <span class="notify-help">?</span>
+                        </Tooltip>
                       {:else if entry.action_type === 'set_tab_state'}
                         <select
                           class="pattern-input action-type-select"
@@ -1216,7 +1155,7 @@
                   <button
                     class="add-pattern-btn"
                     onclick={() => {
-                      const actions = [...trigger.actions, { action_type: 'notify' as TriggerActionType, command: null, message: null, tab_state: null }];
+                      const actions = [...trigger.actions, { action_type: 'notify' as TriggerActionType, command: null, title: null, message: null, tab_state: null }];
                       updateTrigger(trigger.id, { actions });
                     }}
                   >+ Add Action</button>
@@ -1875,6 +1814,29 @@
   .action-command-input {
     flex: 1;
     min-width: 0;
+  }
+
+  .notify-fields {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .notify-help {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--bg-light);
+    color: var(--fg-dim);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: help;
+    flex-shrink: 0;
   }
 
   .var-row {

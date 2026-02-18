@@ -212,6 +212,16 @@ pub struct Pane {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkspaceNote {
+    pub id: String,
+    pub content: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Workspace {
     pub id: String,
     pub name: String,
@@ -221,6 +231,8 @@ pub struct Workspace {
     pub active_pane_id: Option<String>,
     #[serde(default)]
     pub split_root: Option<SplitNode>,
+    #[serde(default)]
+    pub workspace_notes: Vec<WorkspaceNote>,
     // Old field kept for migration deserialization only
     #[serde(default, alias = "window_sizes", skip_serializing)]
     #[allow(dead_code)]
@@ -380,8 +392,8 @@ where
     }
 }
 
-fn default_trigger_cooldown() -> u32 {
-    5
+fn default_trigger_cooldown() -> f64 {
+    5.0
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
@@ -400,6 +412,8 @@ pub struct TriggerActionEntry {
     pub action_type: TriggerActionType,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -428,7 +442,7 @@ pub struct Trigger {
     #[serde(default)]
     pub workspaces: Vec<String>,
     #[serde(default = "default_trigger_cooldown")]
-    pub cooldown: u32,
+    pub cooldown: f64,
     /// Variable extraction from capture groups (ordered)
     #[serde(default)]
     pub variables: Vec<VariableMapping>,
@@ -517,11 +531,18 @@ pub struct Preferences {
     pub notification_sound: String,
     #[serde(default = "default_notification_volume")]
     pub notification_volume: u32,
+    #[serde(default = "default_true")]
+    pub migrate_tab_notes: bool,
+    #[serde(default)]
+    pub notes_scope: Option<String>,
     #[serde(default)]
     pub triggers: Vec<Trigger>,
     /// Default trigger IDs the user has intentionally deleted (prevents re-seeding).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hidden_default_triggers: Vec<String>,
+    /// Whether the user has been prompted to enable Claude Code integrations.
+    #[serde(default)]
+    pub claude_triggers_prompted: bool,
 }
 
 impl Default for Preferences {
@@ -558,8 +579,11 @@ impl Default for Preferences {
             toast_duration: default_toast_duration(),
             notification_sound: default_notification_sound(),
             notification_volume: default_notification_volume(),
+            migrate_tab_notes: true,
+            notes_scope: None,
             triggers: Vec::new(),
             hidden_default_triggers: Vec::new(),
+            claude_triggers_prompted: false,
         }
     }
 }
@@ -611,6 +635,7 @@ impl Workspace {
             panes: vec![pane],
             active_pane_id: Some(pane_id.clone()),
             split_root: Some(SplitNode::Leaf { pane_id }),
+            workspace_notes: Vec::new(),
             pane_sizes: None,
         }
     }

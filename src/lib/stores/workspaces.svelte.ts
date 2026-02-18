@@ -1,5 +1,5 @@
 import type { Terminal } from '@xterm/xterm';
-import type { SplitDirection, SplitNode, Tab, Pane, Workspace } from '$lib/tauri/types';
+import type { SplitDirection, SplitNode, Tab, Pane, Workspace, WorkspaceNote } from '$lib/tauri/types';
 import * as commands from '$lib/tauri/commands';
 import { terminalsStore } from '$lib/stores/terminals.svelte';
 import { preferencesStore } from '$lib/stores/preferences.svelte';
@@ -402,6 +402,22 @@ function createWorkspacesStore() {
     },
 
     async deleteTab(workspaceId: string, paneId: string, tabId: string) {
+      // Migrate tab notes to workspace if enabled
+      if (preferencesStore.migrateTabNotes) {
+        const ws = workspaces.find(w => w.id === workspaceId);
+        const pane = ws?.panes.find(p => p.id === paneId);
+        const tab = pane?.tabs.find(t => t.id === tabId);
+        if (tab?.notes?.trim()) {
+          try {
+            const note = await commands.addWorkspaceNote(workspaceId, tab.notes, tab.notes_mode ?? null);
+            if (ws) {
+              ws.workspace_notes = [...ws.workspace_notes, note];
+            }
+          } catch (e) {
+            logError(`Failed to migrate tab notes: ${e}`);
+          }
+        }
+      }
       await commands.deleteTab(workspaceId, paneId, tabId);
       workspaces = workspaces.map(w => {
         if (w.id === workspaceId) {
@@ -992,6 +1008,7 @@ function createWorkspacesStore() {
       return notesVisible.has(tabId);
     },
 
+
     async setTabNotes(workspaceId: string, paneId: string, tabId: string, notes: string | null) {
       await commands.setTabNotes(workspaceId, paneId, tabId, notes);
       workspaces = workspaces.map(w => {
@@ -1010,6 +1027,47 @@ function createWorkspacesStore() {
               return p;
             })
           };
+        }
+        return w;
+      });
+    },
+
+    async addWorkspaceNote(workspaceId: string, content: string, mode: string | null): Promise<WorkspaceNote | null> {
+      try {
+        const note = await commands.addWorkspaceNote(workspaceId, content, mode);
+        workspaces = workspaces.map(w => {
+          if (w.id === workspaceId) {
+            return { ...w, workspace_notes: [...w.workspace_notes, note] };
+          }
+          return w;
+        });
+        return note;
+      } catch (e) {
+        logError(`Failed to add workspace note: ${e}`);
+        return null;
+      }
+    },
+
+    async updateWorkspaceNote(workspaceId: string, noteId: string, content: string, mode: string | null) {
+      await commands.updateWorkspaceNote(workspaceId, noteId, content, mode);
+      workspaces = workspaces.map(w => {
+        if (w.id === workspaceId) {
+          return {
+            ...w,
+            workspace_notes: w.workspace_notes.map(n =>
+              n.id === noteId ? { ...n, content, mode, updated_at: new Date().toISOString() } : n
+            )
+          };
+        }
+        return w;
+      });
+    },
+
+    async deleteWorkspaceNote(workspaceId: string, noteId: string) {
+      await commands.deleteWorkspaceNote(workspaceId, noteId);
+      workspaces = workspaces.map(w => {
+        if (w.id === workspaceId) {
+          return { ...w, workspace_notes: w.workspace_notes.filter(n => n.id !== noteId) };
         }
         return w;
       });

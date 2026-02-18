@@ -1,9 +1,11 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{Emitter, State};
 
 use crate::state::{save_state, AppState, Pane, Preferences, Tab, Workspace};
+use crate::state::workspace::WorkspaceNote;
 use crate::state::persistence::app_data_slug;
 use crate::state::workspace::SplitDirection;
 use crate::commands::window::{TabContext, clone_workspace_with_id_mapping};
@@ -775,4 +777,112 @@ pub fn play_system_sound(name: String, volume: u32) -> Result<(), String> {
         }
     }
     Err(format!("Sound '{}' not found", name))
+}
+
+fn iso_now() -> String {
+    let d = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+    let secs = d.as_secs();
+    // Simple ISO 8601 from epoch seconds (UTC)
+    let s = secs % 60;
+    let m = (secs / 60) % 60;
+    let h = (secs / 3600) % 24;
+    // days since epoch → date via civil algorithm
+    let days = (secs / 86400) as i64;
+    let (y, mo, da) = civil_from_days(days);
+    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", y, mo, da, h, m, s)
+}
+
+/// Convert days since Unix epoch to (year, month, day). Civil algorithm from Howard Hinnant.
+fn civil_from_days(z: i64) -> (i64, u32, u32) {
+    let z = z + 719468;
+    let era = if z >= 0 { z } else { z - 146096 } / 146097;
+    let doe = (z - era * 146097) as u32;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    (y, m, d)
+}
+
+#[tauri::command]
+pub fn add_workspace_note(
+    window: tauri::Window,
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+    content: String,
+    mode: Option<String>,
+) -> Result<WorkspaceNote, String> {
+    let label = window.label().to_string();
+    let now = iso_now();
+    let note = WorkspaceNote {
+        id: uuid::Uuid::new_v4().to_string(),
+        content,
+        mode,
+        created_at: now.clone(),
+        updated_at: now,
+    };
+    let data_clone = {
+        let mut app_data = state.app_data.write();
+        let win = app_data.window_mut(&label).ok_or("Window not found")?;
+        if let Some(workspace) = win.workspaces.iter_mut().find(|w| w.id == workspace_id) {
+            workspace.workspace_notes.push(note.clone());
+            app_data.clone()
+        } else {
+            return Err("Workspace not found".to_string());
+        }
+    };
+    save_state(&data_clone)?;
+    Ok(note)
+}
+
+#[tauri::command]
+pub fn update_workspace_note(
+    window: tauri::Window,
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+    note_id: String,
+    content: String,
+    mode: Option<String>,
+) -> Result<(), String> {
+    let label = window.label().to_string();
+    let now = iso_now();
+    let data_clone = {
+        let mut app_data = state.app_data.write();
+        let win = app_data.window_mut(&label).ok_or("Window not found")?;
+        if let Some(workspace) = win.workspaces.iter_mut().find(|w| w.id == workspace_id) {
+            if let Some(note) = workspace.workspace_notes.iter_mut().find(|n| n.id == note_id) {
+                note.content = content;
+                note.mode = mode;
+                note.updated_at = now;
+            }
+            app_data.clone()
+        } else {
+            return Err("Workspace not found".to_string());
+        }
+    };
+    save_state(&data_clone)
+}
+
+#[tauri::command]
+pub fn delete_workspace_note(
+    window: tauri::Window,
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+    note_id: String,
+) -> Result<(), String> {
+    let label = window.label().to_string();
+    let data_clone = {
+        let mut app_data = state.app_data.write();
+        let win = app_data.window_mut(&label).ok_or("Window not found")?;
+        if let Some(workspace) = win.workspaces.iter_mut().find(|w| w.id == workspace_id) {
+            workspace.workspace_notes.retain(|n| n.id != note_id);
+            app_data.clone()
+        } else {
+            return Err("Workspace not found".to_string());
+        }
+    };
+    save_state(&data_clone)
 }

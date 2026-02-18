@@ -42,12 +42,21 @@ export interface SplitBranch {
 
 export type SplitNode = SplitLeaf | SplitBranch;
 
+export interface WorkspaceNote {
+  id: string;
+  content: string;
+  mode: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Workspace {
   id: string;
   name: string;
   panes: Pane[];
   active_pane_id: string | null;
   split_root: SplitNode | null;
+  workspace_notes: WorkspaceNote[];
 }
 
 export type CursorStyle = 'block' | 'underline' | 'bar';
@@ -59,6 +68,7 @@ export type TabStateName = 'alert' | 'question';
 export interface TriggerActionEntry {
   action_type: TriggerActionType;
   command: string | null;
+  title: string | null;
   message: string | null;
   tab_state: TabStateName | null;
 }
@@ -115,8 +125,11 @@ export interface Preferences {
   toast_duration: number;
   notification_sound: string;
   notification_volume: number;
+  migrate_tab_notes: boolean;
+  notes_scope: string | null;
   triggers: Trigger[];
   hidden_default_triggers: string[];
+  claude_triggers_prompted: boolean;
 }
 
 export interface WindowData {

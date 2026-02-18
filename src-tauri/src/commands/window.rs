@@ -266,6 +266,7 @@ pub(crate) fn clone_workspace_with_id_mapping(
         panes: new_panes,
         active_pane_id: new_active_pane,
         split_root: new_split_root,
+        workspace_notes: ws.workspace_notes.clone(),
         pane_sizes: None,
     };
 

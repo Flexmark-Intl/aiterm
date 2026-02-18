@@ -77,6 +77,7 @@
     color: var(--fg);
     font-size: 11px;
     line-height: 1.45;
+    white-space: pre-line;
     padding: 6px 10px;
     border-radius: 5px;
     pointer-events: none;

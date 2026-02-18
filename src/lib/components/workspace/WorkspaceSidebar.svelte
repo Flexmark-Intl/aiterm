@@ -267,12 +267,11 @@
     {#if appVersion}
       <button class="version-badge" onclick={onversionclick}>v{appVersion}</button>
     {/if}
+    <button class="header-btn collapse-btn" onclick={() => workspacesStore.toggleSidebar()} title="Collapse sidebar ({modSymbol}B)">&#x2039;</button>
   </div>
   <div class="sidebar-header">
     <span class="title">WORKSPACES</span>
-    <button class="collapse-btn" onclick={() => workspacesStore.toggleSidebar()} title="Collapse sidebar ({modSymbol}B)">
-      &#x2039;
-    </button>
+    <button class="header-btn" onclick={handleNewWorkspace} title="New workspace ({modSymbol}N)">+</button>
   </div>
 
   {#if workspacesStore.recentWorkspaces.length > 0}
@@ -346,9 +345,6 @@
     {/each}
   </div>
 
-  <button class="new-workspace-btn" onclick={handleNewWorkspace}>
-    + New Workspace
-  </button>
 </aside>
 
 <style>
@@ -413,6 +409,10 @@
   }
 
   .collapse-btn {
+    margin-left: auto;
+  }
+
+  .header-btn {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -426,7 +426,7 @@
     cursor: pointer;
   }
 
-  .collapse-btn:hover {
+  .header-btn:hover {
     background: var(--bg-light);
     color: var(--fg);
   }
@@ -567,16 +567,4 @@
     background: var(--bg-dark);
   }
 
-  .new-workspace-btn {
-    padding: 12px 16px;
-    text-align: left;
-    color: var(--fg-dim);
-    border-top: 1px solid var(--bg-light);
-    transition: all 0.1s;
-  }
-
-  .new-workspace-btn:hover {
-    background: var(--bg-light);
-    color: var(--fg);
-  }
 </style>
