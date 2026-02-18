@@ -1,5 +1,5 @@
 import type { Terminal } from '@xterm/xterm';
-import type { SplitDirection, SplitNode, Tab, Pane, Workspace, WorkspaceNote } from '$lib/tauri/types';
+import type { SplitDirection, SplitNode, Tab, Pane, Workspace, WorkspaceNote, EditorFileInfo } from '$lib/tauri/types';
 import * as commands from '$lib/tauri/commands';
 import { terminalsStore } from '$lib/stores/terminals.svelte';
 import { preferencesStore } from '$lib/stores/preferences.svelte';
@@ -380,6 +380,29 @@ function createWorkspacesStore() {
 
     async createTab(workspaceId: string, paneId: string, name: string) {
       const tab = await commands.createTab(workspaceId, paneId, name);
+      workspaces = workspaces.map(w => {
+        if (w.id === workspaceId) {
+          return {
+            ...w,
+            panes: w.panes.map(p => {
+              if (p.id === paneId) {
+                return {
+                  ...p,
+                  tabs: [...p.tabs, tab],
+                  active_tab_id: tab.id
+                };
+              }
+              return p;
+            })
+          };
+        }
+        return w;
+      });
+      return tab;
+    },
+
+    async createEditorTab(workspaceId: string, paneId: string, name: string, fileInfo: EditorFileInfo) {
+      const tab = await commands.createEditorTab(workspaceId, paneId, name, fileInfo);
       workspaces = workspaces.map(w => {
         if (w.id === workspaceId) {
           return {

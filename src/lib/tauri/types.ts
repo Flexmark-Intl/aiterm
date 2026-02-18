@@ -1,3 +1,13 @@
+export type TabType = 'terminal' | 'editor';
+
+export interface EditorFileInfo {
+  file_path: string;
+  is_remote: boolean;
+  remote_ssh_command: string | null;
+  remote_path: string | null;
+  language: string | null;
+}
+
 export interface Tab {
   id: string;
   name: string;
@@ -16,6 +26,8 @@ export interface Tab {
   notes_mode: string | null;
   notes_open: boolean;
   trigger_variables: Record<string, string>;
+  tab_type: TabType;
+  editor_file: EditorFileInfo | null;
 }
 
 export interface Pane {

@@ -25,6 +25,8 @@
   import { processOutput, cleanupTab, loadTabVariables, interpolateVariables, getVariables, clearTabVariables } from '$lib/stores/triggers.svelte';
   import { dispatch } from '$lib/stores/notificationDispatch';
   import { CLAUDE_RESUME_COMMAND } from '$lib/triggers/defaults';
+  import { createFilePathLinkProvider } from '$lib/utils/filePathDetector';
+  import { openFileFromTerminal } from '$lib/utils/openFile';
 
   interface Props {
     workspaceId: string;
@@ -57,6 +59,7 @@
   let unlistenDragDrop: UnlistenFn;
   let unlistenDragLeave: UnlistenFn;
   let resizeObserver: ResizeObserver;
+  let filePathLinkDisposable: { dispose: () => void } | null = null;
   let initialized = $state(false);
   let trackActivity = false;
   let visibilityGraceUntil = 0; // timestamp — suppress activity until this time
@@ -201,6 +204,12 @@
     }));
 
     terminal.open(containerRef);
+
+    // Register file path link provider for clicking paths in terminal output
+    filePathLinkDisposable = createFilePathLinkProvider(
+      terminal,
+      (path) => openFileFromTerminal(workspaceId, paneId, tabId, path),
+    );
 
     // OSC 0 (icon name + title) and OSC 2 (title): shells/programs set window title
     // promptCwd is auto-derived from title in terminalsStore.updateOsc()
@@ -537,6 +546,7 @@
     if (unlistenDragLeave) unlistenDragLeave();
     clearTimeout(resizePtyTimeout);
     if (resizeObserver) resizeObserver.disconnect();
+    if (filePathLinkDisposable) filePathLinkDisposable.dispose();
     if (terminal) terminal.dispose();
     if (ptyId) {
       killTerminal(ptyId).catch(e => logError(String(e)));

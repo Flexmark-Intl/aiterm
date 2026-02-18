@@ -68,6 +68,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin({
             let mut ws = tauri_plugin_window_state::Builder::new()
                 .with_state_flags(tauri_plugin_window_state::StateFlags::all());
@@ -270,6 +271,11 @@ pub fn run() {
             commands::window::reset_window,
             commands::window::get_window_count,
             commands::window::open_preferences_window,
+            commands::editor::read_file,
+            commands::editor::write_file,
+            commands::editor::scp_read_file,
+            commands::editor::scp_write_file,
+            commands::editor::create_editor_tab,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

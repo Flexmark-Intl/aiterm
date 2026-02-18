@@ -154,6 +154,27 @@ impl SplitNode {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum TabType {
+    #[default]
+    Terminal,
+    Editor,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EditorFileInfo {
+    pub file_path: String,
+    #[serde(default)]
+    pub is_remote: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote_ssh_command: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Tab {
     pub id: String,
@@ -201,6 +222,10 @@ pub struct Tab {
     /// Trigger-extracted variables (persisted across restarts).
     #[serde(default)]
     pub trigger_variables: HashMap<String, String>,
+    #[serde(default)]
+    pub tab_type: TabType,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub editor_file: Option<EditorFileInfo>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -613,6 +638,32 @@ impl Tab {
             notes_mode: None,
             notes_open: false,
             trigger_variables: HashMap::new(),
+            tab_type: TabType::default(),
+            editor_file: None,
+        }
+    }
+
+    pub fn new_editor(name: String, file_info: EditorFileInfo) -> Self {
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            name,
+            pty_id: None,
+            scrollback: None,
+            custom_name: true,
+            restore_cwd: None,
+            restore_ssh_command: None,
+            restore_remote_cwd: None,
+            auto_resume_cwd: None,
+            auto_resume_ssh_command: None,
+            auto_resume_remote_cwd: None,
+            auto_resume_command: None,
+            auto_resume_remembered_command: None,
+            notes: None,
+            notes_mode: None,
+            notes_open: false,
+            trigger_variables: HashMap::new(),
+            tab_type: TabType::Editor,
+            editor_file: Some(file_info),
         }
     }
 }

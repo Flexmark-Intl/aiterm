@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { AppData, DuplicateWorkspaceResult, Pane, Preferences, SplitDirection, Tab, WindowData, Workspace, WorkspaceNote } from './types';
+import type { AppData, DuplicateWorkspaceResult, EditorFileInfo, Pane, Preferences, SplitDirection, Tab, WindowData, Workspace, WorkspaceNote } from './types';
 
 // Terminal commands
 export async function spawnTerminal(ptyId: string, tabId: string, cols: number, rows: number, cwd?: string | null): Promise<void> {
@@ -271,4 +271,30 @@ export async function getWindowCount(): Promise<number> {
 
 export async function openPreferencesWindow(): Promise<void> {
   return invoke('open_preferences_window');
+}
+
+// Editor commands
+export interface ReadFileResult {
+  content: string;
+  size: number;
+}
+
+export async function readFile(path: string): Promise<ReadFileResult> {
+  return invoke('read_file', { path });
+}
+
+export async function writeFile(path: string, content: string): Promise<void> {
+  return invoke('write_file', { path, content });
+}
+
+export async function scpReadFile(sshCommand: string, remotePath: string): Promise<ReadFileResult> {
+  return invoke('scp_read_file', { sshCommand, remotePath });
+}
+
+export async function scpWriteFile(sshCommand: string, remotePath: string, content: string): Promise<void> {
+  return invoke('scp_write_file', { sshCommand, remotePath, content });
+}
+
+export async function createEditorTab(workspaceId: string, paneId: string, name: string, fileInfo: EditorFileInfo): Promise<Tab> {
+  return invoke('create_editor_tab', { workspaceId, paneId, name, fileInfo });
 }

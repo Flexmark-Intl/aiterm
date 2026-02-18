@@ -4,6 +4,7 @@
   import WorkspaceSidebar from '$lib/components/workspace/WorkspaceSidebar.svelte';
   import SplitContainer from '$lib/components/pane/SplitContainer.svelte';
   import TerminalPane from '$lib/components/terminal/TerminalPane.svelte';
+  import EditorPane from '$lib/components/editor/EditorPane.svelte';
   import ChangelogModal from '$lib/components/ChangelogModal.svelte';
   import Resizer from '$lib/components/Resizer.svelte';
   import { getVersion } from '@tauri-apps/api/app';
@@ -97,22 +98,32 @@
           {#each workspacesStore.workspaces.filter(w => activatedWorkspaceIds.has(w.id)) as ws (ws.id)}
             {#each ws.panes as pane (pane.id)}
               {#each pane.tabs as tab (tab.id)}
-                <TerminalPane
-                  workspaceId={ws.id}
-                  paneId={pane.id}
-                  tabId={tab.id}
-                  visible={tab.id === pane.active_tab_id && ws.id === workspacesStore.activeWorkspaceId}
-                  initialScrollback={tab.scrollback}
-                  restoreCwd={tab.restore_cwd}
-                  restoreSshCommand={tab.restore_ssh_command}
-                  restoreRemoteCwd={tab.restore_remote_cwd}
-                  autoResumeCwd={tab.auto_resume_cwd}
-                  autoResumeSshCommand={tab.auto_resume_ssh_command}
-                  autoResumeRemoteCwd={tab.auto_resume_remote_cwd}
-                  autoResumeCommand={tab.auto_resume_command}
-                  autoResumeRememberedCommand={tab.auto_resume_remembered_command}
-                  triggerVariables={tab.trigger_variables}
-                />
+                {#if tab.tab_type === 'editor' && tab.editor_file}
+                  <EditorPane
+                    workspaceId={ws.id}
+                    paneId={pane.id}
+                    tabId={tab.id}
+                    visible={tab.id === pane.active_tab_id && ws.id === workspacesStore.activeWorkspaceId}
+                    editorFile={tab.editor_file}
+                  />
+                {:else}
+                  <TerminalPane
+                    workspaceId={ws.id}
+                    paneId={pane.id}
+                    tabId={tab.id}
+                    visible={tab.id === pane.active_tab_id && ws.id === workspacesStore.activeWorkspaceId}
+                    initialScrollback={tab.scrollback}
+                    restoreCwd={tab.restore_cwd}
+                    restoreSshCommand={tab.restore_ssh_command}
+                    restoreRemoteCwd={tab.restore_remote_cwd}
+                    autoResumeCwd={tab.auto_resume_cwd}
+                    autoResumeSshCommand={tab.auto_resume_ssh_command}
+                    autoResumeRemoteCwd={tab.auto_resume_remote_cwd}
+                    autoResumeCommand={tab.auto_resume_command}
+                    autoResumeRememberedCommand={tab.auto_resume_remembered_command}
+                    triggerVariables={tab.trigger_variables}
+                  />
+                {/if}
               {/each}
             {/each}
           {/each}

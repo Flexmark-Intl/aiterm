@@ -17,6 +17,11 @@
   import * as commands from '$lib/tauri/commands';
   import type { Preferences } from '$lib/tauri/types';
   import { isModKey } from '$lib/utils/platform';
+  import { open as dialogOpen } from '@tauri-apps/plugin-dialog';
+  import { openFileFromTerminal } from '$lib/utils/openFile';
+  import { detectLanguageFromPath } from '$lib/utils/languageDetect';
+  import { readFile } from '$lib/tauri/commands';
+  import type { EditorFileInfo } from '$lib/tauri/types';
   // Side-effect import: subscribes to activity store for OS notifications
   import '$lib/stores/notifications.svelte';
 
@@ -289,6 +294,51 @@
       // Cmd+R - Auto-resume toggle (handled in TerminalPane, prevent browser reload)
       if (isMeta && !e.shiftKey && e.key.toLowerCase() === 'r') {
         e.preventDefault();
+        return;
+      }
+
+      // Cmd+O - Open file in editor tab
+      if (isMeta && !e.shiftKey && e.key.toLowerCase() === 'o') {
+        e.preventDefault();
+        e.stopPropagation();
+        const ws = workspacesStore.activeWorkspace;
+        const pane = workspacesStore.activePane;
+        if (ws && pane) {
+          dialogOpen({
+            multiple: false,
+            directory: false,
+            title: 'Open File',
+          }).then(async (selected) => {
+            if (!selected) return;
+            const filePath = selected;
+            const fileName = filePath.split('/').pop() ?? filePath;
+            const language = detectLanguageFromPath(filePath);
+            // Validate the file can be read before creating the tab
+            try {
+              await readFile(filePath);
+            } catch (err) {
+              const { dispatch } = await import('$lib/stores/notificationDispatch');
+              dispatch('Cannot open file', String(err), 'error');
+              return;
+            }
+            const fileInfo: EditorFileInfo = {
+              file_path: filePath,
+              is_remote: false,
+              remote_ssh_command: null,
+              remote_path: null,
+              language,
+            };
+            workspacesStore.createEditorTab(ws.id, pane.id, fileName, fileInfo);
+          });
+        }
+        return;
+      }
+
+      // Cmd+S - Save active editor tab or prevent browser save dialog
+      if (isMeta && !e.shiftKey && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        // Dispatch a custom event that EditorPane listens for
+        window.dispatchEvent(new CustomEvent('editor-save', { detail: { tabId: workspacesStore.activeTab?.id } }));
         return;
       }
 

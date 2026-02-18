@@ -396,9 +396,10 @@
 >
   {#each pane.tabs as tab, index (tab.id)}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
-    {@const shellState = tab.id !== pane.active_tab_id ? activityStore.getShellState(tab.id) : undefined}
-    {@const hasActivity = tab.id !== pane.active_tab_id && activityStore.hasActivity(tab.id)}
-    {@const tabState = tab.id !== pane.active_tab_id ? activityStore.getTabState(tab.id) : undefined}
+    {@const isEditor = tab.tab_type === 'editor'}
+    {@const shellState = !isEditor && tab.id !== pane.active_tab_id ? activityStore.getShellState(tab.id) : undefined}
+    {@const hasActivity = !isEditor && tab.id !== pane.active_tab_id && activityStore.hasActivity(tab.id)}
+    {@const tabState = !isEditor && tab.id !== pane.active_tab_id ? activityStore.getTabState(tab.id) : undefined}
     <div
       class="tab"
       class:active={tab.id === pane.active_tab_id}
@@ -439,7 +440,9 @@
           />
         </div>
       {:else}
-        {#if tabState === 'alert'}
+        {#if isEditor}
+          <span class="editor-icon" title="Editor">&#x1F4C4;</span>
+        {:else if tabState === 'alert'}
           <span class="indicator alert-indicator">&#x2757;</span>
         {:else if tabState === 'question'}
           <span class="indicator question-indicator">&#x2753;</span>
@@ -448,16 +451,18 @@
         {:else if hasActivity}
           <span class="activity-dot"></span>
         {/if}
-        {#if tab.auto_resume_ssh_command || tab.auto_resume_cwd}
+        {#if !isEditor && (tab.auto_resume_ssh_command || tab.auto_resume_cwd)}
           <span class="auto-resume-indicator" title="Auto-resume enabled">&#x21BB;</span>
         {/if}
         <span class="tab-name">{displayName(tab)}</span>
-        <div class="tab-actions">
-          <button
-            class="tab-btn duplicate-btn"
-            onclick={(e) => handleDuplicateTab(tab.id, e)}
-            title="Duplicate tab ({modLabel}+Shift+T)"
-          >&#x29C9;</button>
+        <div class="tab-actions" class:single-action={isEditor}>
+          {#if !isEditor}
+            <button
+              class="tab-btn duplicate-btn"
+              onclick={(e) => handleDuplicateTab(tab.id, e)}
+              title="Duplicate tab ({modLabel}+Shift+T)"
+            >&#x29C9;</button>
+          {/if}
           <button
             class="tab-btn close-btn"
             onclick={(e) => handleCloseTab(tab.id, e)}
@@ -614,6 +619,14 @@
     line-height: 1;
   }
 
+  .editor-icon {
+    flex-shrink: 0;
+    font-size: 10px;
+    margin-right: 4px;
+    line-height: 1;
+    opacity: 0.7;
+  }
+
   .activity-dot {
     width: 6px;
     height: 6px;
@@ -669,6 +682,10 @@
     opacity: 1;
     width: 44px;
     margin-left: 6px;
+  }
+
+  .tab:hover .tab-actions.single-action {
+    width: 22px;
   }
 
   .tab-btn {
