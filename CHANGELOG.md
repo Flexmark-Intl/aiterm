@@ -1,5 +1,24 @@
 # Changelog
 
+## v1.0.0
+
+- Add CodeMirror 6 editor tabs: open files from terminal output or via `Cmd+O`, syntax highlighting for 30+ languages
+- Add image preview in editor tabs with zoom controls for local and remote files
+- Add OSC 8 file hyperlinks: `l` shell function emits clickable file links in terminal
+- Add variable-match triggers with condition expressions (`&&`, `||`, `!`, `==`, `!=`)
+- Add `enable_auto_resume` trigger action for automatic Claude Code auto-resume
+- Add Claude Code integration modal with default triggers for session management
+- Add workspace-level notes alongside tab-level notes
+- Add workspace sidebar preferences: sort order, tab count display, recent workspaces toggle
+- Add notification sounds for trigger alerts
+- Add deeper OSC integration and tab state indicators
+- Remove prompt indicator from tabs; gate completion indicator on minimum duration
+- Close tab now selects previous (left) tab instead of next
+- Editor tabs support split pane via `Cmd+D`
+- File path link provider only active while `Cmd/Ctrl` held
+- Strip orphaned SGR 4 underline from serialized scrollback
+- `Cmd+O` file dialog defaults to active terminal CWD
+
 ## v0.9.0
 
 - Add trigger system: watch terminal output for regex patterns, fire actions (notify, send command)
