@@ -142,6 +142,9 @@ export interface Preferences {
   notification_volume: number;
   migrate_tab_notes: boolean;
   notes_scope: string | null;
+  show_recent_workspaces: boolean;
+  workspace_sort_order: string;
+  show_workspace_tab_count: boolean;
   triggers: Trigger[];
   hidden_default_triggers: string[];
   claude_triggers_prompted: boolean;

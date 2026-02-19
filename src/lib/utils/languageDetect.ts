@@ -1,5 +1,29 @@
 import type { Extension } from '@codemirror/state';
 
+const IMAGE_MIME: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  svg: 'image/svg+xml',
+  ico: 'image/x-icon',
+  bmp: 'image/bmp',
+  avif: 'image/avif',
+};
+
+export function isImageFile(filePath: string): boolean {
+  const dot = filePath.lastIndexOf('.');
+  if (dot === -1) return false;
+  return filePath.slice(dot + 1).toLowerCase() in IMAGE_MIME;
+}
+
+export function getImageMimeType(filePath: string): string | null {
+  const dot = filePath.lastIndexOf('.');
+  if (dot === -1) return null;
+  return IMAGE_MIME[filePath.slice(dot + 1).toLowerCase()] ?? null;
+}
+
 /** Extensionless filenames that are known shell scripts */
 const SHELL_FILENAMES = new Set([
   '.bashrc', '.bash_profile', '.bash_login', '.bash_logout', '.bash_aliases',
@@ -9,32 +33,88 @@ const SHELL_FILENAMES = new Set([
   '.inputrc', '.dircolors',
 ]);
 
+/** Map known filenames (without extensions) to language IDs */
+const FILENAME_MAP: Record<string, string> = {
+  'Dockerfile': 'dockerfile',
+  'Containerfile': 'dockerfile',
+  'Makefile': 'shell',
+  'CMakeLists.txt': 'cmake',
+  'Gemfile': 'ruby',
+  'Rakefile': 'ruby',
+  'Vagrantfile': 'ruby',
+};
+
 const EXT_MAP: Record<string, string> = {
   // JavaScript/TypeScript
   js: 'javascript', jsx: 'javascript', mjs: 'javascript', cjs: 'javascript',
   ts: 'typescript', tsx: 'typescript', mts: 'typescript', cts: 'typescript',
   // Web
-  html: 'html', htm: 'html', svelte: 'html',
-  css: 'css', scss: 'css', less: 'css',
+  html: 'html', htm: 'html', svelte: 'html', vue: 'vue',
+  css: 'css', scss: 'sass', less: 'less',
+  sass: 'sass',
+  // PHP
+  php: 'php', phtml: 'php', php3: 'php', php4: 'php', php5: 'php', phps: 'php',
   // Data
-  json: 'json', jsonc: 'json',
+  json: 'json', jsonc: 'json', json5: 'json',
   yaml: 'yaml', yml: 'yaml',
-  xml: 'xml', svg: 'xml', xsl: 'xml',
+  xml: 'xml', xsl: 'xml', xslt: 'xml', xsd: 'xml', dtd: 'xml', plist: 'xml',
   // Systems
   rs: 'rust',
+  go: 'go', mod: 'go',
   c: 'cpp', h: 'cpp', cpp: 'cpp', cc: 'cpp', cxx: 'cpp', hpp: 'cpp', hxx: 'cpp',
   java: 'java',
+  cs: 'csharp',
+  swift: 'swift',
+  kt: 'kotlin', kts: 'kotlin',
+  scala: 'scala',
   // Scripting
   py: 'python', pyw: 'python', pyi: 'python',
+  rb: 'ruby', erb: 'ruby', gemspec: 'ruby',
+  pl: 'perl', pm: 'perl',
+  lua: 'lua',
+  r: 'r', R: 'r',
+  jl: 'julia',
+  ex: 'elixir', exs: 'elixir',
+  erl: 'erlang', hrl: 'erlang',
+  hs: 'haskell', lhs: 'haskell',
+  clj: 'clojure', cljs: 'clojure', cljc: 'clojure', edn: 'clojure',
+  elm: 'elm',
+  ml: 'ocaml', mli: 'ocaml',
+  fs: 'fsharp', fsx: 'fsharp', fsi: 'fsharp',
+  groovy: 'groovy', gradle: 'groovy',
+  dart: 'dart',
   // Markup
   md: 'markdown', mdx: 'markdown',
+  tex: 'latex', sty: 'latex', cls: 'latex',
+  rst: 'restructuredtext',
   // Database
   sql: 'sql',
   // Shell
-  sh: 'shell', bash: 'shell', zsh: 'shell',
+  sh: 'shell', bash: 'shell', zsh: 'shell', fish: 'shell',
+  ps1: 'powershell', psm1: 'powershell', psd1: 'powershell',
   // Config
   toml: 'toml',
   ini: 'ini', cfg: 'ini',
+  properties: 'properties',
+  // DevOps / infrastructure
+  dockerfile: 'dockerfile',
+  tf: 'hcl', hcl: 'hcl',
+  proto: 'protobuf',
+  // WebAssembly
+  wat: 'wast', wast: 'wast',
+  // Other
+  diff: 'diff', patch: 'diff',
+  cmake: 'cmake',
+  m: 'octave', // MATLAB/Octave
+  pas: 'pascal', pp: 'pascal',
+  v: 'verilog', sv: 'verilog',
+  vhd: 'vhdl', vhdl: 'vhdl',
+  tcl: 'tcl',
+  nim: 'nim',
+  zig: 'zig',
+  d: 'd',
+  // Nginx
+  nginx: 'nginx', conf: 'nginx',
 };
 
 export function extensionToLanguageId(ext: string): string | null {
@@ -43,8 +123,8 @@ export function extensionToLanguageId(ext: string): string | null {
 
 export function detectLanguageFromPath(filePath: string): string | null {
   const fileName = filePath.includes('/') ? filePath.split('/').pop()! : filePath;
-  // Check known shell dotfiles first
   if (SHELL_FILENAMES.has(fileName)) return 'shell';
+  if (FILENAME_MAP[fileName]) return FILENAME_MAP[fileName];
   const dot = fileName.lastIndexOf('.');
   if (dot === -1) return null;
   const ext = fileName.slice(dot + 1);
@@ -62,9 +142,18 @@ export function detectLanguageFromContent(content: string): string | null {
   return null;
 }
 
+/** Helper to load a legacy StreamLanguage mode */
+async function legacy(mode: string, exportName?: string): Promise<Extension | null> {
+  const { StreamLanguage } = await import('@codemirror/language');
+  const mod = await import(`@codemirror/legacy-modes/mode/${mode}`);
+  const lang = mod[exportName ?? mode];
+  return lang ? StreamLanguage.define(lang) : null;
+}
+
 export async function loadLanguageExtension(langId: string): Promise<Extension | null> {
   try {
     switch (langId) {
+      // First-class CodeMirror 6 packages
       case 'javascript':
       case 'typescript': {
         const { javascript } = await import('@codemirror/lang-javascript');
@@ -114,16 +203,67 @@ export async function loadLanguageExtension(langId: string): Promise<Extension |
         const { sql } = await import('@codemirror/lang-sql');
         return sql();
       }
-      case 'shell': {
-        const { StreamLanguage } = await import('@codemirror/language');
-        const { shell } = await import('@codemirror/legacy-modes/mode/shell');
-        return StreamLanguage.define(shell);
+      case 'php': {
+        const { php } = await import('@codemirror/lang-php');
+        return php();
       }
-      case 'toml': {
-        const { StreamLanguage } = await import('@codemirror/language');
-        const { toml } = await import('@codemirror/legacy-modes/mode/toml');
-        return StreamLanguage.define(toml);
+      case 'go': {
+        const { go } = await import('@codemirror/lang-go');
+        return go();
       }
+      case 'sass': {
+        const { sass } = await import('@codemirror/lang-sass');
+        return sass({ indented: false });
+      }
+      case 'less': {
+        const { less } = await import('@codemirror/lang-less');
+        return less();
+      }
+      case 'vue': {
+        const { vue } = await import('@codemirror/lang-vue');
+        return vue();
+      }
+      case 'wast': {
+        const { wast } = await import('@codemirror/lang-wast');
+        return wast();
+      }
+      // Legacy StreamLanguage modes
+      case 'shell': return legacy('shell');
+      case 'toml': return legacy('toml');
+      case 'ruby': return legacy('ruby');
+      case 'perl': return legacy('perl');
+      case 'lua': return legacy('lua');
+      case 'r': return legacy('r');
+      case 'julia': return legacy('julia');
+      case 'erlang': return legacy('erlang');
+      case 'haskell': return legacy('haskell');
+      case 'clojure': return legacy('clojure');
+      case 'elm': return legacy('elm');
+      case 'ocaml': return legacy('mllike', 'oCaml');
+      case 'fsharp': return legacy('mllike', 'fSharp');
+      case 'groovy': return legacy('groovy');
+      case 'swift': return legacy('swift');
+      case 'kotlin': return legacy('clike', 'kotlin');
+      case 'scala': return legacy('clike', 'scala');
+      case 'csharp': return legacy('clike', 'csharp');
+      case 'dart': return legacy('clike', 'dart');
+      case 'powershell': return legacy('powershell');
+      case 'dockerfile': return legacy('dockerfile');
+      case 'protobuf': return legacy('protobuf');
+      case 'diff': return legacy('diff');
+      case 'cmake': return legacy('cmake');
+      case 'octave': return legacy('octave');
+      case 'pascal': return legacy('pascal');
+      case 'verilog': return legacy('verilog');
+      case 'vhdl': return legacy('vhdl');
+      case 'tcl': return legacy('tcl');
+      case 'd': return legacy('d');
+      case 'nginx': return legacy('nginx');
+      case 'properties': return legacy('properties');
+      case 'latex': return legacy('stex', 'stex');
+      case 'coffeescript': return legacy('coffeescript');
+      case 'fortran': return legacy('fortran');
+      case 'elixir': return legacy('crystal'); // Close enough syntax highlighting
       default:
         return null;
     }

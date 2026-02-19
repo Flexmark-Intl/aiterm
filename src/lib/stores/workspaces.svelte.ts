@@ -122,6 +122,7 @@ function createWorkspacesStore() {
     get sidebarWidth() { return sidebarWidth; },
     get sidebarCollapsed() { return sidebarCollapsed; },
     get recentWorkspaces() { return recentWorkspaces; },
+    get lastSwitchedAt() { return lastSwitchedAt; },
 
     reset() {
       workspaces = [];
@@ -223,7 +224,36 @@ function createWorkspacesStore() {
     },
 
     async splitPaneWithContext(workspaceId: string, sourcePaneId: string, sourceTabId: string, direction: SplitDirection) {
-      // 1. Gather context from the source terminal
+      // Look up source tab to determine its type
+      const ws_current = workspaces.find(w => w.id === workspaceId);
+      const sourcePane = ws_current?.panes.find(p => p.id === sourcePaneId);
+      const sourceTab = sourcePane?.tabs.find(t => t.id === sourceTabId);
+
+      // Editor tab: create a duplicate editor pane (no terminal context needed)
+      if (sourceTab?.tab_type === 'editor' && sourceTab.editor_file) {
+        const newPane = await commands.splitPane(workspaceId, sourcePaneId, direction, null, sourceTab.editor_file);
+
+        // Copy notes
+        const newTabId = newPane.tabs[0]?.id;
+        if (newTabId) {
+          if (preferencesStore.cloneNotes && sourceTab.notes) {
+            await commands.setTabNotes(workspaceId, newPane.id, newTabId, sourceTab.notes);
+          }
+          if (preferencesStore.cloneNotes && sourceTab.notes_mode) {
+            await commands.setTabNotesMode(workspaceId, newPane.id, newTabId, sourceTab.notes_mode);
+          }
+        }
+
+        // Reload workspace to get updated split_root
+        const data = await commands.getWindowData();
+        const ws = data.workspaces.find(w => w.id === workspaceId);
+        if (ws) {
+          workspaces = workspaces.map(w => w.id === workspaceId ? ws : w);
+        }
+        return newPane;
+      }
+
+      // Terminal tab: gather context from the source terminal
       const instance = terminalsStore.get(sourceTabId);
       let scrollback: string | null = null;
       let cwd: string | null = null;
@@ -255,12 +285,9 @@ function createWorkspacesStore() {
       const newPane = await commands.splitPane(workspaceId, sourcePaneId, direction, scrollback);
 
       // 2b. Name the new pane and tab properly
-      const ws_current = workspaces.find(w => w.id === workspaceId);
       const paneCount = (ws_current?.panes.length ?? 0) + 1; // +1 for the newly created pane
       await commands.renamePane(workspaceId, newPane.id, `Pane ${paneCount}`);
 
-      const sourcePane = ws_current?.panes.find(p => p.id === sourcePaneId);
-      const sourceTab = sourcePane?.tabs.find(t => t.id === sourceTabId);
       const newTabId = newPane.tabs[0]?.id;
       if (sourceTab && newTabId) {
         const tabName = sourceTab.custom_name && ws_current
@@ -402,16 +429,24 @@ function createWorkspacesStore() {
     },
 
     async createEditorTab(workspaceId: string, paneId: string, name: string, fileInfo: EditorFileInfo) {
-      const tab = await commands.createEditorTab(workspaceId, paneId, name, fileInfo);
+      // Find the active tab so the new tab is inserted right after it
+      const pane = workspaces.flatMap(w => w.panes).find(p => p.id === paneId);
+      const afterTabId = pane?.active_tab_id ?? undefined;
+      const tab = await commands.createEditorTab(workspaceId, paneId, name, fileInfo, afterTabId);
       workspaces = workspaces.map(w => {
         if (w.id === workspaceId) {
           return {
             ...w,
             panes: w.panes.map(p => {
               if (p.id === paneId) {
+                // Insert directly after the currently active tab
+                const activeIdx = p.tabs.findIndex(t => t.id === p.active_tab_id);
+                const insertIdx = activeIdx === -1 ? p.tabs.length : activeIdx + 1;
+                const newTabs = [...p.tabs];
+                newTabs.splice(insertIdx, 0, tab);
                 return {
                   ...p,
-                  tabs: [...p.tabs, tab],
+                  tabs: newTabs,
                   active_tab_id: tab.id
                 };
               }
@@ -451,7 +486,7 @@ function createWorkspacesStore() {
                 const oldIndex = p.tabs.findIndex(t => t.id === tabId);
                 const newTabs = p.tabs.filter(t => t.id !== tabId);
                 const newActiveId = p.active_tab_id === tabId
-                  ? (newTabs[Math.min(oldIndex, newTabs.length - 1)]?.id ?? null)
+                  ? (newTabs[oldIndex > 0 ? oldIndex - 1 : 0]?.id ?? null)
                   : p.active_tab_id;
                 return {
                   ...p,

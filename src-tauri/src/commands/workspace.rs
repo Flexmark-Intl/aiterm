@@ -7,7 +7,7 @@ use tauri::{Emitter, State};
 use crate::state::{save_state, AppState, Pane, Preferences, Tab, Workspace};
 use crate::state::workspace::WorkspaceNote;
 use crate::state::persistence::app_data_slug;
-use crate::state::workspace::SplitDirection;
+use crate::state::workspace::{EditorFileInfo, SplitDirection};
 use crate::commands::window::{TabContext, clone_workspace_with_id_mapping};
 
 #[tauri::command]
@@ -90,9 +90,27 @@ pub fn split_pane(
     target_pane_id: String,
     direction: SplitDirection,
     scrollback: Option<String>,
+    editor_file: Option<EditorFileInfo>,
 ) -> Result<Pane, String> {
     let label = window.label().to_string();
-    let mut new_pane = Pane::new("Terminal".to_string());
+    let mut new_pane = if let Some(file_info) = editor_file {
+        let name = file_info
+            .file_path
+            .rsplit('/')
+            .next()
+            .unwrap_or(&file_info.file_path)
+            .to_string();
+        let tab = Tab::new_editor(name.clone(), file_info);
+        let tab_id = tab.id.clone();
+        Pane {
+            id: uuid::Uuid::new_v4().to_string(),
+            name,
+            tabs: vec![tab],
+            active_tab_id: Some(tab_id),
+        }
+    } else {
+        Pane::new("Terminal".to_string())
+    };
     if let Some(ref sb) = scrollback {
         if let Some(tab) = new_pane.tabs.first_mut() {
             tab.scrollback = Some(sb.clone());
@@ -213,7 +231,12 @@ pub fn delete_tab(
                     pane.active_tab_id = if pane.tabs.is_empty() {
                         None
                     } else {
-                        let new_index = old_index.min(pane.tabs.len() - 1);
+                        // Prefer previous (left) tab; fall back to next if closing first tab
+                        let new_index = if old_index > 0 {
+                            old_index - 1
+                        } else {
+                            0
+                        };
                         Some(pane.tabs[new_index].id.clone())
                     };
                 } else {

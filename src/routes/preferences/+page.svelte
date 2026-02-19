@@ -97,7 +97,7 @@
     if (result) preferencesStore.setTriggers(result);
   }
 
-  const sectionIds = ['appearance', 'terminal', 'ui', 'panels', 'notes', 'notifications', 'triggers'] as const;
+  const sectionIds = ['appearance', 'terminal', 'ui', 'panels', 'workspace', 'notes', 'notifications', 'triggers'] as const;
   type SectionId = typeof sectionIds[number];
   const saved = localStorage.getItem('prefs-section');
   let activeSection = $state<SectionId>(
@@ -110,6 +110,7 @@
     { id: 'terminal' as const, label: 'Terminal' },
     { id: 'ui' as const, label: 'Scrollback' },
     { id: 'panels' as const, label: 'Panels' },
+    { id: 'workspace' as const, label: 'Workspace' },
     { id: 'notes' as const, label: 'Notes' },
     { id: 'notifications' as const, label: 'Notifications' },
     { id: 'triggers' as const, label: 'Triggers' },
@@ -619,6 +620,59 @@
           </button>
         </div>
 
+      {:else if activeSection === 'workspace'}
+        <h3 class="section-heading">Sidebar</h3>
+
+        <div class="setting" style="align-items: flex-start;">
+          <div>
+            <label for="show-recent">Show Recent Workspaces</label>
+            <p class="setting-hint">Shows recently visited workspaces at the top of the sidebar for quick access. Workspaces appear here for 30 minutes after switching away from them.</p>
+          </div>
+          <button
+            id="show-recent"
+            class="toggle"
+            class:active={preferencesStore.showRecentWorkspaces}
+            onclick={() => preferencesStore.setShowRecentWorkspaces(!preferencesStore.showRecentWorkspaces)}
+            aria-pressed={preferencesStore.showRecentWorkspaces}
+            aria-label="Toggle show recent workspaces"
+          >
+            <span class="toggle-knob"></span>
+          </button>
+        </div>
+
+        <div class="setting">
+          <div>
+            <label for="show-tab-count">Show Tab Count</label>
+            <p class="setting-hint">Displays the number of tabs after each workspace name.</p>
+          </div>
+          <button
+            id="show-tab-count"
+            class="toggle"
+            class:active={preferencesStore.showWorkspaceTabCount}
+            onclick={() => preferencesStore.setShowWorkspaceTabCount(!preferencesStore.showWorkspaceTabCount)}
+            aria-pressed={preferencesStore.showWorkspaceTabCount}
+            aria-label="Toggle show tab count"
+          >
+            <span class="toggle-knob"></span>
+          </button>
+        </div>
+
+        <h3 class="section-heading">Sort Order</h3>
+        <p class="section-desc">How workspaces are ordered in the sidebar.</p>
+
+        <div class="setting">
+          <label for="workspace-sort">Order</label>
+          <select
+            id="workspace-sort"
+            value={preferencesStore.workspaceSortOrder}
+            onchange={(e) => preferencesStore.setWorkspaceSortOrder(e.currentTarget.value)}
+          >
+            <option value="default">Default (drag & drop)</option>
+            <option value="alphabetical">Alphabetical</option>
+            <option value="recent_activity">Most Recent Activity</option>
+          </select>
+        </div>
+
       {:else if activeSection === 'notes'}
         <h3 class="section-heading">Preview</h3>
 
@@ -900,6 +954,7 @@
               {@const mode = resolveMatchMode(trigger)}
               <div class="trigger-body" transition:slide={{ duration: 150 }}>
                 <div class="trigger-field">
+                  <!-- svelte-ignore a11y_label_has_associated_control -- label is visual context; input is dynamically rendered per-trigger -->
                   <label>Name</label>
                   <input
                     type="text"
@@ -912,6 +967,7 @@
                 </div>
 
                 <div class="trigger-field">
+                  <!-- svelte-ignore a11y_label_has_associated_control -- label is visual context for custom ResizableTextarea component -->
                   <label>Description</label>
                   <ResizableTextarea
                     value={trigger.description ?? ''}
@@ -927,6 +983,7 @@
 
                   <div class="trigger-field">
                     <div class="pattern-label-row">
+                      <!-- svelte-ignore a11y_label_has_associated_control -- label is visual context for custom ResizableTextarea below -->
                       <label>
                         Pattern
                         {#if mode === 'plain_text'}
@@ -970,6 +1027,7 @@
 
                   <div class="trigger-inline-fields">
                     <div class="trigger-field" style="flex: none;">
+                      <!-- svelte-ignore a11y_label_has_associated_control -- label is visual context; input is dynamically rendered per-trigger -->
                       <label>Cooldown <span class="field-hint">(seconds)</span></label>
                       <input
                         type="text"
@@ -981,6 +1039,7 @@
                       />
                     </div>
                     <div class="trigger-field" style="flex: 1; min-width: 0;">
+                      <!-- svelte-ignore a11y_label_has_associated_control -- label is visual context for checkbox group below -->
                       <label>Workspaces <span class="field-hint">(unchecked = all)</span></label>
                       {#if allWorkspaces.length}
                         <div class="workspace-chips">

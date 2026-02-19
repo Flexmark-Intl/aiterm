@@ -27,8 +27,10 @@
   // Seed from existing terminal state so titles survive component recreation
   // (e.g., workspace switch destroys and recreates SplitPane → TerminalTabs).
   let oscTitles = $state<Map<string, string>>(new Map());
+  // svelte-ignore state_referenced_locally -- intentional one-time seed from existing terminal state; live updates come from onOscChange subscription below
   for (const tab of pane.tabs) {
     const osc = terminalsStore.getOsc(tab.id);
+    // svelte-ignore state_referenced_locally
     if (osc?.title) oscTitles.set(tab.id, osc.title);
   }
 
@@ -529,7 +531,7 @@
   }
 
   .tab.unclamped {
-    max-width: none;
+    max-width: 50%;
   }
 
   .tab:hover {

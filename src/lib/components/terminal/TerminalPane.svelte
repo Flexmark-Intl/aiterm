@@ -60,6 +60,8 @@
   let unlistenDragLeave: UnlistenFn;
   let resizeObserver: ResizeObserver;
   let filePathLinkDisposable: { dispose: () => void } | null = null;
+  let onModKeyDown: (e: KeyboardEvent) => void;
+  let onModKeyUp: (e: KeyboardEvent) => void;
   let initialized = $state(false);
   let trackActivity = false;
   let visibilityGraceUntil = 0; // timestamp — suppress activity until this time
@@ -94,6 +96,8 @@
     }
   }
   let contextMenu = $state<{ x: number; y: number } | null>(null);
+  let hoveredLinkUri: string | null = null;
+  let contextMenuLinkUri: string | null = null;
   let isDragOver = $state(false);
 
   // Escape a file path for pasting into a terminal (backslash-escape shell metacharacters)
@@ -191,6 +195,20 @@
       cursorStyle: preferencesStore.cursorStyle,
       scrollback: preferencesStore.scrollbackLimit === 0 ? 100000 : preferencesStore.scrollbackLimit,
       allowProposedApi: true,
+      linkHandler: {
+        allowNonHttpProtocols: true,
+        activate: (event, uri) => {
+          if (event.button !== 0) return; // left click only
+          if (uri.startsWith('file://')) {
+            const filePath = decodeURIComponent(new URL(uri).pathname);
+            openFileFromTerminal(workspaceId, paneId, tabId, filePath);
+          } else {
+            shellOpen(uri);
+          }
+        },
+        hover: (_event, uri) => { hoveredLinkUri = uri; },
+        leave: () => { hoveredLinkUri = null; },
+      },
     });
 
     fitAddon = new FitAddon();
@@ -205,11 +223,24 @@
 
     terminal.open(containerRef);
 
-    // Register file path link provider for clicking paths in terminal output
-    filePathLinkDisposable = createFilePathLinkProvider(
-      terminal,
-      (path) => openFileFromTerminal(workspaceId, paneId, tabId, path),
-    );
+    // File path link provider: only active while Cmd/Ctrl is held to avoid
+    // running regex on every hovered line during normal terminal use.
+    onModKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !filePathLinkDisposable) {
+        filePathLinkDisposable = createFilePathLinkProvider(
+          terminal,
+          (path) => openFileFromTerminal(workspaceId, paneId, tabId, path),
+        );
+      }
+    };
+    onModKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Meta' || e.key === 'Control') {
+        filePathLinkDisposable?.dispose();
+        filePathLinkDisposable = null;
+      }
+    };
+    window.addEventListener('keydown', onModKeyDown);
+    window.addEventListener('keyup', onModKeyUp);
 
     // OSC 0 (icon name + title) and OSC 2 (title): shells/programs set window title
     // promptCwd is auto-derived from title in terminalsStore.updateOsc()
@@ -311,7 +342,17 @@
 
     // Restore scrollback if available
     if (initialScrollback) {
-      terminal.write(initialScrollback);
+      // Strip orphaned underline from serialized OSC 8 links.
+      // The serialize addon doesn't preserve OSC 8 link data but emits SGR 4
+      // (underline) for linked cells, sometimes in compound sequences like
+      // \e[1;4;33m. On restore these become non-clickable underlined text.
+      // Remove the "4" parameter from SGR sequences (and the matching "24" off).
+      const cleaned = initialScrollback.replace(/\x1b\[([0-9;]*)m/g, (_match, params: string) => {
+        const filtered = params.split(';').filter(p => p !== '4' && p !== '24');
+        if (filtered.length === 0) return '';
+        return `\x1b[${filtered.join(';')}m`;
+      });
+      terminal.write(cleaned);
 
       // Reset DEC private modes that programs may have enabled during the
       // previous session. The serialize addon preserves mode state (e.g.
@@ -539,6 +580,8 @@
     // which causes race conditions with terminal.dispose() below.
 
     window.removeEventListener('terminal-slot-ready', handleSlotReady);
+    window.removeEventListener('keydown', onModKeyDown);
+    window.removeEventListener('keyup', onModKeyUp);
     if (unlistenOutput) unlistenOutput();
     if (unlistenClose) unlistenClose();
     if (unlistenDragOver) unlistenDragOver();
@@ -740,12 +783,21 @@
 
   function handleContextMenu(e: MouseEvent) {
     e.preventDefault();
+    contextMenuLinkUri = hoveredLinkUri;
     contextMenu = { x: e.clientX, y: e.clientY };
   }
 
   function getContextMenuItems() {
     const hasSelection = terminal?.hasSelection();
+    // Extract full path from file:// link that was hovered when context menu opened
+    const hoveredFilePath = contextMenuLinkUri?.startsWith('file://')
+      ? decodeURIComponent(new URL(contextMenuLinkUri).pathname)
+      : null;
     return [
+      ...(hoveredFilePath ? [{
+        label: 'Copy Full Path',
+        action: async () => { await clipboardWriteText(hoveredFilePath); },
+      }] : []),
       {
         label: 'Copy',
         shortcut: `${modSymbol}C`,
@@ -869,6 +921,7 @@
   {#if autoResumePrompt}
     <div class="auto-resume-prompt-backdrop">
     <div class="auto-resume-prompt">
+      <!-- svelte-ignore a11y_label_has_associated_control -- label is visual context for custom ResizableTextarea component -->
       <label class="auto-resume-prompt-label">Command to run after {autoResumePrompt.sshCmd ? 'connect' : 'start'}</label>
       <ResizableTextarea
         bind:this={autoResumeTextarea}
@@ -894,10 +947,10 @@
   </div>
   {/if}
   {#if claudeSetupModal}
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -- backdrop dismiss on click; keyboard handled via Escape -->
     <div class="claude-setup-backdrop" onclick={() => { claudeSetupModal = false; }} onkeydown={(e) => { if (e.key === 'Escape') claudeSetupModal = false; }}>
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div class="claude-setup-modal" onclick={(e) => e.stopPropagation()}>
+      <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -- modal body stops click propagation to prevent backdrop dismiss; Escape key handled on backdrop -->
+      <div class="claude-setup-modal" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
         <h3 class="claude-setup-title">Auto-resume + Claude</h3>
         <div class="claude-setup-body">
           <p>Automatically resume your Claude Code session when the terminal restarts.</p>
@@ -988,6 +1041,12 @@
 
   .terminal-container :global(.xterm) {
     height: 100%;
+  }
+
+  /* Hide the default dashed underline on OSC 8 hyperlinks — only show underline on hover.
+     No !important: the inline style.textDecoration xterm.js sets on hover must take precedence. */
+  .terminal-container :global(.xterm-underline-5) {
+    text-decoration: none;
   }
 
   .terminal-container :global(.xterm-viewport) {

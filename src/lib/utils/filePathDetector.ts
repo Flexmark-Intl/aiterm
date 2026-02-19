@@ -10,6 +10,7 @@ const FILE_EXTENSIONS = new Set([
   'sql', 'sh', 'bash', 'zsh', 'fish',
   'conf', 'cfg', 'ini', 'env',
   'lock', 'dockerfile', 'makefile',
+  'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'ico', 'avif',
 ]);
 
 /** Well-known extensionless filenames */
@@ -19,7 +20,7 @@ const KNOWN_FILENAMES = new Set([
   'LICENSE', 'LICENCE', 'COPYING', 'AUTHORS', 'CONTRIBUTORS',
   'CHANGELOG', 'CHANGES', 'HISTORY', 'NEWS',
   'README', 'INSTALL', 'TODO', 'HACKING',
-  'CMakeLists.txt', // has extension but commonly referenced
+  'CMakeLists.txt',
   'configure', 'gradlew',
 ]);
 
@@ -44,7 +45,6 @@ function isLikelyFile(path: string): boolean {
   if (hasKnownExtension(path)) return true;
   if (isDotfile(path)) return true;
   if (isKnownFilename(path)) return true;
-  // Paths with / are likely files/dirs even without extensions (e.g. src/utils, ./run-tests)
   if (path.includes('/')) return true;
   return false;
 }
@@ -52,6 +52,9 @@ function isLikelyFile(path: string): boolean {
 /**
  * Regex patterns to match file paths in terminal output.
  * Order matters — more specific patterns first.
+ *
+ * Note: ls -l output is NOT handled here. The `l` shell function emits
+ * OSC 8 hyperlinks which xterm.js handles natively via linkHandler.
  */
 const FILE_PATH_PATTERNS = [
   // Absolute paths: /foo/bar or ~/foo/bar (with or without extension)
@@ -68,7 +71,10 @@ const FILE_PATH_PATTERNS = [
 
 /**
  * Creates a link provider that detects file paths in terminal output.
- * Uses xterm's registerLinkProvider API.
+ * Handles paths from compiler errors, git status, find, grep, etc.
+ *
+ * ls -l file linking is handled separately via OSC 8 hyperlinks
+ * (the `l` shell function + xterm.js linkHandler).
  */
 export function createFilePathLinkProvider(
   terminal: Terminal,
@@ -76,23 +82,15 @@ export function createFilePathLinkProvider(
 ): { dispose: () => void } {
   const provider: ILinkProvider = {
     provideLinks(bufferLineNumber: number, callback: (links: ILink[] | undefined) => void) {
-      const buffer = terminal.buffer.active;
-      const line = buffer.getLine(bufferLineNumber - 1);
+      const line = terminal.buffer.active.getLine(bufferLineNumber - 1);
       if (!line) {
         callback(undefined);
         return;
       }
 
-      const text = line.translateToString(false);
-
-      // Skip directory lines in ls -l output (permissions start with 'd')
-      if (/^\s*d[rwxsStT@+.\-]{2,9}\s/.test(text)) {
-        callback(undefined);
-        return;
-      }
-
+      const text = line.translateToString(true);
       const links: ILink[] = [];
-      const seen = new Set<string>(); // avoid duplicate links at same position
+      const seen = new Set<string>();
 
       for (const pattern of FILE_PATH_PATTERNS) {
         const regex = new RegExp(pattern.source, 'g');

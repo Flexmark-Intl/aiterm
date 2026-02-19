@@ -188,6 +188,7 @@
       }
 
       const isMeta = isModKey(e);
+      const activeTabIsEditor = workspacesStore.activeTab?.tab_type === 'editor';
 
       // Cmd+Shift+R - Reload tab
       if (isMeta && e.shiftKey && e.key.toLowerCase() === 'r') {
@@ -229,7 +230,9 @@
       }
 
       // Cmd+D - Split pane right (horizontal), cloning context
+      // (Skip for editor tabs — CodeMirror uses Cmd+D for select next occurrence)
       if (isMeta && !e.shiftKey && e.key.toLowerCase() === 'd') {
+        if (activeTabIsEditor) return;
         e.preventDefault();
         e.stopPropagation();
         const ws = workspacesStore.activeWorkspace;
@@ -304,11 +307,16 @@
         const ws = workspacesStore.activeWorkspace;
         const pane = workspacesStore.activePane;
         if (ws && pane) {
-          dialogOpen({
+          // Default to active terminal's local CWD if available
+          const activeTab = workspacesStore.activeTab;
+          const instance = activeTab && activeTab.tab_type !== 'editor' ? terminalsStore.get(activeTab.id) : null;
+          const ptyInfoP = instance ? commands.getPtyInfo(instance.ptyId).catch(() => null) : Promise.resolve(null);
+          ptyInfoP.then(ptyInfo => dialogOpen({
             multiple: false,
             directory: false,
             title: 'Open File',
-          }).then(async (selected) => {
+            defaultPath: ptyInfo?.cwd ?? undefined,
+          })).then(async (selected) => {
             if (!selected) return;
             const filePath = selected;
             const fileName = filePath.split('/').pop() ?? filePath;
@@ -336,9 +344,11 @@
 
       // Cmd+S - Save active editor tab or prevent browser save dialog
       if (isMeta && !e.shiftKey && e.key.toLowerCase() === 's') {
+        if (activeTabIsEditor) {
+          // Let CodeMirror's Mod-s keymap handle it (EditorPane registers its own handler)
+          return;
+        }
         e.preventDefault();
-        // Dispatch a custom event that EditorPane listens for
-        window.dispatchEvent(new CustomEvent('editor-save', { detail: { tabId: workspacesStore.activeTab?.id } }));
         return;
       }
 
@@ -406,7 +416,9 @@
       }
 
       // Cmd+K - Clear terminal and scrollback
+      // Cmd+K - Clear terminal (skip for editor tabs)
       if (isMeta && !e.shiftKey && e.key.toLowerCase() === 'k') {
+        if (activeTabIsEditor) return; // Let CodeMirror handle it
         e.preventDefault();
         e.stopPropagation();
         const tab = workspacesStore.activeTab;
@@ -416,8 +428,9 @@
         return;
       }
 
-      // Cmd+F - Find in terminal
+      // Cmd+F - Find in terminal (skip for editor tabs — CodeMirror has its own find/replace)
       if (isMeta && !e.shiftKey && e.key.toLowerCase() === 'f') {
+        if (activeTabIsEditor) return; // Let CodeMirror handle it
         e.preventDefault();
         e.stopPropagation();
         const tab = workspacesStore.activeTab;

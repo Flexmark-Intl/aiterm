@@ -82,8 +82,8 @@ export async function renameWorkspace(workspaceId: string, name: string): Promis
   return invoke('rename_workspace', { workspaceId, name });
 }
 
-export async function splitPane(workspaceId: string, targetPaneId: string, direction: SplitDirection, scrollback?: string | null): Promise<Pane> {
-  return invoke('split_pane', { workspaceId, targetPaneId, direction, scrollback: scrollback ?? null });
+export async function splitPane(workspaceId: string, targetPaneId: string, direction: SplitDirection, scrollback?: string | null, editorFile?: EditorFileInfo | null): Promise<Pane> {
+  return invoke('split_pane', { workspaceId, targetPaneId, direction, scrollback: scrollback ?? null, editorFile: editorFile ?? null });
 }
 
 export async function deletePane(workspaceId: string, paneId: string): Promise<void> {
@@ -283,6 +283,19 @@ export async function readFile(path: string): Promise<ReadFileResult> {
   return invoke('read_file', { path });
 }
 
+export interface ReadFileBase64Result {
+  data: string;
+  size: number;
+}
+
+export async function readFileBase64(path: string): Promise<ReadFileBase64Result> {
+  return invoke('read_file_base64', { path });
+}
+
+export async function scpReadFileBase64(sshCommand: string, remotePath: string): Promise<ReadFileBase64Result> {
+  return invoke('scp_read_file_base64', { sshCommand, remotePath });
+}
+
 export async function writeFile(path: string, content: string): Promise<void> {
   return invoke('write_file', { path, content });
 }
@@ -295,6 +308,6 @@ export async function scpWriteFile(sshCommand: string, remotePath: string, conte
   return invoke('scp_write_file', { sshCommand, remotePath, content });
 }
 
-export async function createEditorTab(workspaceId: string, paneId: string, name: string, fileInfo: EditorFileInfo): Promise<Tab> {
-  return invoke('create_editor_tab', { workspaceId, paneId, name, fileInfo });
+export async function createEditorTab(workspaceId: string, paneId: string, name: string, fileInfo: EditorFileInfo, afterTabId?: string): Promise<Tab> {
+  return invoke('create_editor_tab', { workspaceId, paneId, name, fileInfo, afterTabId: afterTabId ?? null });
 }

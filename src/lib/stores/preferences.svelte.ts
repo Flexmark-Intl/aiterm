@@ -39,6 +39,9 @@ function createPreferencesStore() {
   let notificationVolume = $state(50);
   let migrateTabNotes = $state(true);
   let notesScope = $state<'tab' | 'workspace'>('tab');
+  let showRecentWorkspaces = $state(true);
+  let workspaceSortOrder = $state('default');
+  let showWorkspaceTabCount = $state(false);
   let triggers = $state<Trigger[]>([]);
   let hiddenDefaultTriggers = $state<string[]>([]);
   let claudeTriggersPrompted = $state(false);
@@ -78,6 +81,9 @@ function createPreferencesStore() {
     get notificationVolume() { return notificationVolume; },
     get migrateTabNotes() { return migrateTabNotes; },
     get notesScope() { return notesScope; },
+    get showRecentWorkspaces() { return showRecentWorkspaces; },
+    get workspaceSortOrder() { return workspaceSortOrder; },
+    get showWorkspaceTabCount() { return showWorkspaceTabCount; },
     get triggers() { return triggers; },
     get hiddenDefaultTriggers() { return hiddenDefaultTriggers; },
     get claudeTriggersPrompted() { return claudeTriggersPrompted; },
@@ -121,6 +127,9 @@ function createPreferencesStore() {
       notificationVolume = prefs.notification_volume ?? 50;
       migrateTabNotes = prefs.migrate_tab_notes ?? true;
       notesScope = (prefs.notes_scope === 'workspace' ? 'workspace' : 'tab');
+      showRecentWorkspaces = prefs.show_recent_workspaces ?? true;
+      workspaceSortOrder = prefs.workspace_sort_order || 'default';
+      showWorkspaceTabCount = prefs.show_workspace_tab_count ?? false;
       triggers = prefs.triggers ?? [];
       hiddenDefaultTriggers = prefs.hidden_default_triggers ?? [];
       claudeTriggersPrompted = prefs.claude_triggers_prompted ?? false;
@@ -282,6 +291,21 @@ function createPreferencesStore() {
       await this.save();
     },
 
+    async setShowRecentWorkspaces(value: boolean) {
+      showRecentWorkspaces = value;
+      await this.save();
+    },
+
+    async setWorkspaceSortOrder(value: string) {
+      workspaceSortOrder = value;
+      await this.save();
+    },
+
+    async setShowWorkspaceTabCount(value: boolean) {
+      showWorkspaceTabCount = value;
+      await this.save();
+    },
+
     async setTriggers(value: Trigger[]) {
       triggers = value;
       await this.save();
@@ -352,6 +376,9 @@ function createPreferencesStore() {
       notificationVolume = prefs.notification_volume ?? 50;
       migrateTabNotes = prefs.migrate_tab_notes ?? true;
       notesScope = (prefs.notes_scope === 'workspace' ? 'workspace' : 'tab');
+      showRecentWorkspaces = prefs.show_recent_workspaces ?? true;
+      workspaceSortOrder = prefs.workspace_sort_order || 'default';
+      showWorkspaceTabCount = prefs.show_workspace_tab_count ?? false;
       triggers = prefs.triggers ?? [];
       hiddenDefaultTriggers = prefs.hidden_default_triggers ?? [];
       claudeTriggersPrompted = prefs.claude_triggers_prompted ?? false;
@@ -392,6 +419,9 @@ function createPreferencesStore() {
         notification_volume: notificationVolume,
         migrate_tab_notes: migrateTabNotes,
         notes_scope: notesScope === 'workspace' ? 'workspace' : null,
+        show_recent_workspaces: showRecentWorkspaces,
+        workspace_sort_order: workspaceSortOrder === 'default' ? '' : workspaceSortOrder,
+        show_workspace_tab_count: showWorkspaceTabCount,
         triggers,
         hidden_default_triggers: hiddenDefaultTriggers,
         claude_triggers_prompted: claudeTriggersPrompted,

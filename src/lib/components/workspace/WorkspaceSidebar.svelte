@@ -4,6 +4,7 @@
   import { workspacesStore } from '$lib/stores/workspaces.svelte';
   import { terminalsStore } from '$lib/stores/terminals.svelte';
   import { activityStore } from '$lib/stores/activity.svelte';
+  import { preferencesStore } from '$lib/stores/preferences.svelte';
   import * as commands from '$lib/tauri/commands';
   import { modSymbol } from '$lib/utils/platform';
 
@@ -248,6 +249,23 @@
     }
   }
 
+  const sortedWorkspaces = $derived.by(() => {
+    const ws = workspacesStore.workspaces;
+    const order = preferencesStore.workspaceSortOrder;
+    if (order === 'alphabetical') {
+      return [...ws].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+    }
+    if (order === 'recent_activity') {
+      const switched = workspacesStore.lastSwitchedAt;
+      return [...ws].sort((a, b) => {
+        const aTs = a.id === workspacesStore.activeWorkspaceId ? Date.now() : (switched.get(a.id) ?? 0);
+        const bTs = b.id === workspacesStore.activeWorkspaceId ? Date.now() : (switched.get(b.id) ?? 0);
+        return bTs - aTs;
+      });
+    }
+    return ws;
+  });
+
   function handleItemClick(workspaceId: string) {
     // Suppress click after a drag
     if (didDrag) {
@@ -274,7 +292,7 @@
     <button class="header-btn" onclick={handleNewWorkspace} title="New workspace ({modSymbol}N)">+</button>
   </div>
 
-  {#if workspacesStore.recentWorkspaces.length > 0}
+  {#if preferencesStore.showRecentWorkspaces && workspacesStore.recentWorkspaces.length > 0}
     <div class="recent-section">
       <span class="recent-title">RECENT</span>
       <div class="recent-list">
@@ -292,7 +310,7 @@
   {/if}
 
   <div class="workspace-list" bind:this={workspaceListEl}>
-    {#each workspacesStore.workspaces as workspace, index (workspace.id)}
+    {#each sortedWorkspaces as workspace, index (workspace.id)}
       <div
         class="workspace-item"
         class:active={workspace.id === workspacesStore.activeWorkspaceId}
@@ -332,7 +350,7 @@
               <span class="activity-dot"></span>
             {/if}
           </span>
-          <span class="workspace-name">{workspace.name}</span>
+          <span class="workspace-name">{workspace.name}{#if preferencesStore.showWorkspaceTabCount}<span class="tab-count"> ({workspace.panes.reduce((sum, p) => sum + p.tabs.length, 0)})</span>{/if}</span>
           <button
             class="delete-btn"
             onclick={(e) => handleDeleteWorkspace(workspace.id, e)}
@@ -537,6 +555,10 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .tab-count {
+    color: var(--fg-dim);
   }
 
   .delete-btn {

@@ -272,8 +272,10 @@ pub fn run() {
             commands::window::get_window_count,
             commands::window::open_preferences_window,
             commands::editor::read_file,
+            commands::editor::read_file_base64,
             commands::editor::write_file,
             commands::editor::scp_read_file,
+            commands::editor::scp_read_file_base64,
             commands::editor::scp_write_file,
             commands::editor::create_editor_tab,
         ])

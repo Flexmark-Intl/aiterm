@@ -1,5 +1,6 @@
 use crate::state::persistence::save_state;
 use crate::state::{AppState, EditorFileInfo, Tab};
+use base64::Engine;
 use std::io::Read;
 use std::sync::Arc;
 use tauri::{command, State, Window};
@@ -56,6 +57,76 @@ pub async fn write_file(path: String, content: String) -> Result<(), String> {
     })?;
 
     Ok(())
+}
+
+#[derive(serde::Serialize)]
+pub struct ReadFileBase64Result {
+    pub data: String,
+    pub size: u64,
+}
+
+#[command]
+pub async fn read_file_base64(path: String) -> Result<ReadFileBase64Result, String> {
+    let metadata = std::fs::metadata(&path).map_err(|e| format!("Cannot access file: {}", e))?;
+
+    if metadata.is_dir() {
+        return Err("IS_DIRECTORY".to_string());
+    }
+
+    if metadata.len() > 20 * 1024 * 1024 {
+        let size_mb = metadata.len() as f64 / (1024.0 * 1024.0);
+        return Err(format!("FILE_TOO_LARGE:{:.1}", size_mb));
+    }
+
+    let bytes = std::fs::read(&path).map_err(|e| format!("Cannot read file: {}", e))?;
+    let data = base64::engine::general_purpose::STANDARD.encode(&bytes);
+
+    Ok(ReadFileBase64Result {
+        size: metadata.len(),
+        data,
+    })
+}
+
+#[command]
+pub async fn scp_read_file_base64(
+    ssh_command: String,
+    remote_path: String,
+) -> Result<ReadFileBase64Result, String> {
+    let user_host = extract_user_host(&ssh_command)?;
+
+    // Download via SCP
+    let temp_dir = std::env::temp_dir();
+    let temp_name = format!("aiterm-scp-{}", uuid::Uuid::new_v4());
+    let local_path = temp_dir.join(&temp_name);
+
+    let output = std::process::Command::new("scp")
+        .arg("-o").arg("BatchMode=yes")
+        .arg("-o").arg("ConnectTimeout=10")
+        .arg(format!("{}:{}", user_host, remote_path))
+        .arg(local_path.to_str().unwrap())
+        .output()
+        .map_err(|e| format!("Failed to run scp: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("SCP download failed: {}", stderr.trim()));
+    }
+
+    let metadata = std::fs::metadata(&local_path).map_err(|e| format!("Cannot stat file: {}", e))?;
+    if metadata.len() > 20 * 1024 * 1024 {
+        let _ = std::fs::remove_file(&local_path);
+        let size_mb = metadata.len() as f64 / (1024.0 * 1024.0);
+        return Err(format!("FILE_TOO_LARGE:{:.1}", size_mb));
+    }
+
+    let bytes = std::fs::read(&local_path).map_err(|e| format!("Cannot read file: {}", e))?;
+    let _ = std::fs::remove_file(&local_path);
+    let data = base64::engine::general_purpose::STANDARD.encode(&bytes);
+
+    Ok(ReadFileBase64Result {
+        size: metadata.len(),
+        data,
+    })
 }
 
 #[command]
@@ -180,6 +251,7 @@ pub async fn create_editor_tab(
     pane_id: String,
     name: String,
     file_info: EditorFileInfo,
+    after_tab_id: Option<String>,
 ) -> Result<Tab, String> {
     let mut app_data = state.app_data.write();
     let win_label = window.label().to_string();
@@ -200,7 +272,13 @@ pub async fn create_editor_tab(
 
     let tab = Tab::new_editor(name, file_info);
     let tab_id = tab.id.clone();
-    pane.tabs.push(tab.clone());
+
+    // Insert after the specified tab, or append to end
+    let insert_idx = after_tab_id
+        .and_then(|id| pane.tabs.iter().position(|t| t.id == id))
+        .map(|idx| idx + 1)
+        .unwrap_or(pane.tabs.len());
+    pane.tabs.insert(insert_idx, tab.clone());
     pane.active_tab_id = Some(tab_id);
 
     let _ = save_state(&app_data);

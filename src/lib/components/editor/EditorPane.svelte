@@ -5,10 +5,10 @@
   import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
   import { foldGutter, indentOnInput, bracketMatching, foldKeymap } from '@codemirror/language';
   import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
-  import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
+  import { search, searchKeymap, highlightSelectionMatches } from '@codemirror/search';
   import type { EditorFileInfo } from '$lib/tauri/types';
-  import { readFile, writeFile, scpReadFile, scpWriteFile } from '$lib/tauri/commands';
-  import { loadLanguageExtension, detectLanguageFromContent } from '$lib/utils/languageDetect';
+  import { readFile, readFileBase64, writeFile, scpReadFile, scpReadFileBase64, scpWriteFile } from '$lib/tauri/commands';
+  import { loadLanguageExtension, detectLanguageFromContent, isImageFile, getImageMimeType } from '$lib/utils/languageDetect';
   import { tokyoNightExtension } from '$lib/utils/editorTheme';
   import { preferencesStore } from '$lib/stores/preferences.svelte';
   import { dispatch } from '$lib/stores/notificationDispatch';
@@ -31,6 +31,57 @@
   let loading = $state(true);
   let errorMsg = $state<string | null>(null);
   let originalContent = '';
+  let imageDataUrl = $state<string | null>(null);
+  let imageFileSize = $state(0);
+  let imageNaturalWidth = $state(0);
+  let imageNaturalHeight = $state(0);
+  /** 0 = fit-to-window mode; positive = explicit zoom percentage (100 = 1:1 pixels) */
+  let imageZoom = $state(0);
+  let imageEl = $state<HTMLImageElement | null>(null);
+  let imageScrollEl = $state<HTMLDivElement | null>(null);
+
+  const ZOOM_STEPS = [10, 25, 50, 75, 100, 150, 200, 300, 400, 500];
+
+  /** Compute the actual display percentage when in fit-to-window mode. */
+  const fitPercent = $derived.by(() => {
+    if (!imageScrollEl || !imageNaturalWidth || !imageNaturalHeight) return 100;
+    const cw = imageScrollEl.clientWidth - 32; // subtract padding
+    const ch = imageScrollEl.clientHeight - 32;
+    if (cw <= 0 || ch <= 0) return 100;
+    const scale = Math.min(cw / imageNaturalWidth, ch / imageNaturalHeight, 1);
+    return Math.round(scale * 100);
+  });
+
+  /** The effective zoom percentage shown in the label. */
+  const displayZoom = $derived(imageZoom === 0 ? fitPercent : imageZoom);
+
+  function zoomIn() {
+    const current = displayZoom;
+    const next = ZOOM_STEPS.find(z => z > current);
+    imageZoom = next ?? ZOOM_STEPS[ZOOM_STEPS.length - 1];
+  }
+
+  function zoomOut() {
+    const current = displayZoom;
+    const prev = [...ZOOM_STEPS].reverse().find(z => z < current);
+    imageZoom = prev ?? ZOOM_STEPS[0];
+  }
+
+  function zoomFit() {
+    imageZoom = 0;
+  }
+
+  function formatFileSize(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  }
+
+  function handleImageLoad(e: Event) {
+    const img = e.target as HTMLImageElement;
+    imageNaturalWidth = img.naturalWidth;
+    imageNaturalHeight = img.naturalHeight;
+  }
 
   function attachToSlot() {
     const slot = document.querySelector(`[data-terminal-slot="${tabId}"]`) as HTMLElement;
@@ -77,88 +128,108 @@
     window.addEventListener('terminal-slot-ready', handleSlotReady);
     window.addEventListener('editor-save', handleEditorSave);
 
-    // Fetch file content
+    const filePath = editorFile.remote_path ?? editorFile.file_path;
+    const isImage = isImageFile(filePath);
+
     try {
-      let content: string;
-      if (editorFile.is_remote && editorFile.remote_ssh_command && editorFile.remote_path) {
-        const result = await scpReadFile(editorFile.remote_ssh_command, editorFile.remote_path);
-        content = result.content;
+      if (isImage) {
+        // Load image as base64 data URL
+        const mime = getImageMimeType(filePath) ?? 'image/png';
+        let data: string;
+        let size: number;
+        if (editorFile.is_remote && editorFile.remote_ssh_command && editorFile.remote_path) {
+          const result = await scpReadFileBase64(editorFile.remote_ssh_command, editorFile.remote_path);
+          data = result.data;
+          size = result.size;
+        } else {
+          const result = await readFileBase64(editorFile.file_path);
+          data = result.data;
+          size = result.size;
+        }
+        imageDataUrl = `data:${mime};base64,${data}`;
+        imageFileSize = size;
+        loading = false;
       } else {
-        const result = await readFile(editorFile.file_path);
-        content = result.content;
+        // Load text file into CodeMirror
+        let content: string;
+        if (editorFile.is_remote && editorFile.remote_ssh_command && editorFile.remote_path) {
+          const result = await scpReadFile(editorFile.remote_ssh_command, editorFile.remote_path);
+          content = result.content;
+        } else {
+          const result = await readFile(editorFile.file_path);
+          content = result.content;
+        }
+        originalContent = content;
+
+        const langId = editorFile.language ?? detectLanguageFromContent(content);
+        const langExt = langId ? await loadLanguageExtension(langId) : null;
+
+        const extensions = [
+          lineNumbers(),
+          highlightActiveLineGutter(),
+          highlightSpecialChars(),
+          history(),
+          foldGutter(),
+          drawSelection(),
+          dropCursor(),
+          EditorState.allowMultipleSelections.of(true),
+          indentOnInput(),
+          bracketMatching(),
+          closeBrackets(),
+          rectangularSelection(),
+          crosshairCursor(),
+          highlightActiveLine(),
+          highlightSelectionMatches(),
+          search({ top: true }),
+          keymap.of([
+            ...closeBracketsKeymap,
+            ...defaultKeymap,
+            ...searchKeymap,
+            ...historyKeymap,
+            ...foldKeymap,
+            indentWithTab,
+          ]),
+          ...tokyoNightExtension,
+          EditorView.updateListener.of((update) => {
+            if (update.docChanged) {
+              dirty = update.state.doc.toString() !== originalContent;
+            }
+          }),
+          EditorView.theme({
+            '&': {
+              height: '100%',
+              fontSize: `${preferencesStore.fontSize}px`,
+            },
+            '.cm-scroller': {
+              fontFamily: `"${preferencesStore.fontFamily}", Monaco, "Courier New", monospace`,
+              overflow: 'auto',
+            },
+          }),
+          keymap.of([{
+            key: 'Mod-s',
+            run: () => {
+              saveFile();
+              return true;
+            },
+          }]),
+        ];
+
+        if (langExt) {
+          extensions.push(langExt);
+        }
+
+        editorView = new EditorView({
+          state: EditorState.create({
+            doc: content,
+            extensions,
+          }),
+          parent: containerRef,
+        });
+
+        loading = false;
       }
-      originalContent = content;
-
-      // Load language extension — fall back to shebang detection
-      const langId = editorFile.language ?? detectLanguageFromContent(content);
-      const langExt = langId ? await loadLanguageExtension(langId) : null;
-
-      const extensions = [
-        lineNumbers(),
-        highlightActiveLineGutter(),
-        highlightSpecialChars(),
-        history(),
-        foldGutter(),
-        drawSelection(),
-        dropCursor(),
-        EditorState.allowMultipleSelections.of(true),
-        indentOnInput(),
-        bracketMatching(),
-        closeBrackets(),
-        rectangularSelection(),
-        crosshairCursor(),
-        highlightActiveLine(),
-        highlightSelectionMatches(),
-        keymap.of([
-          ...closeBracketsKeymap,
-          ...defaultKeymap,
-          ...searchKeymap,
-          ...historyKeymap,
-          ...foldKeymap,
-          indentWithTab,
-        ]),
-        ...tokyoNightExtension,
-        EditorView.updateListener.of((update) => {
-          if (update.docChanged) {
-            dirty = update.state.doc.toString() !== originalContent;
-          }
-        }),
-        EditorView.theme({
-          '&': {
-            height: '100%',
-            fontSize: `${preferencesStore.fontSize}px`,
-          },
-          '.cm-scroller': {
-            fontFamily: `"${preferencesStore.fontFamily}", Monaco, "Courier New", monospace`,
-            overflow: 'auto',
-          },
-        }),
-        // Cmd+S handler
-        keymap.of([{
-          key: 'Mod-s',
-          run: () => {
-            saveFile();
-            return true;
-          },
-        }]),
-      ];
-
-      if (langExt) {
-        extensions.push(langExt);
-      }
-
-      editorView = new EditorView({
-        state: EditorState.create({
-          doc: content,
-          extensions,
-        }),
-        parent: containerRef,
-      });
-
-      loading = false;
     } catch (e) {
       const msg = String(e).toLowerCase();
-      // Silently close tab for directories and similar non-file entries
       if (msg.includes('is_directory') || msg.includes('not a regular file') || msg.includes('is a directory')) {
         workspacesStore.deleteTab(workspaceId, paneId, tabId);
         return;
@@ -166,8 +237,8 @@
       const raw = String(e);
       if (raw.startsWith('FILE_TOO_LARGE:')) {
         const sizeMb = raw.split(':')[1];
-        errorMsg = `File is too large to edit (${sizeMb} MB)`;
-      } else if (raw.toLowerCase().includes('binary')) {
+        errorMsg = `File is too large (${sizeMb} MB)`;
+      } else if (!isImage && raw.toLowerCase().includes('binary')) {
         errorMsg = 'Binary file — cannot open in editor';
       } else {
         errorMsg = raw;
@@ -211,6 +282,33 @@
       </div>
       <button class="error-close-btn" onclick={() => workspacesStore.deleteTab(workspaceId, paneId, tabId)}>Close tab</button>
     </div>
+  {:else if imageDataUrl}
+    <div class="image-preview">
+      <div class="image-info-bar">
+        {#if imageNaturalWidth > 0}
+          <span class="info-item">{imageNaturalWidth} &times; {imageNaturalHeight}</span>
+          <span class="info-sep"></span>
+        {/if}
+        {#if imageFileSize > 0}
+          <span class="info-item">{formatFileSize(imageFileSize)}</span>
+          <span class="info-sep"></span>
+        {/if}
+        <div class="zoom-controls">
+          <button class="zoom-btn" onclick={zoomOut} disabled={displayZoom <= ZOOM_STEPS[0]} title="Zoom out">&minus;</button>
+          <button class="zoom-label" class:zoom-fit={imageZoom === 0} onclick={zoomFit} title="Fit to window">{displayZoom}%</button>
+          <button class="zoom-btn" onclick={zoomIn} disabled={displayZoom >= ZOOM_STEPS[ZOOM_STEPS.length - 1]} title="Zoom in">+</button>
+        </div>
+      </div>
+      <div class="image-scroll" bind:this={imageScrollEl}>
+        <img
+          bind:this={imageEl}
+          src={imageDataUrl}
+          alt={editorFile.file_path.split('/').pop() ?? 'image'}
+          onload={handleImageLoad}
+          style="{imageZoom === 0 ? 'max-width: 100%; max-height: 100%;' : `width: ${imageNaturalWidth * imageZoom / 100}px; height: ${imageNaturalHeight * imageZoom / 100}px;`} object-fit: contain;"
+        />
+      </div>
+    </div>
   {/if}
   {#if dirty}
     <div class="dirty-indicator" title="Unsaved changes"></div>
@@ -227,6 +325,55 @@
 
   .editor-container :global(.cm-editor) {
     height: 100%;
+  }
+
+  /* Search panel styling */
+  .editor-container :global(.cm-panel.cm-search) {
+    padding: 6px 10px;
+    font-size: 13px;
+    background: var(--bg-medium);
+    border-bottom: 1px solid var(--bg-light);
+  }
+
+  .editor-container :global(.cm-panel.cm-search input),
+  .editor-container :global(.cm-panel.cm-search button) {
+    font-size: 13px;
+  }
+
+  .editor-container :global(.cm-panel.cm-search input[type="text"]) {
+    padding: 3px 6px;
+    border-radius: 3px;
+    border: 1px solid var(--bg-light);
+    background: var(--bg-dark);
+    color: var(--fg);
+  }
+
+  .editor-container :global(.cm-panel.cm-search input[type="text"]:focus) {
+    border-color: var(--accent);
+    outline: none;
+  }
+
+  .editor-container :global(.cm-panel.cm-search button) {
+    padding: 2px 8px;
+    border-radius: 3px;
+    background: var(--bg-light);
+    color: var(--fg);
+    border: none;
+    cursor: pointer;
+  }
+
+  .editor-container :global(.cm-panel.cm-search button:hover) {
+    background: var(--accent);
+    color: var(--bg-dark);
+  }
+
+  .editor-container :global(.cm-panel.cm-search label) {
+    font-size: 13px;
+    color: var(--fg-dim);
+  }
+
+  .editor-container :global(.cm-panel.cm-search .cm-button) {
+    background-image: none;
   }
 
   .editor-container.hidden {
@@ -284,6 +431,103 @@
   .error-close-btn:hover {
     background: var(--accent);
     color: var(--bg-dark);
+  }
+
+  .image-preview {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+
+  .image-scroll {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: auto;
+    padding: 16px;
+    min-height: 0;
+  }
+
+  .image-preview img {
+    border-radius: 4px;
+  }
+
+  .image-info-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 4px 12px;
+    border-bottom: 1px solid var(--bg-light);
+    background: var(--bg-medium);
+    flex-shrink: 0;
+    height: 28px;
+  }
+
+  .info-item {
+    font-size: 11px;
+    color: var(--fg-dim);
+    white-space: nowrap;
+  }
+
+  .info-sep {
+    width: 1px;
+    height: 12px;
+    background: var(--bg-light);
+    flex-shrink: 0;
+  }
+
+  .zoom-controls {
+    display: flex;
+    align-items: center;
+    gap: 0;
+  }
+
+  .zoom-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 20px;
+    padding: 0;
+    font-size: 13px;
+    color: var(--fg-dim);
+    background: none;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+
+  .zoom-btn:hover:not(:disabled) {
+    background: var(--bg-light);
+    color: var(--fg);
+  }
+
+  .zoom-btn:disabled {
+    opacity: 0.3;
+    cursor: default;
+  }
+
+  .zoom-label {
+    font-size: 11px;
+    color: var(--fg-dim);
+    min-width: 36px;
+    text-align: center;
+    padding: 0 2px;
+    background: none;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+
+  .zoom-label:hover {
+    background: var(--bg-light);
+    color: var(--fg);
+  }
+
+  .zoom-label.zoom-fit {
+    color: var(--accent);
   }
 
   .dirty-indicator {

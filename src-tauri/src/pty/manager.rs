@@ -85,43 +85,56 @@ pub fn spawn_pty(
         }
     }
 
-    // Shell integration: configure shell hooks for title and/or command completion
+    // Shell integration: configure shell hooks for title, command completion, and l() function
     let prefs = state.app_data.read().preferences.clone();
     let shell_title_integration = prefs.shell_title_integration;
     let shell_integration = prefs.shell_integration;
-    if shell_title_integration || shell_integration {
-        match shell_name {
-            "bash" => {
-                if shell_integration {
-                    // Build PROMPT_COMMAND with DEBUG trap for OSC 133 B.
-                    // __aiterm_ec=$? MUST be first to capture the user's command
-                    // exit code before anything else clobbers $?.
-                    // The trap is set once (guarded by __aiterm_trap via && chain).
-                    // __aiterm_at_prompt=1 MUST be last so the DEBUG trap only
-                    // fires B for user commands, not PROMPT_COMMAND internals.
-                    let title_part = if shell_title_integration {
-                        r#" printf "\033]0;%s@%s:%s\007" "${USER}" "${HOSTNAME%%.*}" "${PWD/#$HOME/~}";"#
-                    } else { "" };
-                    let prompt_cmd = format!(
-                        concat!(
-                            r#"__aiterm_ec=$?;"#,
-                            r#" [[ -z "$__aiterm_trap" ]] && __aiterm_trap=1 &&"#,
-                            r#" trap '[[ "$__aiterm_at_prompt" == 1 ]] && __aiterm_at_prompt= && printf "\033]133;B\007"' DEBUG;"#,
-                            r#" printf '\033]133;D;%d\007' "$__aiterm_ec"; printf '\033]133;A\007';"#,
-                            r#"{}"#,
-                            r#" __aiterm_at_prompt=1"#,
-                        ),
-                        title_part,
-                    );
-                    cmd.env("PROMPT_COMMAND", prompt_cmd);
-                } else if shell_title_integration {
-                    cmd.env(
-                        "PROMPT_COMMAND",
-                        r#"printf "\033]0;%s@%s:%s\007" "${USER}" "${HOSTNAME%%.*}" "${PWD/#$HOME/~}""#,
-                    );
-                }
+
+    // Guarded one-time source of l() function (ls with OSC 8 file links)
+    // Always injected regardless of shell integration prefs
+    let l_fn_prefix = match write_ls_function() {
+        Ok(path) => format!(
+            r#"[[ -z "$__aiterm_l" ]] && __aiterm_l=1 && source "{}"; "#,
+            path.display()
+        ),
+        Err(_) => String::new(),
+    };
+
+    match shell_name {
+        "bash" => {
+            if shell_integration {
+                let title_part = if shell_title_integration {
+                    r#" printf "\033]0;%s@%s:%s\007" "${USER}" "${HOSTNAME%%.*}" "${PWD/#$HOME/~}";"#
+                } else { "" };
+                let prompt_cmd = format!(
+                    concat!(
+                        "{}",
+                        r#"__aiterm_ec=$?;"#,
+                        r#" [[ -z "$__aiterm_trap" ]] && __aiterm_trap=1 &&"#,
+                        r#" trap '[[ "$__aiterm_at_prompt" == 1 ]] && __aiterm_at_prompt= && printf "\033]133;B\007"' DEBUG;"#,
+                        r#" printf '\033]133;D;%d\007' "$__aiterm_ec"; printf '\033]133;A\007';"#,
+                        r#"{}"#,
+                        r#" __aiterm_at_prompt=1"#,
+                    ),
+                    l_fn_prefix,
+                    title_part,
+                );
+                cmd.env("PROMPT_COMMAND", prompt_cmd);
+            } else if shell_title_integration {
+                cmd.env(
+                    "PROMPT_COMMAND",
+                    format!(
+                        r#"{}printf "\033]0;%s@%s:%s\007" "${{USER}}" "${{HOSTNAME%%.*}}" "${{PWD/#$HOME/~}}""#,
+                        l_fn_prefix
+                    ),
+                );
+            } else if !l_fn_prefix.is_empty() {
+                // No shell integration, but still inject the l() function
+                cmd.env("PROMPT_COMMAND", l_fn_prefix.trim_end_matches("; "));
             }
-            "zsh" => {
+        }
+        "zsh" => {
+            if shell_title_integration || shell_integration {
                 if let Ok(integration_dir) = setup_zsh_integration(shell_title_integration, shell_integration) {
                     let real_zdotdir = std::env::var("ZDOTDIR")
                         .unwrap_or_else(|_| {
@@ -133,7 +146,9 @@ pub fn spawn_pty(
                     cmd.env("ZDOTDIR", integration_dir.to_string_lossy().to_string());
                 }
             }
-            "fish" => {
+        }
+        "fish" => {
+            if shell_title_integration || shell_integration {
                 let mut parts: Vec<String> = Vec::new();
                 if shell_integration {
                     parts.push(
@@ -151,8 +166,8 @@ pub fn spawn_pty(
                 cmd.arg("-C");
                 cmd.arg(parts.join("; "));
             }
-            _ => {}
         }
+        _ => {}
     }
 
     // Set working directory — use provided cwd (from split) or fall back to home
@@ -437,8 +452,119 @@ fi
         hooks.push_str("add-zsh-hook precmd _aiterm_title_precmd\n");
     }
 
+    // Source l() function (ls with OSC 8 file links) if available
+    if let Ok(l_fn_path) = write_ls_function() {
+        hooks.push_str(&format!("\nsource \"{}\"\n", l_fn_path.display()));
+    }
+
     std::fs::write(zsh_dir.join(".zshenv"), zshenv_content).map_err(|e| e.to_string())?;
     std::fs::write(zsh_dir.join(".zshrc"), &hooks).map_err(|e| e.to_string())?;
 
     Ok(zsh_dir)
+}
+
+/// Write the `l()` shell function (ls with OSC 8 hyperlinks) to a file.
+/// When sourced, defines `l` as an ls wrapper that emits clickable file:// links.
+/// Returns the path to the written file.
+fn write_ls_function() -> Result<std::path::PathBuf, String> {
+    let data_dir = dirs::data_dir().ok_or("No data directory")?;
+    let integration_dir = data_dir.join(app_data_slug()).join("shell-integration");
+    std::fs::create_dir_all(&integration_dir).map_err(|e| e.to_string())?;
+
+    let path = integration_dir.join("l_function.sh");
+    let content = r#"# aiTerm: ls with clickable file links (OSC 8 hyperlinks)
+unalias l 2>/dev/null
+if ls --hyperlink=auto / >/dev/null 2>&1; then
+  # GNU ls supports hyperlinks natively
+  alias l='ls --hyperlink=auto -la'
+else
+  # macOS/BSD fallback: post-process ls output with awk to inject OSC 8 links
+  l() {
+    local _args="" _dirs=""
+    local _nondash=0
+    for _a in "$@"; do
+      case "$_a" in -*) _args="$_args $_a";; *) _nondash=$((_nondash+1)); _dirs="$_dirs
+$_a";; esac
+    done
+    # No non-flag args: list cwd
+    if [ "$_nondash" -eq 0 ]; then
+      _dirs="."
+    fi
+    # For a single directory arg, use it as the base dir for absolute paths
+    # For multiple args or files, use per-file resolution
+    if [ "$_nondash" -le 1 ]; then
+      local _d
+      _d=$(echo "$_dirs" | tail -1)
+      local _abs
+      _abs=$(cd "$_d" 2>/dev/null && pwd -P) || { ls -la "$@"; return; }
+      ls -la $_args "$_d" | awk -v dir="$_abs" '
+        /^total / { print; next }
+        /^d/ { print; next }
+        /^[lcbps-]/ {
+          if (match($0, /^[^ ]+ +[0-9]+ +[^ ]+ +[^ ]+ +[0-9,]+ +[A-Za-z]+ +[0-9]+ +[0-9:]+/)) {
+            pre = substr($0, 1, RLENGTH)
+            rest = substr($0, RLENGTH + 1)
+            sub(/^ +/, " ", rest)
+            fname = substr(rest, 2)
+            if (fname == "." || fname == "..") { print; next }
+            link_target = ""
+            if (index(fname, " -> ") > 0) {
+              idx = index(fname, " -> ")
+              link_target = substr(fname, idx)
+              fname = substr(fname, 1, idx - 1)
+            }
+            fpath = dir "/" fname
+            gsub(/ /, "%20", fpath)
+            gsub(/\(/, "%28", fpath)
+            gsub(/\)/, "%29", fpath)
+            printf "%s \033]8;;file://%s\033\\%s\033]8;;\033\\%s\n", pre, fpath, fname, link_target
+            next
+          }
+          print; next
+        }
+        { print }
+      '
+    else
+      # Multiple file/dir args (e.g. globs): resolve each file individually
+      local _pwd
+      _pwd=$(pwd -P)
+      ls -la $_args "$@" | awk -v base="$_pwd" '
+        /^$/ { print; next }
+        /^total / { print; next }
+        /^d/ { print; next }
+        /^[lcbps-]/ {
+          if (match($0, /^[^ ]+ +[0-9]+ +[^ ]+ +[^ ]+ +[0-9,]+ +[A-Za-z]+ +[0-9]+ +[0-9:]+/)) {
+            pre = substr($0, 1, RLENGTH)
+            rest = substr($0, RLENGTH + 1)
+            sub(/^ +/, " ", rest)
+            fname = substr(rest, 2)
+            if (fname == "." || fname == "..") { print; next }
+            link_target = ""
+            if (index(fname, " -> ") > 0) {
+              idx = index(fname, " -> ")
+              link_target = substr(fname, idx)
+              fname = substr(fname, 1, idx - 1)
+            }
+            # fname may include dir prefix from ls (e.g. "Downloads/foo.jpg")
+            if (substr(fname, 1, 1) == "/") {
+              fpath = fname
+            } else {
+              fpath = base "/" fname
+            }
+            gsub(/ /, "%20", fpath)
+            gsub(/\(/, "%28", fpath)
+            gsub(/\)/, "%29", fpath)
+            printf "%s \033]8;;file://%s\033\\%s\033]8;;\033\\%s\n", pre, fpath, fname, link_target
+            next
+          }
+          print; next
+        }
+        { print }
+      '
+    fi
+  }
+fi
+"#;
+    std::fs::write(&path, content).map_err(|e| e.to_string())?;
+    Ok(path)
 }

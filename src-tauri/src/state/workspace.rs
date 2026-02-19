@@ -565,6 +565,12 @@ pub struct Preferences {
     pub migrate_tab_notes: bool,
     #[serde(default)]
     pub notes_scope: Option<String>,
+    #[serde(default = "default_true")]
+    pub show_recent_workspaces: bool,
+    #[serde(default)]
+    pub workspace_sort_order: String,
+    #[serde(default)]
+    pub show_workspace_tab_count: bool,
     #[serde(default)]
     pub triggers: Vec<Trigger>,
     /// Default trigger IDs the user has intentionally deleted (prevents re-seeding).
@@ -611,6 +617,9 @@ impl Default for Preferences {
             notification_volume: default_notification_volume(),
             migrate_tab_notes: true,
             notes_scope: None,
+            show_recent_workspaces: true,
+            workspace_sort_order: String::new(),
+            show_workspace_tab_count: false,
             triggers: Vec::new(),
             hidden_default_triggers: Vec::new(),
             claude_triggers_prompted: false,

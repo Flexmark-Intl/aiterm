@@ -21,7 +21,9 @@
 
   // Scope is persisted in preferences so it survives app restarts
   const scope = $derived(preferencesStore.notesScope);
+  // svelte-ignore state_referenced_locally -- props used as initial values; local state is source of truth after mount
   let value = $state(notes ?? '');
+  // svelte-ignore state_referenced_locally
   let mode = $state<'source' | 'render'>((notesMode ?? 'source') as 'source' | 'render');
   let textareaEl = $state<HTMLTextAreaElement | null>(null);
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
