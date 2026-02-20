@@ -165,13 +165,16 @@ pub fn spawn_pty(
 
     #[cfg(windows)]
     let mut cmd = {
-        // On Windows, use PowerShell as the default shell
-        let shell = if which_exists("pwsh") {
-            "pwsh.exe".to_string()
-        } else {
-            "powershell.exe".to_string()
-        };
-        CommandBuilder::new(&shell)
+        use std::sync::OnceLock;
+        static WIN_SHELL: OnceLock<String> = OnceLock::new();
+        let shell = WIN_SHELL.get_or_init(|| {
+            if which_exists("pwsh") {
+                "pwsh.exe".to_string()
+            } else {
+                "powershell.exe".to_string()
+            }
+        });
+        CommandBuilder::new(shell.as_str())
     };
 
     // --- Cross-platform environment setup ---
@@ -242,6 +245,7 @@ pub fn spawn_pty(
                 }
                 Ok(PtyCommand::Kill) => {
                     let _ = child.kill();
+                    let _ = child.wait();
                     break;
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {
@@ -252,10 +256,16 @@ pub fn spawn_pty(
                 }
                 Err(mpsc::RecvTimeoutError::Disconnected) => {
                     let _ = child.kill();
+                    let _ = child.wait();
                     break;
                 }
             }
         }
+        // Drop writer and master to unblock the reader thread.
+        // On Windows, the reader can block on read() indefinitely if the
+        // master handle isn't closed after the child exits.
+        drop(writer);
+        drop(master);
         // Cleanup: remove PTY handle from registry on exit
         state_clone.pty_registry.write().remove(&pty_id_owned);
     });

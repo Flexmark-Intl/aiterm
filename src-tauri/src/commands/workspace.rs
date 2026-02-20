@@ -17,6 +17,22 @@ pub fn exit_app(app: tauri::AppHandle, state: State<'_, Arc<AppState>>) {
     if let Some(port) = port {
         crate::claude_code::lockfile::delete_lockfile(port);
     }
+
+    // Kill all remaining PTYs so their threads can exit cleanly
+    let pty_ids: Vec<String> = state.pty_registry.read().keys().cloned().collect();
+    for id in &pty_ids {
+        let _ = crate::pty::kill_pty(&state, id);
+    }
+
+    // Spawn a watchdog: if the main exit doesn't complete within 2s
+    // (e.g. PTY threads stuck on Windows), force-terminate the process.
+    let app_clone = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        log::warn!("Force-exiting after 2s timeout");
+        app_clone.exit(0);
+    });
+
     app.exit(0);
 }
 
