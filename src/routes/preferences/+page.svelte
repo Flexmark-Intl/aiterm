@@ -97,7 +97,7 @@
     if (result) preferencesStore.setTriggers(result);
   }
 
-  const sectionIds = ['appearance', 'terminal', 'ui', 'panels', 'workspace', 'notes', 'notifications', 'triggers'] as const;
+  const sectionIds = ['appearance', 'terminal', 'ui', 'panels', 'workspace', 'notes', 'notifications', 'triggers', 'claude_code'] as const;
   type SectionId = typeof sectionIds[number];
   const saved = localStorage.getItem('prefs-section');
   let activeSection = $state<SectionId>(
@@ -114,6 +114,7 @@
     { id: 'notes' as const, label: 'Notes' },
     { id: 'notifications' as const, label: 'Notifications' },
     { id: 'triggers' as const, label: 'Triggers' },
+    { id: 'claude_code' as const, label: 'Claude Code' },
   ];
 
   let expandedTriggerId = $state<string | null>(null);
@@ -1268,6 +1269,31 @@
         {#if !preferencesStore.triggers.length}
           <p class="section-desc" style="margin-top: 8px;">No triggers configured.</p>
         {/if}
+      {:else if activeSection === 'claude_code'}
+        <h3 class="section-heading">Claude Code IDE Integration</h3>
+        <p class="section-desc">
+          When enabled, aiTerm starts a WebSocket server that allows Claude CLI to open files,
+          show diffs, and access editor state. Requires restart to take effect.
+        </p>
+
+        <div class="setting" style="align-items: flex-start;">
+          <div>
+            <label for="claude-code-ide">Enable IDE Integration</label>
+            <p class="setting-hint">
+              Starts a local WebSocket server for Claude Code to communicate with aiTerm.
+            </p>
+          </div>
+          <button
+            id="claude-code-ide"
+            class="toggle"
+            class:active={preferencesStore.claudeCodeIde}
+            onclick={() => preferencesStore.setClaudeCodeIde(!preferencesStore.claudeCodeIde)}
+            aria-pressed={preferencesStore.claudeCodeIde}
+            aria-label="Toggle Claude Code IDE integration"
+          >
+            <span class="toggle-knob"></span>
+          </button>
+        </div>
       {/if}
     </div>
   </div>

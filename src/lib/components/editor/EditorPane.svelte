@@ -13,6 +13,9 @@
   import { preferencesStore } from '$lib/stores/preferences.svelte';
   import { dispatch } from '$lib/stores/notificationDispatch';
   import { workspacesStore } from '$lib/stores/workspaces.svelte';
+  import { registerEditor, unregisterEditor, setEditorDirty } from '$lib/stores/editorRegistry';
+  import { claudeCodeStore } from '$lib/stores/claudeCode.svelte';
+  import { EditorSelection } from '@codemirror/state';
   import { error as logError } from '@tauri-apps/plugin-log';
 
   interface Props {
@@ -192,7 +195,25 @@
           ...tokyoNightExtension,
           EditorView.updateListener.of((update) => {
             if (update.docChanged) {
-              dirty = update.state.doc.toString() !== originalContent;
+              const isDirty = update.state.doc.toString() !== originalContent;
+              dirty = isDirty;
+              setEditorDirty(tabId, isDirty);
+            }
+            if (update.selectionSet) {
+              const sel = update.state.selection.main;
+              const doc = update.state.doc;
+              const fromLine = doc.lineAt(sel.from);
+              const toLine = doc.lineAt(sel.to);
+              const selectedText = doc.sliceString(sel.from, sel.to);
+              claudeCodeStore.updateSelection({
+                text: selectedText,
+                filePath: editorFile.file_path,
+                selection: {
+                  start: { line: fromLine.number - 1, character: sel.from - fromLine.from },
+                  end: { line: toLine.number - 1, character: sel.to - toLine.from },
+                  isEmpty: sel.empty,
+                },
+              });
             }
           }),
           EditorView.theme({
@@ -226,6 +247,37 @@
           parent: containerRef,
         });
 
+        registerEditor(tabId, editorView, editorFile.file_path);
+
+        // Apply pending selection from Claude Code openFile
+        const pending = claudeCodeStore.getPendingSelection(tabId);
+        if (pending) {
+          claudeCodeStore.clearPendingSelection(tabId);
+          const doc = editorView.state.doc;
+          if (pending.startLine !== undefined) {
+            const line = doc.line(Math.min(pending.startLine + 1, doc.lines));
+            const endLine = pending.endLine !== undefined
+              ? doc.line(Math.min(pending.endLine + 1, doc.lines))
+              : line;
+            editorView.dispatch({
+              selection: EditorSelection.range(line.from, endLine.to),
+              scrollIntoView: true,
+            });
+          } else if (pending.startText) {
+            const text = doc.toString();
+            const idx = text.indexOf(pending.startText);
+            if (idx >= 0) {
+              const endIdx = pending.endText
+                ? text.indexOf(pending.endText, idx) + pending.endText.length
+                : idx + pending.startText.length;
+              editorView.dispatch({
+                selection: EditorSelection.range(idx, endIdx >= 0 ? endIdx : idx + pending.startText.length),
+                scrollIntoView: true,
+              });
+            }
+          }
+        }
+
         loading = false;
       }
     } catch (e) {
@@ -251,6 +303,7 @@
   onDestroy(() => {
     window.removeEventListener('terminal-slot-ready', handleSlotReady);
     window.removeEventListener('editor-save', handleEditorSave);
+    unregisterEditor(tabId);
     if (editorView) {
       editorView.destroy();
       editorView = null;

@@ -26,7 +26,7 @@ export const DEFAULT_TRIGGERS: Record<string, Omit<Trigger, 'id' | 'enabled' | '
     actions: [
       { action_type: 'notify', command: null, title: null, message: 'Captured: claudeSessionId `%claudeSessionId`', tab_state: null },
     ],
-    cooldown: 0,
+    cooldown: 0.3,
     variables: [
       { name: 'claudeSessionId', group: 1 },
     ],
@@ -40,7 +40,7 @@ export const DEFAULT_TRIGGERS: Record<string, Omit<Trigger, 'id' | 'enabled' | '
       { action_type: 'notify', command: null, title: null, message: 'Claude needs your attention.', tab_state: null },
       { action_type: 'set_tab_state', command: null, title: null, message: null, tab_state: 'question' },
     ],
-    cooldown: 0,
+    cooldown: 0.3,
     variables: [],
     plain_text: true,
   },
@@ -52,7 +52,7 @@ export const DEFAULT_TRIGGERS: Record<string, Omit<Trigger, 'id' | 'enabled' | '
       { action_type: 'set_tab_state', command: null, title: null, message: null, tab_state: 'alert' },
       { action_type: 'notify', command: null, title: null, message: 'Claude has a plan ready for review', tab_state: null },
     ],
-    cooldown: 0.2,
+    cooldown: 0.3,
     variables: [],
     plain_text: true,
   },
@@ -63,7 +63,7 @@ export const DEFAULT_TRIGGERS: Record<string, Omit<Trigger, 'id' | 'enabled' | '
     actions: [
       { action_type: 'notify', command: null, title: null, message: 'Claude is compacting...', tab_state: null },
     ],
-    cooldown: 0.2,
+    cooldown: 0.3,
     variables: [],
     plain_text: true,
   },
@@ -74,7 +74,7 @@ export const DEFAULT_TRIGGERS: Record<string, Omit<Trigger, 'id' | 'enabled' | '
     actions: [
       { action_type: 'set_tab_state', command: null, title: null, message: null, tab_state: 'alert' },
     ],
-    cooldown: 0.2,
+    cooldown: 0.3,
     variables: [],
     plain_text: true,
   },

@@ -15,7 +15,8 @@
   import { error as logError, info as logInfo } from '@tauri-apps/plugin-log';
   import { attachConsole } from '@tauri-apps/plugin-log';
   import * as commands from '$lib/tauri/commands';
-  import type { Preferences } from '$lib/tauri/types';
+  import type { ClaudeCodeToolRequest, Preferences } from '$lib/tauri/types';
+  import { claudeCodeStore } from '$lib/stores/claudeCode.svelte';
   import { isModKey } from '$lib/utils/platform';
   import { open as dialogOpen } from '@tauri-apps/plugin-dialog';
   import { openFileFromTerminal } from '$lib/utils/openFile';
@@ -134,6 +135,17 @@
         workspacesStore.reloadTab(ws.id, pane.id, tab.id);
       }
     }).then(unlisten => { unlistenReloadTab = unlisten; });
+
+    // Claude Code IDE integration event listeners
+    let unlistenClaudeTool: (() => void) | undefined;
+    listen<ClaudeCodeToolRequest>('claude-code-tool', (event) => {
+      claudeCodeStore.handleToolRequest(event.payload);
+    }).then(unlisten => { unlistenClaudeTool = unlisten; });
+
+    let unlistenClaudeConnection: (() => void) | undefined;
+    listen<{ connected: boolean }>('claude-code-connection', (event) => {
+      claudeCodeStore.setConnected(event.payload.connected);
+    }).then(unlisten => { unlistenClaudeConnection = unlisten; });
 
     // Handle single-window close (traffic light / Cmd+W on last tab+pane).
     let unlistenClose: (() => void) | undefined;
@@ -507,6 +519,8 @@
       unlistenClose?.();
       unlistenQuit?.();
       unlistenReloadTab?.();
+      unlistenClaudeTool?.();
+      unlistenClaudeConnection?.();
       unlistenPrefs?.();
       detachConsole?.();
     };

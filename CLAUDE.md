@@ -19,6 +19,7 @@ src/                          # Frontend (Svelte/TypeScript)
 │   └── +page.svelte          # Main terminal view
 ├── lib/
 │   ├── components/           # Svelte components
+│   │   ├── editor/           # EditorPane (CodeMirror 6)
 │   │   ├── terminal/         # TerminalPane, TerminalTabs
 │   │   ├── workspace/        # WorkspaceSidebar
 │   │   └── pane/             # SplitPane
@@ -33,7 +34,11 @@ src/                          # Frontend (Svelte/TypeScript)
 │   ├── utils/                # Pure utility modules
 │   │   ├── shellIntegration.ts  # Remote shell hook snippets
 │   │   ├── promptPattern.ts     # PS1 prompt pattern matching
-│   │   └── ansi.ts              # ANSI escape code stripping
+│   │   ├── ansi.ts              # ANSI escape code stripping
+│   │   ├── editorTheme.ts       # Tokyo Night CodeMirror 6 theme
+│   │   ├── languageDetect.ts    # Extension/filename → language + CM6 loader
+│   │   ├── filePathDetector.ts  # xterm.js ILinkProvider for file paths
+│   │   └── openFile.ts          # Orchestrates file open (local/remote/editor tab)
 │   └── tauri/                # Tauri IPC layer
 │       ├── commands.ts       # invoke() wrappers
 │       └── types.ts          # TypeScript interfaces matching Rust
@@ -42,6 +47,7 @@ src-tauri/src/                # Backend (Rust)
 ├── lib.rs                    # Tauri app setup, command registration
 ├── commands/                 # Tauri command handlers
 │   ├── workspace.rs          # State CRUD operations
+│   ├── editor.rs             # File read/write, SCP, binary/image loading
 │   └── terminal.rs           # PTY spawn/write/resize/kill
 ├── state/                    # Application state
 │   ├── workspace.rs          # Data structures (Workspace, Pane, Tab, Preferences)
@@ -126,7 +132,8 @@ Workspace
 ├── id, name
 ├── panes: Pane[]
 ├── active_pane_id
-└── split_root: SplitNode (binary tree of pane layout)
+├── split_root: SplitNode (binary tree of pane layout)
+└── notes: WorkspaceNote[] (workspace-level notes)
 
 Pane
 ├── id, name
@@ -135,8 +142,11 @@ Pane
 
 Tab
 ├── id, name, custom_name (bool — true if user explicitly renamed)
-├── pty_id (links to running terminal)
+├── tab_type: 'terminal' | 'editor'
+├── pty_id (terminal tabs — links to running PTY)
+├── editor_file (editor tabs — EditorFileInfo: file_path, is_remote, remote_ssh_command, remote_path, language)
 ├── scrollback (serialized terminal state)
+├── notes, notes_open, notes_mode (per-tab markdown notes)
 └── trigger_variables (persisted variable map from triggers)
 
 SplitNode = SplitLeaf { pane_id } | SplitBranch { id, direction, ratio, children }
@@ -155,6 +165,8 @@ Preferences
 ├── prompt_patterns (PS1-like patterns for remote cwd detection)
 ├── clone_cwd, clone_scrollback, clone_ssh, clone_history, clone_notes, clone_auto_resume, clone_variables
 ├── notification_mode (auto, in_app, native, disabled)
+├── workspace_sort_order (default, alphabetical, recent)
+├── show_workspace_tab_count, show_recent_workspaces
 ├── triggers: Trigger[]
 └── hidden_default_triggers (IDs of deleted app-provided defaults)
 ```
@@ -170,6 +182,51 @@ When the split tree changes (leaf → split node), Svelte destroys and recreates
 - Guard `fitWithPadding` with `containerRef.isConnected` to skip when detached between portal moves
 
 **Do not** move TerminalPane rendering into SplitPane — this breaks terminal persistence on split.
+
+**EditorPane uses the same portal pattern** — `attachToSlot()` portals into `data-terminal-slot={tabId}`, listens for `terminal-slot-ready`, and handles `editor-save` CustomEvents from the layout layer.
+
+## CodeMirror Editor Tabs
+
+Editor tabs (`tab_type === 'editor'`) render `EditorPane.svelte` instead of `TerminalPane.svelte`. They exist alongside terminal tabs in the same pane.
+
+**Key files**:
+- `src/lib/components/editor/EditorPane.svelte` — main component
+- `src/lib/utils/editorTheme.ts` — Tokyo Night CM6 theme (matches terminal colors)
+- `src/lib/utils/languageDetect.ts` — language detection + dynamic CM6 language loader
+- `src/lib/utils/openFile.ts` — orchestrates open flow (local vs remote, fetch, tab creation)
+- `src-tauri/src/commands/editor.rs` — `read_file`, `write_file`, `read_file_base64`, `scp_read_file`, `scp_write_file`, `scp_read_file_base64`, `create_editor_tab`
+
+**Language loading**: `loadLanguageExtension(langId)` dynamically imports the CM6 language package. First-class packages (js, ts, python, rust, html, css, json, etc.) are preferred; legacy `StreamLanguage` modes cover 30+ additional languages. Detection priority: explicit `editorFile.language` → shebang → file extension → filename.
+
+**Image preview**: `isImageFile()` checks extension; if true, loads via `read_file_base64` / `scp_read_file_base64` and renders with `<img src="data:...">`. Zoom controls: fit-to-window (default), preset steps (10%–500%), +/- buttons.
+
+**Remote files**: SCP commands extracted from the SSH foreground command. Files >2MB or binary (null bytes in first 8KB) are rejected with a user-friendly error toast.
+
+**Search panel**: Uses `search({ top: true })` — positioned at top of editor. Styled via `:global(.cm-panel.cm-search)` CSS in EditorPane.
+
+**Tab insertion**: New editor tabs insert after the currently active tab, not at the end.
+
+## OSC 8 File Hyperlinks (`l` Command)
+
+The `l` shell function wraps `ls -la` and emits OSC 8 hyperlinks (`file://hostname/path`) for each file, making filenames clickable in the terminal.
+
+**Injection**: Always injected via `PROMPT_COMMAND` (bash) or ZDOTDIR shim (zsh) in `pty/manager.rs`, regardless of shell integration preference. Also available in remote shells via `shellIntegration.ts`.
+
+**Multi-file support**: `l Downloads/*.jpg` works — awk branch detects single-dir vs multi-file arguments and resolves each path individually.
+
+**Link handling**: `TerminalPane.svelte` registers a `linkHandler` for `file://` URIs. On activate, calls `openFile()` from `openFile.ts`. Context menu adds "Copy Full Path" for hovered file links (snapshot to `contextMenuLinkUri` at open time — hover `leave` fires before menu interaction).
+
+**Underline behavior**: xterm.js hardcodes `UnderlineStyle.DASHED` for any cell with a `urlId`. We override with `.xterm-underline-5 { text-decoration: none; }` (no `!important` — lets xterm's inline hover style override the class rule). Result: no underline at rest, underline on hover.
+
+**Scrollback cleanup**: The serialize addon emits SGR `4` for OSC 8 linked cells but doesn't preserve `urlId`. On restore, these become orphaned underlines. Stripped before writing to terminal:
+```typescript
+const cleaned = scrollback.replace(/\x1b\[([0-9;]*)m/g, (_match, params) => {
+  const filtered = params.split(';').filter(p => p !== '4' && p !== '24');
+  return filtered.length === 0 ? '' : `\x1b[${filtered.join(';')}m`;
+});
+```
+
+**File path detection**: `filePathDetector.ts` implements xterm's `ILinkProvider`. Only active when Cmd/Ctrl is held (reduces regex overhead). Detects absolute paths, `~/`, `./`, `../`, and relative paths with extensions. Skips `d`-prefixed lines from `ls -l` (directories).
 
 ## Split Cloning (Pane Duplication)
 
@@ -294,9 +351,16 @@ Architecture: `notificationDispatch.ts` routes `dispatch(title, body, type)` cal
 | Cmd+Shift+] | Next tab |
 | Cmd+Shift+T | Duplicate tab |
 | Cmd+Shift+R | Reload tab (duplicate + close original) |
+| Cmd+D | Split pane (duplicate current tab) |
 | Cmd+N | New workspace |
+| Cmd+O | Open file in editor tab (native dialog, defaults to terminal CWD) |
+| Cmd+S | Save file (editor tabs only) |
+| Cmd+F | Find/replace (editor tabs only; terminal search otherwise) |
+| Cmd+Shift+N | Toggle notes panel |
 | Cmd+, | Preferences |
 | Cmd+/ | Help |
+
+**Note**: Cmd+F, Cmd+K, Cmd+S, Cmd+D are intercepted by `+layout.svelte` in capture phase. When the active tab is an editor tab, these are passed through to CodeMirror by checking `activeTabIsEditor` and returning early.
 
 ## xterm.js Notes
 
@@ -402,3 +466,7 @@ Check `~/Library/Application Support/com.aiterm.dev/aiterm-state.json` (dev) or 
 - **Bash parses all if/elif branches**: Even non-executed branches must be syntactically valid. Zsh function bodies `(){ cmd }` need `; }` to be valid bash syntax.
 - **Svelte $effect reactive loops with stores**: `clearFoo()` that reads `$state` inside `$effect` subscribes the effect to that state. Wrap in `untrack()` to prevent re-triggering.
 - **OSC 133 replayed from scrollback**: Restored scrollback replays OSC sequences. Gate the OSC 133 handler on `trackActivity` flag (delayed 2s after mount) to ignore stale sequences.
+- **`confirm()` doesn't work in Tauri webviews**: Use inline confirmation UI (e.g. "Save / Discard / Cancel" in tab area) instead of `window.confirm()`.
+- **Capture-phase keyboard shortcuts intercept CodeMirror**: `+layout.svelte` uses `addEventListener('keydown', handler, true)` (capture). For editor-specific shortcuts (Cmd+F, Cmd+K, Cmd+S, Cmd+D), check `activeTabIsEditor` and return early to let events propagate to CodeMirror.
+- **OSC 8 scrollback underlines**: Serialize addon emits SGR 4 for linked cells but strips urlId. Strip `4`/`24` from SGR parameter lists in serialized scrollback before writing to terminal on restore.
+- **Hover state cleared before context menu interaction**: If you snapshot reactive hover state when the context menu opens, the `leave` callback fires as the mouse moves to the menu, clearing it. Use a plain (non-reactive) variable for the snapshot, set it at open time.

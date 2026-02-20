@@ -1,4 +1,4 @@
-export type TabType = 'terminal' | 'editor';
+export type TabType = 'terminal' | 'editor' | 'diff';
 
 export interface EditorFileInfo {
   file_path: string;
@@ -6,6 +6,14 @@ export interface EditorFileInfo {
   remote_ssh_command: string | null;
   remote_path: string | null;
   language: string | null;
+}
+
+export interface DiffContext {
+  request_id: string;
+  file_path: string;
+  old_content: string;
+  new_content: string;
+  tab_name: string;
 }
 
 export interface Tab {
@@ -28,6 +36,7 @@ export interface Tab {
   trigger_variables: Record<string, string>;
   tab_type: TabType;
   editor_file: EditorFileInfo | null;
+  diff_context: DiffContext | null;
 }
 
 export interface Pane {
@@ -148,6 +157,7 @@ export interface Preferences {
   triggers: Trigger[];
   hidden_default_triggers: string[];
   claude_triggers_prompted: boolean;
+  claude_code_ide: boolean;
 }
 
 export interface WindowData {
@@ -167,4 +177,10 @@ export interface DuplicateWorkspaceResult {
 export interface AppData {
   windows: WindowData[];
   preferences: Preferences;
+}
+
+export interface ClaudeCodeToolRequest {
+  request_id: string;
+  tool: string;
+  arguments: Record<string, unknown>;
 }

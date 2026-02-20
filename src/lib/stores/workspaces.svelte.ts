@@ -1,5 +1,5 @@
 import type { Terminal } from '@xterm/xterm';
-import type { SplitDirection, SplitNode, Tab, Pane, Workspace, WorkspaceNote, EditorFileInfo } from '$lib/tauri/types';
+import type { SplitDirection, SplitNode, Tab, Pane, Workspace, WorkspaceNote, EditorFileInfo, DiffContext } from '$lib/tauri/types';
 import * as commands from '$lib/tauri/commands';
 import { terminalsStore } from '$lib/stores/terminals.svelte';
 import { preferencesStore } from '$lib/stores/preferences.svelte';
@@ -406,16 +406,23 @@ function createWorkspacesStore() {
     },
 
     async createTab(workspaceId: string, paneId: string, name: string) {
-      const tab = await commands.createTab(workspaceId, paneId, name);
+      const pane = workspaces.flatMap(w => w.panes).find(p => p.id === paneId);
+      const afterTabId = pane?.active_tab_id ?? undefined;
+      const tab = await commands.createTab(workspaceId, paneId, name, afterTabId);
       workspaces = workspaces.map(w => {
         if (w.id === workspaceId) {
           return {
             ...w,
             panes: w.panes.map(p => {
               if (p.id === paneId) {
+                const insertIdx = afterTabId
+                  ? p.tabs.findIndex(t => t.id === afterTabId) + 1
+                  : p.tabs.length;
+                const newTabs = [...p.tabs];
+                newTabs.splice(insertIdx >= 0 ? insertIdx : p.tabs.length, 0, tab);
                 return {
                   ...p,
-                  tabs: [...p.tabs, tab],
+                  tabs: newTabs,
                   active_tab_id: tab.id
                 };
               }
@@ -441,6 +448,33 @@ function createWorkspacesStore() {
               if (p.id === paneId) {
                 // Insert directly after the currently active tab
                 const activeIdx = p.tabs.findIndex(t => t.id === p.active_tab_id);
+                const insertIdx = activeIdx === -1 ? p.tabs.length : activeIdx + 1;
+                const newTabs = [...p.tabs];
+                newTabs.splice(insertIdx, 0, tab);
+                return {
+                  ...p,
+                  tabs: newTabs,
+                  active_tab_id: tab.id
+                };
+              }
+              return p;
+            })
+          };
+        }
+        return w;
+      });
+      return tab;
+    },
+
+    async createDiffTab(workspaceId: string, paneId: string, name: string, diffContext: DiffContext, afterTabId?: string | null) {
+      const tab = await commands.createDiffTab(workspaceId, paneId, name, diffContext, afterTabId);
+      workspaces = workspaces.map(w => {
+        if (w.id === workspaceId) {
+          return {
+            ...w,
+            panes: w.panes.map(p => {
+              if (p.id === paneId) {
+                const activeIdx = p.tabs.findIndex(t => t.id === (afterTabId ?? p.active_tab_id));
                 const insertIdx = activeIdx === -1 ? p.tabs.length : activeIdx + 1;
                 const newTabs = [...p.tabs];
                 newTabs.splice(insertIdx, 0, tab);

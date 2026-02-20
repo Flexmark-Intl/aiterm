@@ -160,6 +160,16 @@ pub enum TabType {
     #[default]
     Terminal,
     Editor,
+    Diff,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiffContext {
+    pub request_id: String,
+    pub file_path: String,
+    pub old_content: String,
+    pub new_content: String,
+    pub tab_name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -226,6 +236,8 @@ pub struct Tab {
     pub tab_type: TabType,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub editor_file: Option<EditorFileInfo>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diff_context: Option<DiffContext>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -579,6 +591,9 @@ pub struct Preferences {
     /// Whether the user has been prompted to enable Claude Code integrations.
     #[serde(default)]
     pub claude_triggers_prompted: bool,
+    /// Enable Claude Code IDE WebSocket integration server.
+    #[serde(default = "default_true")]
+    pub claude_code_ide: bool,
 }
 
 impl Default for Preferences {
@@ -623,6 +638,7 @@ impl Default for Preferences {
             triggers: Vec::new(),
             hidden_default_triggers: Vec::new(),
             claude_triggers_prompted: false,
+            claude_code_ide: true,
         }
     }
 }
@@ -649,6 +665,7 @@ impl Tab {
             trigger_variables: HashMap::new(),
             tab_type: TabType::default(),
             editor_file: None,
+            diff_context: None,
         }
     }
 
@@ -673,6 +690,32 @@ impl Tab {
             trigger_variables: HashMap::new(),
             tab_type: TabType::Editor,
             editor_file: Some(file_info),
+            diff_context: None,
+        }
+    }
+
+    pub fn new_diff(name: String, diff_context: DiffContext) -> Self {
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            name,
+            pty_id: None,
+            scrollback: None,
+            custom_name: true,
+            restore_cwd: None,
+            restore_ssh_command: None,
+            restore_remote_cwd: None,
+            auto_resume_cwd: None,
+            auto_resume_ssh_command: None,
+            auto_resume_remote_cwd: None,
+            auto_resume_command: None,
+            auto_resume_remembered_command: None,
+            notes: None,
+            notes_mode: None,
+            notes_open: false,
+            trigger_variables: HashMap::new(),
+            tab_type: TabType::Diff,
+            editor_file: None,
+            diff_context: Some(diff_context),
         }
     }
 }

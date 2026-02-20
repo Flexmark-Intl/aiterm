@@ -5,6 +5,20 @@ use std::io::Read;
 use std::sync::Arc;
 use tauri::{command, State, Window};
 
+fn expand_tilde(path: &str) -> String {
+    if path == "~" {
+        return dirs::home_dir()
+            .map(|h| h.to_string_lossy().to_string())
+            .unwrap_or_else(|| path.to_string());
+    }
+    if path.starts_with("~/") {
+        if let Some(home) = dirs::home_dir() {
+            return format!("{}/{}", home.to_string_lossy(), &path[2..]);
+        }
+    }
+    path.to_string()
+}
+
 #[derive(serde::Serialize)]
 pub struct ReadFileResult {
     pub content: String,
@@ -13,6 +27,7 @@ pub struct ReadFileResult {
 
 #[command]
 pub async fn read_file(path: String) -> Result<ReadFileResult, String> {
+    let path = expand_tilde(&path);
     let metadata = std::fs::metadata(&path).map_err(|e| format!("Cannot access file: {}", e))?;
 
     if metadata.is_dir() {
@@ -47,6 +62,7 @@ pub async fn read_file(path: String) -> Result<ReadFileResult, String> {
 
 #[command]
 pub async fn write_file(path: String, content: String) -> Result<(), String> {
+    let path = expand_tilde(&path);
     // Atomic write: temp file + rename
     let temp_path = format!("{}.aiterm-tmp", path);
     std::fs::write(&temp_path, &content).map_err(|e| format!("Cannot write file: {}", e))?;
@@ -67,6 +83,7 @@ pub struct ReadFileBase64Result {
 
 #[command]
 pub async fn read_file_base64(path: String) -> Result<ReadFileBase64Result, String> {
+    let path = expand_tilde(&path);
     let metadata = std::fs::metadata(&path).map_err(|e| format!("Cannot access file: {}", e))?;
 
     if metadata.is_dir() {
@@ -270,6 +287,8 @@ pub async fn create_editor_tab(
         .find(|p| p.id == pane_id)
         .ok_or("Pane not found")?;
 
+    let mut file_info = file_info;
+    file_info.file_path = expand_tilde(&file_info.file_path);
     let tab = Tab::new_editor(name, file_info);
     let tab_id = tab.id.clone();
 

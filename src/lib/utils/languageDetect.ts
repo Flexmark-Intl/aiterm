@@ -145,7 +145,7 @@ export function detectLanguageFromContent(content: string): string | null {
 /** Helper to load a legacy StreamLanguage mode */
 async function legacy(mode: string, exportName?: string): Promise<Extension | null> {
   const { StreamLanguage } = await import('@codemirror/language');
-  const mod = await import(`@codemirror/legacy-modes/mode/${mode}`);
+  const mod = await import(/* @vite-ignore */ `@codemirror/legacy-modes/mode/${mode}`);
   const lang = mod[exportName ?? mode];
   return lang ? StreamLanguage.define(lang) : null;
 }

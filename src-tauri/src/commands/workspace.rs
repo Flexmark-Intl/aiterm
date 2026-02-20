@@ -11,8 +11,12 @@ use crate::state::workspace::{EditorFileInfo, SplitDirection};
 use crate::commands::window::{TabContext, clone_workspace_with_id_mapping};
 
 #[tauri::command]
-pub fn exit_app(app: tauri::AppHandle) {
-    log::info!("exit_app called — terminating process");
+pub fn exit_app(app: tauri::AppHandle, state: State<'_, Arc<AppState>>) {
+    log::info!("exit_app called — cleaning up and terminating process");
+    let port = *state.claude_code_port.read();
+    if let Some(port) = port {
+        crate::claude_code::lockfile::delete_lockfile(port);
+    }
     app.exit(0);
 }
 
@@ -189,6 +193,7 @@ pub fn create_tab(
     workspace_id: String,
     pane_id: String,
     name: String,
+    after_tab_id: Option<String>,
 ) -> Result<Tab, String> {
     let label = window.label().to_string();
     let tab = Tab::new(name);
@@ -197,7 +202,11 @@ pub fn create_tab(
         let win = app_data.window_mut(&label).ok_or("Window not found")?;
         if let Some(workspace) = win.workspaces.iter_mut().find(|w| w.id == workspace_id) {
             if let Some(pane) = workspace.panes.iter_mut().find(|p| p.id == pane_id) {
-                pane.tabs.push(tab.clone());
+                let insert_idx = after_tab_id
+                    .and_then(|id| pane.tabs.iter().position(|t| t.id == id))
+                    .map(|idx| idx + 1)
+                    .unwrap_or(pane.tabs.len());
+                pane.tabs.insert(insert_idx, tab.clone());
                 pane.active_tab_id = Some(tab.id.clone());
                 app_data.clone()
             } else {
@@ -908,4 +917,41 @@ pub fn delete_workspace_note(
         }
     };
     save_state(&data_clone)
+}
+
+#[tauri::command]
+pub fn create_diff_tab(
+    window: tauri::Window,
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+    pane_id: String,
+    name: String,
+    diff_context: crate::state::DiffContext,
+    after_tab_id: Option<String>,
+) -> Result<Tab, String> {
+    let label = window.label().to_string();
+    let mut app_data = state.app_data.write();
+    let win = app_data.window_mut(&label).ok_or("Window not found")?;
+    let ws = win
+        .workspaces
+        .iter_mut()
+        .find(|w| w.id == workspace_id)
+        .ok_or("Workspace not found")?;
+    let pane = ws
+        .panes
+        .iter_mut()
+        .find(|p| p.id == pane_id)
+        .ok_or("Pane not found")?;
+
+    let tab = Tab::new_diff(name, diff_context);
+    let tab_id = tab.id.clone();
+
+    let insert_idx = after_tab_id
+        .and_then(|id| pane.tabs.iter().position(|t| t.id == id))
+        .map(|idx| idx + 1)
+        .unwrap_or(pane.tabs.len());
+    pane.tabs.insert(insert_idx, tab.clone());
+    pane.active_tab_id = Some(tab_id);
+
+    Ok(tab)
 }

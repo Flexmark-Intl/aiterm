@@ -204,7 +204,23 @@ pub fn save_state(data: &AppData) -> Result<(), String> {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
 
-    let json = serde_json::to_string_pretty(data).map_err(|e| e.to_string())?;
+    // Clone and filter out ephemeral diff tabs before serializing
+    let mut filtered = data.clone();
+    for win in &mut filtered.windows {
+        for ws in &mut win.workspaces {
+            for pane in &mut ws.panes {
+                pane.tabs.retain(|t| t.tab_type != super::workspace::TabType::Diff);
+                // Reset active_tab_id if it pointed to a removed diff tab
+                if let Some(ref active_id) = pane.active_tab_id {
+                    if !pane.tabs.iter().any(|t| t.id == *active_id) {
+                        pane.active_tab_id = pane.tabs.last().map(|t| t.id.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    let json = serde_json::to_string_pretty(&filtered).map_err(|e| e.to_string())?;
 
     // Write to temp file first
     fs::write(&temp_path, &json).map_err(|e| format!("Failed to write temp file: {}", e))?;

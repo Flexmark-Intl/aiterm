@@ -179,17 +179,6 @@ pub fn spawn_pty(
     cmd.env("COLORTERM", "truecolor");
     cmd.env("TERM_PROGRAM", "aiterm");
 
-    // Inject Claude Code IDE integration env vars
-    {
-        let port = *state.claude_code_port.read();
-        let auth = state.claude_code_auth.read().clone();
-        if let (Some(port), Some(auth)) = (port, auth) {
-            cmd.env("CLAUDE_CODE_SSE_PORT", port.to_string());
-            cmd.env("ENABLE_IDE_INTEGRATION", "true");
-            cmd.env("CLAUDE_CODE_IDE_AUTH", auth);
-        }
-    }
-
     // Set working directory — use provided cwd (from split) or fall back to home
     if let Some(ref dir) = cwd {
         let path = std::path::Path::new(dir);

@@ -5,6 +5,7 @@
   import SplitContainer from '$lib/components/pane/SplitContainer.svelte';
   import TerminalPane from '$lib/components/terminal/TerminalPane.svelte';
   import EditorPane from '$lib/components/editor/EditorPane.svelte';
+  import DiffPane from '$lib/components/editor/DiffPane.svelte';
   import ChangelogModal from '$lib/components/ChangelogModal.svelte';
   import Resizer from '$lib/components/Resizer.svelte';
   import { getVersion } from '@tauri-apps/api/app';
@@ -98,7 +99,15 @@
           {#each workspacesStore.workspaces.filter(w => activatedWorkspaceIds.has(w.id)) as ws (ws.id)}
             {#each ws.panes as pane (pane.id)}
               {#each pane.tabs as tab (tab.id)}
-                {#if tab.tab_type === 'editor' && tab.editor_file}
+                {#if tab.tab_type === 'diff' && tab.diff_context}
+                  <DiffPane
+                    workspaceId={ws.id}
+                    paneId={pane.id}
+                    tabId={tab.id}
+                    visible={tab.id === pane.active_tab_id && ws.id === workspacesStore.activeWorkspaceId}
+                    diffContext={tab.diff_context}
+                  />
+                {:else if tab.tab_type === 'editor' && tab.editor_file}
                   <EditorPane
                     workspaceId={ws.id}
                     paneId={pane.id}
@@ -106,7 +115,7 @@
                     visible={tab.id === pane.active_tab_id && ws.id === workspacesStore.activeWorkspaceId}
                     editorFile={tab.editor_file}
                   />
-                {:else}
+                {:else if tab.tab_type === 'terminal'}
                   <TerminalPane
                     workspaceId={ws.id}
                     paneId={pane.id}

@@ -45,6 +45,7 @@ function createPreferencesStore() {
   let triggers = $state<Trigger[]>([]);
   let hiddenDefaultTriggers = $state<string[]>([]);
   let claudeTriggersPrompted = $state(false);
+  let claudeCodeIde = $state(false);
 
   return {
     /** Resolves once the initial load() has completed. */
@@ -87,6 +88,7 @@ function createPreferencesStore() {
     get triggers() { return triggers; },
     get hiddenDefaultTriggers() { return hiddenDefaultTriggers; },
     get claudeTriggersPrompted() { return claudeTriggersPrompted; },
+    get claudeCodeIde() { return claudeCodeIde; },
 
     async load() {
       const prefs = await commands.getPreferences();
@@ -133,6 +135,7 @@ function createPreferencesStore() {
       triggers = prefs.triggers ?? [];
       hiddenDefaultTriggers = prefs.hidden_default_triggers ?? [];
       claudeTriggersPrompted = prefs.claude_triggers_prompted ?? false;
+      claudeCodeIde = prefs.claude_code_ide ?? false;
       _resolveReady();
     },
 
@@ -321,6 +324,11 @@ function createPreferencesStore() {
       await this.save();
     },
 
+    async setClaudeCodeIde(value: boolean) {
+      claudeCodeIde = value;
+      await this.save();
+    },
+
     async addCustomTheme(t: Theme) {
       customThemes = [...customThemes, t];
       await this.save();
@@ -382,6 +390,7 @@ function createPreferencesStore() {
       triggers = prefs.triggers ?? [];
       hiddenDefaultTriggers = prefs.hidden_default_triggers ?? [];
       claudeTriggersPrompted = prefs.claude_triggers_prompted ?? false;
+      claudeCodeIde = prefs.claude_code_ide ?? false;
     },
 
     async save() {
@@ -425,6 +434,7 @@ function createPreferencesStore() {
         triggers,
         hidden_default_triggers: hiddenDefaultTriggers,
         claude_triggers_prompted: claudeTriggersPrompted,
+        claude_code_ide: claudeCodeIde,
       };
       await commands.setPreferences(prefs);
     }

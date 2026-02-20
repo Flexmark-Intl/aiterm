@@ -1,6 +1,10 @@
+mod claude_code;
 mod commands;
 mod pty;
 mod state;
+
+pub const APP_DISPLAY_NAME: &str = "aiTerm";
+pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 use state::{load_state, AppState, WindowData, Workspace};
 use state::persistence::migrate_app_data;
@@ -104,15 +108,21 @@ pub fn run() {
                 // Title is set dynamically from the frontend (workspace name)
                 let title = if cfg!(debug_assertions) { "aiTerm (Dev)" } else { "aiTerm" };
 
-                if let Err(e) = WebviewWindowBuilder::new(app, &label, url)
+                let mut builder = WebviewWindowBuilder::new(app, &label, url)
                     .title(title)
                     .inner_size(1200.0, 800.0)
                     .min_inner_size(800.0, 600.0)
                     .resizable(true)
-                    .fullscreen(false)
-                    .hidden_title(true)
-                    .title_bar_style(tauri::TitleBarStyle::Overlay)
-                    .build()
+                    .fullscreen(false);
+
+                #[cfg(target_os = "macos")]
+                {
+                    builder = builder
+                        .hidden_title(true)
+                        .title_bar_style(tauri::TitleBarStyle::Overlay);
+                }
+
+                if let Err(e) = builder.build()
                 {
                     log::error!("Failed to restore window '{}': {}", label, e);
                 }
@@ -171,6 +181,15 @@ pub fn run() {
                 .build()?;
 
             app.set_menu(menu)?;
+
+            // Start Claude Code IDE WebSocket server
+            {
+                let server_state = app_state.clone();
+                let server_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    claude_code::server::start_server(server_handle, server_state).await;
+                });
+            }
 
             app.on_menu_event(|app_handle, event| {
                 match event.id().as_ref() {
@@ -278,6 +297,9 @@ pub fn run() {
             commands::editor::scp_read_file_base64,
             commands::editor::scp_write_file,
             commands::editor::create_editor_tab,
+            commands::claude_code::claude_code_respond,
+            commands::claude_code::claude_code_notify_selection,
+            commands::workspace::create_diff_tab,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

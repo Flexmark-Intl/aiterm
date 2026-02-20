@@ -148,8 +148,12 @@ pub fn open_preferences_window(window: tauri::WebviewWindow, app: tauri::AppHand
         .inner_size(pref_w, pref_h)
         .min_inner_size(500.0, 400.0)
         .resizable(true)
-        .fullscreen(false)
-        .hidden_title(true);
+        .fullscreen(false);
+
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder.hidden_title(true);
+    }
 
     // Center on the calling window
     if let (Ok(pos), Ok(size)) = (window.outer_position(), window.outer_size()) {
@@ -178,15 +182,21 @@ fn build_window(app: &tauri::AppHandle, label: &str) -> Result<(), String> {
 
     let title = if cfg!(debug_assertions) { "aiTerm (Dev)" } else { "aiTerm" };
 
-    WebviewWindowBuilder::new(app, label, url)
+    let mut builder = WebviewWindowBuilder::new(app, label, url)
         .title(title)
         .inner_size(1200.0, 800.0)
         .min_inner_size(800.0, 600.0)
         .resizable(true)
-        .fullscreen(false)
-        .hidden_title(true)
-        .title_bar_style(tauri::TitleBarStyle::Overlay)
-        .build()
+        .fullscreen(false);
+
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder
+            .hidden_title(true)
+            .title_bar_style(tauri::TitleBarStyle::Overlay);
+    }
+
+    builder.build()
         .map_err(|e| format!("Failed to create window: {}", e))?;
 
     Ok(())
@@ -241,6 +251,7 @@ pub(crate) fn clone_workspace_with_id_mapping(
                 trigger_variables: tab.trigger_variables.clone(),
                 tab_type: tab.tab_type.clone(),
                 editor_file: tab.editor_file.clone(),
+                diff_context: tab.diff_context.clone(),
             }
         }).collect();
 

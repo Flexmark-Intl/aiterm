@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { AppData, DuplicateWorkspaceResult, EditorFileInfo, Pane, Preferences, SplitDirection, Tab, WindowData, Workspace, WorkspaceNote } from './types';
+import type { AppData, DiffContext, DuplicateWorkspaceResult, EditorFileInfo, Pane, Preferences, SplitDirection, Tab, WindowData, Workspace, WorkspaceNote } from './types';
 
 // Terminal commands
 export async function spawnTerminal(ptyId: string, tabId: string, cols: number, rows: number, cwd?: string | null): Promise<void> {
@@ -94,8 +94,8 @@ export async function renamePane(workspaceId: string, paneId: string, name: stri
   return invoke('rename_pane', { workspaceId, paneId, name });
 }
 
-export async function createTab(workspaceId: string, paneId: string, name: string): Promise<Tab> {
-  return invoke('create_tab', { workspaceId, paneId, name });
+export async function createTab(workspaceId: string, paneId: string, name: string, afterTabId?: string): Promise<Tab> {
+  return invoke('create_tab', { workspaceId, paneId, name, afterTabId });
 }
 
 export async function deleteTab(workspaceId: string, paneId: string, tabId: string): Promise<void> {
@@ -310,4 +310,23 @@ export async function scpWriteFile(sshCommand: string, remotePath: string, conte
 
 export async function createEditorTab(workspaceId: string, paneId: string, name: string, fileInfo: EditorFileInfo, afterTabId?: string): Promise<Tab> {
   return invoke('create_editor_tab', { workspaceId, paneId, name, fileInfo, afterTabId: afterTabId ?? null });
+}
+
+// Claude Code IDE integration commands
+export async function claudeCodeRespond(requestId: string, result: unknown): Promise<void> {
+  return invoke('claude_code_respond', { requestId, result });
+}
+
+export async function claudeCodeNotifySelection(payload: unknown): Promise<void> {
+  return invoke('claude_code_notify_selection', { payload });
+}
+
+export async function createDiffTab(
+  workspaceId: string,
+  paneId: string,
+  name: string,
+  diffContext: DiffContext,
+  afterTabId?: string | null,
+): Promise<Tab> {
+  return invoke('create_diff_tab', { workspaceId, paneId, name, diffContext, afterTabId: afterTabId ?? null });
 }

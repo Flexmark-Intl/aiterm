@@ -7,6 +7,7 @@
   import { preferencesStore } from '$lib/stores/preferences.svelte';
   import * as commands from '$lib/tauri/commands';
   import { modSymbol } from '$lib/utils/platform';
+  import { claudeCodeStore } from '$lib/stores/claudeCode.svelte';
 
   function workspaceHasActivity(workspaceId: string): boolean {
     if (workspaceId === workspacesStore.activeWorkspaceId) return false;
@@ -285,6 +286,11 @@
     {#if appVersion}
       <button class="version-badge" onclick={onversionclick}>v{appVersion}</button>
     {/if}
+    {#if claudeCodeStore.connected}
+      <span class="claude-connected" title="Claude Code connected">
+        <span class="claude-dot"></span>
+      </span>
+    {/if}
     <button class="header-btn collapse-btn" onclick={() => workspacesStore.toggleSidebar()} title="Collapse sidebar ({modSymbol}B)">&#x2039;</button>
   </div>
   <div class="sidebar-header">
@@ -409,6 +415,19 @@
 
   .version-badge:hover {
     color: var(--fg);
+  }
+
+  .claude-connected {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 6px;
+  }
+
+  .claude-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--green, #9ece6a);
   }
 
   .sidebar-header {
