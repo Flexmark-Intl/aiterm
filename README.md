@@ -1,6 +1,29 @@
-# aiTerm
+<p align="center">
+  <img src="src-tauri/icons/icon.png" alt="aiTerm" width="128" />
+</p>
 
-A terminal emulator built with Tauri 2 + Svelte 5, focused on workspace organization, deep shell integration, and a built-in code editor. Runs on macOS, Windows, and Linux.
+<h1 align="center">aiTerm</h1>
+
+<p align="center">
+  A terminal built for AI workflows — not AI built into a terminal.
+</p>
+
+---
+
+A terminal emulator built with Tauri 2 + Svelte 5, designed to make terminal-based AI workflows better and more organized. aiTerm is not "AI in a terminal" — there is no built-in LLM, no chat sidebar, no magic autocomplete. Instead, it's a proper terminal that understands what AI coding agents are doing and gives you the tools to manage them.
+
+Our initial focus is on **Claude Code** integrations:
+
+- **Auto-capture session IDs** — triggers detect Claude's resume commands and session UUIDs so you never lose a session
+- **Auto-resume** — automatically reconnects to your last Claude session when you open a tab
+- **Tab state awareness** — know at a glance which tabs have Claude waiting for input, reviewing a plan, or compacting context
+- **Workspace organization** — group related Claude sessions by project; split panes to run multiple agents side by side
+- **Scrollback persistence** — full terminal state survives restarts, so you never lose Claude's output
+- **SSH session cloning** — split into a second shell at the same remote CWD while Claude works in the first
+
+aiTerm is fully written by AI (Claude), with human engineering direction and architectural rails.
+
+Runs on macOS, Windows, and Linux.
 
 ## Features
 
