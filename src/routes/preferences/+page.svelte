@@ -7,7 +7,8 @@
   import Tooltip from '$lib/components/Tooltip.svelte';
   import Icon from '$lib/components/Icon.svelte';
   import { modLabel, isModKey } from '$lib/utils/platform';
-  import { getAllWorkspaces, listSystemSounds, playSystemSound } from '$lib/tauri/commands';
+  import { getAllWorkspaces, listSystemSounds, playSystemSound, detectWindowsShells } from '$lib/tauri/commands';
+  import type { ShellInfo } from '$lib/tauri/types';
   import { tick, onMount } from 'svelte';
   import { slide } from 'svelte/transition';
   import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -74,6 +75,8 @@
   let allWorkspaces = $state<{ id: string; name: string }[]>([]);
   // System sounds for notification sound picker
   let systemSounds = $state<string[]>([]);
+  // Available Windows shells (empty on non-Windows)
+  let windowsShells = $state<ShellInfo[]>([]);
   onMount(async () => {
     try {
       const pairs = await getAllWorkspaces();
@@ -83,6 +86,10 @@
     try {
       systemSounds = await listSystemSounds();
     } catch { /* sound listing may fail on some platforms */ }
+
+    try {
+      windowsShells = await detectWindowsShells();
+    } catch { /* shell detection may fail */ }
 
     // Wait for preferences to finish loading before seeding defaults
     await preferencesStore.ready;
@@ -228,6 +235,8 @@
     '\\u@\\h:\\d\\p',
     '\\h \\u[\\d]\\p',
     '[\\u@\\h \\d]\\p',
+    'PS \\d>',
+    '\\d>',
   ];
 
   const scrollbackOptions = [
@@ -407,6 +416,30 @@
             <span class="toggle-knob"></span>
           </button>
         </div>
+
+        {#if windowsShells.length > 0}
+          <h3 class="section-heading" style="margin-top: 20px;">Default Shell</h3>
+          <p class="section-desc">
+            Shell used when opening new terminal tabs. Changes apply to new terminals only.
+          </p>
+          <div class="setting">
+            <label for="windows-shell">Shell</label>
+            <select
+              id="windows-shell"
+              value={preferencesStore.windowsShell}
+              onchange={(e) => preferencesStore.setWindowsShell(e.currentTarget.value)}
+            >
+              {#each windowsShells as shell}
+                <option value={shell.id}>{shell.name}</option>
+              {/each}
+            </select>
+          </div>
+          {#if windowsShells.find(s => s.id === preferencesStore.windowsShell)}
+            <p class="setting-hint" style="margin-top: -8px; margin-bottom: 8px;">
+              {windowsShells.find(s => s.id === preferencesStore.windowsShell)?.path}
+            </p>
+          {/if}
+        {/if}
 
         <h3 class="section-heading" style="margin-top: 20px;">Shell Integration</h3>
 

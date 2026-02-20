@@ -158,6 +158,7 @@ export interface Preferences {
   hidden_default_triggers: string[];
   claude_triggers_prompted: boolean;
   claude_code_ide: boolean;
+  windows_shell: string;
 }
 
 export interface WindowData {
@@ -177,6 +178,12 @@ export interface DuplicateWorkspaceResult {
 export interface AppData {
   windows: WindowData[];
   preferences: Preferences;
+}
+
+export interface ShellInfo {
+  id: string;
+  name: string;
+  path: string;
 }
 
 export interface ClaudeCodeToolRequest {

@@ -165,16 +165,8 @@ pub fn spawn_pty(
 
     #[cfg(windows)]
     let mut cmd = {
-        use std::sync::OnceLock;
-        static WIN_SHELL: OnceLock<String> = OnceLock::new();
-        let shell = WIN_SHELL.get_or_init(|| {
-            if which_exists("pwsh") {
-                "pwsh.exe".to_string()
-            } else {
-                "powershell.exe".to_string()
-            }
-        });
-        CommandBuilder::new(shell.as_str())
+        let shell_path = resolve_windows_shell(&prefs.windows_shell);
+        CommandBuilder::new(&shell_path)
     };
 
     // --- Cross-platform environment setup ---
@@ -436,14 +428,57 @@ fn get_foreground_command(_shell_pid: u32) -> Option<String> {
     None
 }
 
-/// Check if an executable exists on the PATH
+/// Resolve a Windows shell preference ID to an executable path.
+/// Falls back to powershell.exe if the configured shell can't be found.
 #[cfg(windows)]
-fn which_exists(name: &str) -> bool {
-    std::process::Command::new("where")
-        .arg(name)
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+fn resolve_windows_shell(id: &str) -> String {
+    match id {
+        "cmd" => {
+            std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string())
+        }
+        "pwsh" => {
+            // Check if pwsh is available, fall back to powershell
+            if let Ok(output) = std::process::Command::new("where").arg("pwsh").output() {
+                if output.status.success() {
+                    return String::from_utf8_lossy(&output.stdout)
+                        .lines()
+                        .next()
+                        .unwrap_or("pwsh.exe")
+                        .trim()
+                        .to_string();
+                }
+            }
+            "powershell.exe".to_string()
+        }
+        "gitbash" => {
+            let paths = [
+                r"C:\Program Files\Git\bin\bash.exe",
+                r"C:\Program Files (x86)\Git\bin\bash.exe",
+            ];
+            for p in &paths {
+                if std::path::Path::new(p).exists() {
+                    return p.to_string();
+                }
+            }
+            // Git Bash not found, fall back to powershell
+            "powershell.exe".to_string()
+        }
+        "wsl" => {
+            if let Ok(output) = std::process::Command::new("where").arg("wsl").output() {
+                if output.status.success() {
+                    return String::from_utf8_lossy(&output.stdout)
+                        .lines()
+                        .next()
+                        .unwrap_or("wsl.exe")
+                        .trim()
+                        .to_string();
+                }
+            }
+            "powershell.exe".to_string()
+        }
+        // "powershell" or any unknown value
+        _ => "powershell.exe".to_string(),
+    }
 }
 
 /// Create zsh integration directory with shim files that source the user's

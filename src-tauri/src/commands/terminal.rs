@@ -4,6 +4,13 @@ use tauri::{AppHandle, State};
 use crate::pty;
 use crate::state::AppState;
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ShellInfo {
+    pub id: String,
+    pub name: String,
+    pub path: String,
+}
+
 /// Read file paths from the system clipboard (macOS NSPasteboard).
 /// Returns an empty vec if the clipboard doesn't contain file URLs.
 #[tauri::command]
@@ -93,4 +100,90 @@ pub fn resize_terminal(
 #[tauri::command]
 pub fn kill_terminal(state: State<'_, Arc<AppState>>, pty_id: String) -> Result<(), String> {
     pty::kill_pty(&*state, &pty_id)
+}
+
+#[tauri::command]
+pub fn detect_windows_shells() -> Vec<ShellInfo> {
+    #[cfg(windows)]
+    {
+        detect_windows_shells_impl()
+    }
+    #[cfg(not(windows))]
+    {
+        vec![]
+    }
+}
+
+#[cfg(windows)]
+fn detect_windows_shells_impl() -> Vec<ShellInfo> {
+    use std::process::Command;
+
+    let mut shells = Vec::new();
+
+    // cmd.exe — always available
+    let cmd_path = std::env::var("COMSPEC").unwrap_or_else(|_| "cmd.exe".to_string());
+    shells.push(ShellInfo {
+        id: "cmd".to_string(),
+        name: "Command Prompt".to_string(),
+        path: cmd_path,
+    });
+
+    // powershell.exe — always available on modern Windows
+    shells.push(ShellInfo {
+        id: "powershell".to_string(),
+        name: "Windows PowerShell".to_string(),
+        path: "powershell.exe".to_string(),
+    });
+
+    // pwsh.exe — PowerShell 7+ (optional install)
+    if let Ok(output) = Command::new("where").arg("pwsh").output() {
+        if output.status.success() {
+            let path = String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .next()
+                .unwrap_or("pwsh.exe")
+                .trim()
+                .to_string();
+            shells.push(ShellInfo {
+                id: "pwsh".to_string(),
+                name: "PowerShell 7".to_string(),
+                path,
+            });
+        }
+    }
+
+    // Git Bash — check common install paths
+    let git_bash_paths = [
+        r"C:\Program Files\Git\bin\bash.exe",
+        r"C:\Program Files (x86)\Git\bin\bash.exe",
+    ];
+    for p in &git_bash_paths {
+        if std::path::Path::new(p).exists() {
+            shells.push(ShellInfo {
+                id: "gitbash".to_string(),
+                name: "Git Bash".to_string(),
+                path: p.to_string(),
+            });
+            break;
+        }
+    }
+
+    // WSL
+    if let Ok(output) = Command::new("where").arg("wsl").output() {
+        if output.status.success() {
+            let path = String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .next()
+                .unwrap_or("wsl.exe")
+                .trim()
+                .to_string();
+            shells.push(ShellInfo {
+                id: "wsl".to_string(),
+                name: "WSL".to_string(),
+                path,
+            });
+        }
+    }
+
+    shells
 }

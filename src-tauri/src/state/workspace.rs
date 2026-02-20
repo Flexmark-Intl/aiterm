@@ -367,6 +367,8 @@ fn default_prompt_patterns() -> Vec<String> {
         "\\u@\\h:\\d\\p".to_string(),
         "\\h \\u[\\d]\\p".to_string(),
         "[\\u@\\h \\d]\\p".to_string(),
+        "PS \\d>".to_string(),
+        "\\d>".to_string(),
     ]
 }
 
@@ -380,6 +382,10 @@ fn default_notify_min_duration() -> u32 {
 
 fn default_notification_mode() -> String {
     "auto".to_string()
+}
+
+fn default_windows_shell() -> String {
+    "powershell".to_string()
 }
 
 fn default_true() -> bool {
@@ -594,6 +600,9 @@ pub struct Preferences {
     /// Enable Claude Code IDE WebSocket integration server.
     #[serde(default = "default_true")]
     pub claude_code_ide: bool,
+    /// Windows shell preference: "powershell", "pwsh", "cmd", "gitbash", "wsl"
+    #[serde(default = "default_windows_shell")]
+    pub windows_shell: String,
 }
 
 impl Default for Preferences {
@@ -639,6 +648,7 @@ impl Default for Preferences {
             hidden_default_triggers: Vec::new(),
             claude_triggers_prompted: false,
             claude_code_ide: true,
+            windows_shell: default_windows_shell(),
         }
     }
 }

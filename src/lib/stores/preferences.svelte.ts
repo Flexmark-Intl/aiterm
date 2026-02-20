@@ -46,6 +46,7 @@ function createPreferencesStore() {
   let hiddenDefaultTriggers = $state<string[]>([]);
   let claudeTriggersPrompted = $state(false);
   let claudeCodeIde = $state(false);
+  let windowsShell = $state('powershell');
 
   return {
     /** Resolves once the initial load() has completed. */
@@ -89,6 +90,7 @@ function createPreferencesStore() {
     get hiddenDefaultTriggers() { return hiddenDefaultTriggers; },
     get claudeTriggersPrompted() { return claudeTriggersPrompted; },
     get claudeCodeIde() { return claudeCodeIde; },
+    get windowsShell() { return windowsShell; },
 
     async load() {
       const prefs = await commands.getPreferences();
@@ -99,6 +101,12 @@ function createPreferencesStore() {
       autoSaveInterval = prefs.auto_save_interval;
       scrollbackLimit = prefs.scrollback_limit;
       promptPatterns = prefs.prompt_patterns;
+      // Migration: add Windows shell patterns if missing
+      const windowsPatterns = ['PS \\d>', '\\d>'];
+      const missingPatterns = windowsPatterns.filter(p => !promptPatterns.includes(p));
+      if (missingPatterns.length > 0) {
+        promptPatterns = [...promptPatterns, ...missingPatterns];
+      }
       cloneCwd = prefs.clone_cwd;
       cloneScrollback = prefs.clone_scrollback;
       cloneSsh = prefs.clone_ssh;
@@ -136,6 +144,7 @@ function createPreferencesStore() {
       hiddenDefaultTriggers = prefs.hidden_default_triggers ?? [];
       claudeTriggersPrompted = prefs.claude_triggers_prompted ?? false;
       claudeCodeIde = prefs.claude_code_ide ?? false;
+      windowsShell = prefs.windows_shell ?? 'powershell';
       _resolveReady();
     },
 
@@ -329,6 +338,11 @@ function createPreferencesStore() {
       await this.save();
     },
 
+    async setWindowsShell(value: string) {
+      windowsShell = value;
+      await this.save();
+    },
+
     async addCustomTheme(t: Theme) {
       customThemes = [...customThemes, t];
       await this.save();
@@ -391,6 +405,7 @@ function createPreferencesStore() {
       hiddenDefaultTriggers = prefs.hidden_default_triggers ?? [];
       claudeTriggersPrompted = prefs.claude_triggers_prompted ?? false;
       claudeCodeIde = prefs.claude_code_ide ?? false;
+      windowsShell = prefs.windows_shell ?? 'powershell';
     },
 
     async save() {
@@ -435,6 +450,7 @@ function createPreferencesStore() {
         hidden_default_triggers: hiddenDefaultTriggers,
         claude_triggers_prompted: claudeTriggersPrompted,
         claude_code_ide: claudeCodeIde,
+        windows_shell: windowsShell,
       };
       await commands.setPreferences(prefs);
     }

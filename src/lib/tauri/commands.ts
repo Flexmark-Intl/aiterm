@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { AppData, DiffContext, DuplicateWorkspaceResult, EditorFileInfo, Pane, Preferences, SplitDirection, Tab, WindowData, Workspace, WorkspaceNote } from './types';
+import type { AppData, DiffContext, DuplicateWorkspaceResult, EditorFileInfo, Pane, Preferences, ShellInfo, SplitDirection, Tab, WindowData, Workspace, WorkspaceNote } from './types';
 
 // Terminal commands
 export async function spawnTerminal(ptyId: string, tabId: string, cols: number, rows: number, cwd?: string | null): Promise<void> {
@@ -63,6 +63,10 @@ export async function killTerminal(ptyId: string): Promise<void> {
 
 export async function readClipboardFilePaths(): Promise<string[]> {
   return invoke('read_clipboard_file_paths');
+}
+
+export async function detectWindowsShells(): Promise<ShellInfo[]> {
+  return invoke('detect_windows_shells');
 }
 
 // Workspace commands

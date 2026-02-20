@@ -245,6 +245,7 @@ pub fn run() {
             commands::terminal::kill_terminal,
             commands::terminal::get_pty_info,
             commands::terminal::read_clipboard_file_paths,
+            commands::terminal::detect_windows_shells,
             commands::workspace::get_app_data,
             commands::workspace::create_workspace,
             commands::workspace::delete_workspace,
