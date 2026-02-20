@@ -165,6 +165,7 @@ pub fn spawn_pty(
 
     #[cfg(windows)]
     let mut cmd = {
+        let prefs = state.app_data.read().preferences.clone();
         let shell_path = resolve_windows_shell(&prefs.windows_shell);
         CommandBuilder::new(&shell_path)
     };
