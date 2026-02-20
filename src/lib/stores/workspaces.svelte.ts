@@ -7,6 +7,7 @@ import { activityStore } from '$lib/stores/activity.svelte';
 import { getCompiledPatterns } from '$lib/utils/promptPattern';
 import { error as logError } from '@tauri-apps/plugin-log';
 import { getVariables } from '$lib/stores/triggers.svelte';
+import { CLAUDE_RESUME_COMMAND } from '$lib/triggers/defaults';
 
 /**
  * Extract the remote cwd from the terminal prompt using user-configured patterns.
@@ -146,6 +147,26 @@ function createWorkspacesStore() {
         }
       }
       notesVisible = seeded;
+
+      // Migration: update old auto-resume commands to current version
+      const OLD_RESUME_COMMANDS = [
+        'if [ -n "%claudeSessionId" ]; then claude --resume %claudeSessionId; elif [ -n "%claudeResumeCommand" ]; then %claudeResumeCommand; else claude --continue; fi',
+      ];
+      for (const ws of workspaces) {
+        for (const pane of ws.panes) {
+          for (const tab of pane.tabs) {
+            if (tab.auto_resume_command && OLD_RESUME_COMMANDS.includes(tab.auto_resume_command)) {
+              tab.auto_resume_command = CLAUDE_RESUME_COMMAND;
+              tab.auto_resume_remembered_command = CLAUDE_RESUME_COMMAND;
+              await commands.setTabAutoResumeContext(
+                ws.id, pane.id, tab.id,
+                tab.auto_resume_cwd, tab.auto_resume_ssh_command,
+                tab.auto_resume_remote_cwd, CLAUDE_RESUME_COMMAND,
+              );
+            }
+          }
+        }
+      }
 
       // Create default workspace if none exist
       if (workspaces.length === 0) {
