@@ -30,144 +30,164 @@ pub fn spawn_pty(
         })
         .map_err(|e| e.to_string())?;
 
-    // Get the user's shell
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
-    let shell_name = std::path::Path::new(&shell)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("zsh");
+    // --- Platform-specific shell detection and setup ---
+    #[cfg(unix)]
+    let mut cmd = {
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+        let shell_name = std::path::Path::new(&shell)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("zsh");
 
-    // Spawn as login shell - handle different shells
-    let mut cmd = CommandBuilder::new(&shell);
+        let mut cmd = CommandBuilder::new(&shell);
 
-    // Most shells use -l for login, fish uses --login
-    match shell_name {
-        "fish" => { cmd.arg("--login"); }
-        "bash" | "zsh" | "sh" | "ksh" | "tcsh" | "csh" => { cmd.arg("-l"); }
-        _ => { cmd.arg("-l"); } // Default to -l for unknown shells
-    }
+        // Most shells use -l for login, fish uses --login
+        match shell_name {
+            "fish" => { cmd.arg("--login"); }
+            "bash" | "zsh" | "sh" | "ksh" | "tcsh" | "csh" => { cmd.arg("-l"); }
+            _ => { cmd.arg("-l"); }
+        }
 
-    // Set environment variables
+        // macOS-specific: disable bash session save/restore and deprecation warning
+        #[cfg(target_os = "macos")]
+        if shell_name == "bash" {
+            cmd.env("SHELL_SESSION_HISTORY", "0");
+            cmd.env("SHELL_SESSION_DID_INIT", "1");
+            cmd.env("BASH_SILENCE_DEPRECATION_WARNING", "1");
+        }
+
+        // Set up per-tab history file
+        let safe_tab_id = tab_id.replace(['/', '\\', '.'], "");
+        if let Some(data_dir) = dirs::data_dir() {
+            let history_dir = data_dir.join(app_data_slug()).join("history");
+            let _ = std::fs::create_dir_all(&history_dir);
+            let history_file = history_dir.join(format!("{}.history", safe_tab_id));
+            let history_path = history_file.to_string_lossy().to_string();
+
+            match shell_name {
+                "bash" | "zsh" | "sh" | "ksh" => {
+                    cmd.env("HISTFILE", &history_path);
+                }
+                "fish" => {
+                    cmd.env("fish_history", &safe_tab_id);
+                }
+                _ => {
+                    cmd.env("HISTFILE", &history_path);
+                }
+            }
+        }
+
+        // Shell integration: configure shell hooks for title, command completion, and l() function
+        let prefs = state.app_data.read().preferences.clone();
+        let shell_title_integration = prefs.shell_title_integration;
+        let shell_integration = prefs.shell_integration;
+
+        // Guarded one-time source of l() function (ls with OSC 8 file links)
+        let l_fn_prefix = match write_ls_function() {
+            Ok(path) => format!(
+                r#"[[ -z "$__aiterm_l" ]] && __aiterm_l=1 && source "{}"; "#,
+                path.display()
+            ),
+            Err(_) => String::new(),
+        };
+
+        match shell_name {
+            "bash" => {
+                if shell_integration {
+                    let title_part = if shell_title_integration {
+                        r#" printf "\033]0;%s@%s:%s\007" "${USER}" "${HOSTNAME%%.*}" "${PWD/#$HOME/~}";"#
+                    } else { "" };
+                    let prompt_cmd = format!(
+                        concat!(
+                            "{}",
+                            r#"__aiterm_ec=$?;"#,
+                            r#" [[ -z "$__aiterm_trap" ]] && __aiterm_trap=1 &&"#,
+                            r#" trap '[[ "$__aiterm_at_prompt" == 1 ]] && __aiterm_at_prompt= && printf "\033]133;B\007"' DEBUG;"#,
+                            r#" printf '\033]133;D;%d\007' "$__aiterm_ec"; printf '\033]133;A\007';"#,
+                            r#"{}"#,
+                            r#" __aiterm_at_prompt=1"#,
+                        ),
+                        l_fn_prefix,
+                        title_part,
+                    );
+                    cmd.env("PROMPT_COMMAND", prompt_cmd);
+                } else if shell_title_integration {
+                    cmd.env(
+                        "PROMPT_COMMAND",
+                        format!(
+                            r#"{}printf "\033]0;%s@%s:%s\007" "${{USER}}" "${{HOSTNAME%%.*}}" "${{PWD/#$HOME/~}}""#,
+                            l_fn_prefix
+                        ),
+                    );
+                } else if !l_fn_prefix.is_empty() {
+                    cmd.env("PROMPT_COMMAND", l_fn_prefix.trim_end_matches("; "));
+                }
+            }
+            "zsh" => {
+                if shell_title_integration || shell_integration {
+                    if let Ok(integration_dir) = setup_zsh_integration(shell_title_integration, shell_integration) {
+                        let real_zdotdir = std::env::var("ZDOTDIR")
+                            .unwrap_or_else(|_| {
+                                dirs::home_dir()
+                                    .map(|h| h.to_string_lossy().to_string())
+                                    .unwrap_or_default()
+                            });
+                        cmd.env("AITERM_REAL_ZDOTDIR", &real_zdotdir);
+                        cmd.env("ZDOTDIR", integration_dir.to_string_lossy().to_string());
+                    }
+                }
+            }
+            "fish" => {
+                if shell_title_integration || shell_integration {
+                    let mut parts: Vec<String> = Vec::new();
+                    if shell_integration {
+                        parts.push(
+                            r#"function __aiterm_osc133 --on-event fish_prompt; printf '\e]133;D;%d\a\e]133;A\a' $status; end"#.to_string()
+                        );
+                        parts.push(
+                            r#"function __aiterm_osc133_preexec --on-event fish_preexec; printf '\e]133;B\a'; end"#.to_string()
+                        );
+                    }
+                    if shell_title_integration {
+                        parts.push(
+                            r#"function fish_title; printf '%s@%s:%s' $USER (prompt_hostname) (prompt_pwd); end"#.to_string()
+                        );
+                    }
+                    cmd.arg("-C");
+                    cmd.arg(parts.join("; "));
+                }
+            }
+            _ => {}
+        }
+
+        cmd
+    };
+
+    #[cfg(windows)]
+    let mut cmd = {
+        // On Windows, use PowerShell as the default shell
+        let shell = if which_exists("pwsh") {
+            "pwsh.exe".to_string()
+        } else {
+            "powershell.exe".to_string()
+        };
+        CommandBuilder::new(&shell)
+    };
+
+    // --- Cross-platform environment setup ---
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
     cmd.env("TERM_PROGRAM", "aiterm");
 
-    // Shell-specific environment variables for macOS
-    if shell_name == "bash" {
-        // Completely disable macOS bash session save/restore feature
-        cmd.env("SHELL_SESSION_HISTORY", "0");
-        cmd.env("SHELL_SESSION_DID_INIT", "1");
-        cmd.env("BASH_SILENCE_DEPRECATION_WARNING", "1");
-    }
-
-    // Set up per-tab history file (sanitize tab_id to prevent path traversal)
-    let safe_tab_id = tab_id.replace(['/', '\\', '.'], "");
-    if let Some(data_dir) = dirs::data_dir() {
-        let history_dir = data_dir.join(app_data_slug()).join("history");
-        // Create history directory if it doesn't exist
-        let _ = std::fs::create_dir_all(&history_dir);
-
-        let history_file = history_dir.join(format!("{}.history", safe_tab_id));
-        let history_path = history_file.to_string_lossy().to_string();
-
-        // Set HISTFILE for bash/zsh/sh
-        match shell_name {
-            "bash" | "zsh" | "sh" | "ksh" => {
-                cmd.env("HISTFILE", &history_path);
-            }
-            "fish" => {
-                // Fish uses a different variable
-                cmd.env("fish_history", &safe_tab_id);
-            }
-            _ => {
-                cmd.env("HISTFILE", &history_path);
-            }
+    // Inject Claude Code IDE integration env vars
+    {
+        let port = *state.claude_code_port.read();
+        let auth = state.claude_code_auth.read().clone();
+        if let (Some(port), Some(auth)) = (port, auth) {
+            cmd.env("CLAUDE_CODE_SSE_PORT", port.to_string());
+            cmd.env("ENABLE_IDE_INTEGRATION", "true");
+            cmd.env("CLAUDE_CODE_IDE_AUTH", auth);
         }
-    }
-
-    // Shell integration: configure shell hooks for title, command completion, and l() function
-    let prefs = state.app_data.read().preferences.clone();
-    let shell_title_integration = prefs.shell_title_integration;
-    let shell_integration = prefs.shell_integration;
-
-    // Guarded one-time source of l() function (ls with OSC 8 file links)
-    // Always injected regardless of shell integration prefs
-    let l_fn_prefix = match write_ls_function() {
-        Ok(path) => format!(
-            r#"[[ -z "$__aiterm_l" ]] && __aiterm_l=1 && source "{}"; "#,
-            path.display()
-        ),
-        Err(_) => String::new(),
-    };
-
-    match shell_name {
-        "bash" => {
-            if shell_integration {
-                let title_part = if shell_title_integration {
-                    r#" printf "\033]0;%s@%s:%s\007" "${USER}" "${HOSTNAME%%.*}" "${PWD/#$HOME/~}";"#
-                } else { "" };
-                let prompt_cmd = format!(
-                    concat!(
-                        "{}",
-                        r#"__aiterm_ec=$?;"#,
-                        r#" [[ -z "$__aiterm_trap" ]] && __aiterm_trap=1 &&"#,
-                        r#" trap '[[ "$__aiterm_at_prompt" == 1 ]] && __aiterm_at_prompt= && printf "\033]133;B\007"' DEBUG;"#,
-                        r#" printf '\033]133;D;%d\007' "$__aiterm_ec"; printf '\033]133;A\007';"#,
-                        r#"{}"#,
-                        r#" __aiterm_at_prompt=1"#,
-                    ),
-                    l_fn_prefix,
-                    title_part,
-                );
-                cmd.env("PROMPT_COMMAND", prompt_cmd);
-            } else if shell_title_integration {
-                cmd.env(
-                    "PROMPT_COMMAND",
-                    format!(
-                        r#"{}printf "\033]0;%s@%s:%s\007" "${{USER}}" "${{HOSTNAME%%.*}}" "${{PWD/#$HOME/~}}""#,
-                        l_fn_prefix
-                    ),
-                );
-            } else if !l_fn_prefix.is_empty() {
-                // No shell integration, but still inject the l() function
-                cmd.env("PROMPT_COMMAND", l_fn_prefix.trim_end_matches("; "));
-            }
-        }
-        "zsh" => {
-            if shell_title_integration || shell_integration {
-                if let Ok(integration_dir) = setup_zsh_integration(shell_title_integration, shell_integration) {
-                    let real_zdotdir = std::env::var("ZDOTDIR")
-                        .unwrap_or_else(|_| {
-                            dirs::home_dir()
-                                .map(|h| h.to_string_lossy().to_string())
-                                .unwrap_or_default()
-                        });
-                    cmd.env("AITERM_REAL_ZDOTDIR", &real_zdotdir);
-                    cmd.env("ZDOTDIR", integration_dir.to_string_lossy().to_string());
-                }
-            }
-        }
-        "fish" => {
-            if shell_title_integration || shell_integration {
-                let mut parts: Vec<String> = Vec::new();
-                if shell_integration {
-                    parts.push(
-                        r#"function __aiterm_osc133 --on-event fish_prompt; printf '\e]133;D;%d\a\e]133;A\a' $status; end"#.to_string()
-                    );
-                    parts.push(
-                        r#"function __aiterm_osc133_preexec --on-event fish_preexec; printf '\e]133;B\a'; end"#.to_string()
-                    );
-                }
-                if shell_title_integration {
-                    parts.push(
-                        r#"function fish_title; printf '%s@%s:%s' $USER (prompt_hostname) (prompt_pwd); end"#.to_string()
-                    );
-                }
-                cmd.arg("-C");
-                cmd.arg(parts.join("; "));
-            }
-        }
-        _ => {}
     }
 
     // Set working directory — use provided cwd (from split) or fall back to home
@@ -181,6 +201,8 @@ pub fn spawn_pty(
     } else if let Some(home) = dirs::home_dir() {
         cmd.cwd(home);
     }
+
+    #[cfg(unix)]
     if let Some(home) = dirs::home_dir() {
         cmd.env("HOME", home.to_string_lossy().to_string());
     }
@@ -324,7 +346,8 @@ pub fn get_pty_info(state: &Arc<AppState>, pty_id: &str) -> Result<PtyInfo, Stri
     Ok(PtyInfo { cwd, foreground_command })
 }
 
-/// Get the current working directory of a process (macOS)
+/// Get the current working directory of a process via lsof (Unix only)
+#[cfg(unix)]
 fn get_cwd_for_pid(pid: u32) -> Option<String> {
     let output = std::process::Command::new("lsof")
         .args(["-a", "-d", "cwd", "-p", &pid.to_string(), "-Fn"])
@@ -332,7 +355,6 @@ fn get_cwd_for_pid(pid: u32) -> Option<String> {
         .ok()?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    // lsof output: lines starting with 'n' contain the path
     for line in stdout.lines() {
         if let Some(path) = line.strip_prefix('n') {
             if path.starts_with('/') {
@@ -343,7 +365,13 @@ fn get_cwd_for_pid(pid: u32) -> Option<String> {
     None
 }
 
+#[cfg(windows)]
+fn get_cwd_for_pid(_pid: u32) -> Option<String> {
+    None
+}
+
 /// Check if a command string looks like an SSH/remote connection command
+#[cfg(unix)]
 fn is_ssh_command(cmd: &str) -> bool {
     let base = cmd.split_whitespace().next().unwrap_or("");
     let basename = std::path::Path::new(base)
@@ -353,10 +381,8 @@ fn is_ssh_command(cmd: &str) -> bool {
     matches!(basename, "ssh" | "mosh" | "autossh")
 }
 
-/// Get the foreground process command (for SSH detection)
-/// Walks child processes to find any SSH-like process in the chain.
-/// An alias like `gnova` that expands to `ssh user@host` will show
-/// `ssh user@host` in the process tree, so aliases are handled transparently.
+/// Get the foreground process command via ps (Unix only)
+#[cfg(unix)]
 fn get_foreground_command(shell_pid: u32) -> Option<String> {
     let output = std::process::Command::new("ps")
         .args(["-o", "pid=,ppid=,command=", "-x"])
@@ -365,7 +391,6 @@ fn get_foreground_command(shell_pid: u32) -> Option<String> {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
 
-    // Build a map of ppid -> [(pid, command)]
     let mut children: std::collections::HashMap<u32, Vec<(u32, String)>> =
         std::collections::HashMap::new();
 
@@ -386,7 +411,6 @@ fn get_foreground_command(shell_pid: u32) -> Option<String> {
         children.entry(ppid).or_default().push((pid, cmd));
     }
 
-    // Walk down from shell_pid to the leaf, remembering any SSH command found
     let mut current_pid = shell_pid;
     let mut ssh_cmd: Option<String> = None;
 
@@ -408,8 +432,24 @@ fn get_foreground_command(shell_pid: u32) -> Option<String> {
     ssh_cmd
 }
 
+#[cfg(windows)]
+fn get_foreground_command(_shell_pid: u32) -> Option<String> {
+    None
+}
+
+/// Check if an executable exists on the PATH
+#[cfg(windows)]
+fn which_exists(name: &str) -> bool {
+    std::process::Command::new("where")
+        .arg(name)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
 /// Create zsh integration directory with shim files that source the user's
 /// real config and add precmd hooks for title and/or command completion.
+#[cfg(unix)]
 fn setup_zsh_integration(title: bool, shell_integration: bool) -> Result<std::path::PathBuf, String> {
     let data_dir = dirs::data_dir().ok_or("No data directory")?;
     let zsh_dir = data_dir.join(app_data_slug()).join("shell-integration").join("zsh");
@@ -466,6 +506,7 @@ fi
 /// Write the `l()` shell function (ls with OSC 8 hyperlinks) to a file.
 /// When sourced, defines `l` as an ls wrapper that emits clickable file:// links.
 /// Returns the path to the written file.
+#[cfg(unix)]
 fn write_ls_function() -> Result<std::path::PathBuf, String> {
     let data_dir = dirs::data_dir().ok_or("No data directory")?;
     let integration_dir = data_dir.join(app_data_slug()).join("shell-integration");
