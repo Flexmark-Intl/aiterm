@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.1.0
+
+- Add Claude Code IDE integration: WebSocket server for open-file/open-diff commands, connected status in sidebar
+- Add diff editor tab using CodeMirror merge view
+- Add Linux and Windows bundling support with platform guards
+- Add GitHub Actions CI workflow for cross-platform builds
+- Add NSIS installer config for Windows
+- Add workspace `default_command` preference
+- Default to PowerShell on Windows, skip shell integration hooks
+- Gate Unix-specific PTY code (`lsof`, `ps`, shell hooks) with `#[cfg(unix)]`
+- Gate macOS-specific window APIs (hidden title, title bar style) to macOS only
+- Add editor registry for cross-component editor instance access
+
 ## v1.0.0
 
 - Add CodeMirror 6 editor tabs: open files from terminal output or via `Cmd+O`, syntax highlighting for 30+ languages
