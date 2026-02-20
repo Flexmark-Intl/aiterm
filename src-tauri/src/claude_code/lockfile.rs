@@ -3,6 +3,25 @@ use std::path::PathBuf;
 
 const MCP_SERVER_KEY: &str = "aiterm";
 
+/// Check if a process is alive by PID.
+#[cfg(unix)]
+fn is_process_alive(pid: u32) -> bool {
+    unsafe { libc::kill(pid as i32, 0) == 0 }
+}
+
+#[cfg(windows)]
+fn is_process_alive(pid: u32) -> bool {
+    use std::process::Command;
+    Command::new("tasklist")
+        .args(["/FI", &format!("PID eq {}", pid), "/NH"])
+        .output()
+        .map(|o| {
+            let out = String::from_utf8_lossy(&o.stdout);
+            !out.contains("No tasks") && out.contains(&pid.to_string())
+        })
+        .unwrap_or(false)
+}
+
 fn ide_lock_dir() -> Option<PathBuf> {
     dirs::home_dir().map(|h| h.join(".claude").join("ide"))
 }
@@ -143,7 +162,7 @@ pub fn cleanup_stale_lockfiles() {
         };
 
         if let Some(pid) = data.get("pid").and_then(|v| v.as_u64()) {
-            let alive = unsafe { libc::kill(pid as i32, 0) == 0 };
+            let alive = is_process_alive(pid as u32);
             if !alive {
                 log::info!("Removing stale lock file {:?} (pid {} dead)", path, pid);
                 let _ = fs::remove_file(&path);
