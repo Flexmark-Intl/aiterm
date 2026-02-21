@@ -289,7 +289,7 @@
     {/if}
     {#if claudeCodeStore.connected}
       <span class="claude-connected">
-        <StatusDot color="green" title="Claude Code connected" />
+        <StatusDot color="green" tooltip="IDE Connected" />
       </span>
     {/if}
     <button class="header-btn collapse-btn" onclick={() => workspacesStore.toggleSidebar()} title="Collapse sidebar ({modSymbol}B)">&#x2039;</button>
