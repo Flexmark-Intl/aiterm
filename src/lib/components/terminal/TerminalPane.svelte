@@ -392,7 +392,23 @@
     // Listen for PTY output
     unlistenOutput = await listen<number[]>(`pty-output-${ptyId}`, (event) => {
       const data = new Uint8Array(event.payload);
-      terminal.write(data);
+
+      // Lock viewport position across writes. TUI apps (like Claude Code / Ink)
+      // redraw on the normal buffer using cursor-up sequences, which causes
+      // xterm.js to scroll the viewport into the scrollback region. Instead of
+      // scrollToBottom (which causes rapid top/bottom flipping), we save the
+      // exact viewport offset from bottom and restore it after the write.
+      const buf = terminal.buffer.active;
+      const distFromBottom = buf.baseY - buf.viewportY;
+
+      terminal.write(data, () => {
+        const newBuf = terminal.buffer.active;
+        const targetY = newBuf.baseY - distFromBottom;
+        if (targetY >= 0 && newBuf.viewportY !== targetY) {
+          terminal.scrollToLine(targetY);
+        }
+      });
+
       processOutput(tabId, data);
       // Ignore tiny writes (spinner frames, cursor blinks, status-line redraws)
       // that TUI apps like Claude Code emit periodically while idle.

@@ -12,11 +12,24 @@ import type { Trigger, MatchMode } from '$lib/tauri/types';
 
 const BUFFER_CAP = 4096;
 
+// Detect TUI redraw sequences: cursor-up (\e[<n>A), cursor absolute position
+// (\e[<row>;<col>H or \e[<row>;<col>f), and erase-display (\e[<n>J).
+// Their presence means the terminal is overwriting existing content, not
+// emitting new forward-flowing output.
+const REDRAW_RE = /\x1b\[\d*[AHf]|\x1b\[\d+;\d+[Hf]|\x1b\[\d*J/;
+
 // Per-tab sliding window buffer (ANSI-stripped, multiline)
 const buffers = new Map<string, string>();
 
 // Cooldown tracking: triggerId → tabId → lastFiredMs
 const cooldowns = new Map<string, Map<string, number>>();
+
+// Dedup tracking: triggerId → tabId → { text, timestamp }
+// Prevents re-firing on identical matches from TUI redraws (e.g. Claude Code
+// repaints "Enter to confirm" on every frame, producing the same stripped text).
+// Dedup expires after DEDUP_WINDOW_MS so genuinely new identical matches can fire.
+const DEDUP_WINDOW_MS = 10_000;
+const lastMatches = new Map<string, Map<string, { text: string; ts: number }>>();
 
 // Compiled regex cache: pattern string → RegExp (or null if invalid)
 // Uses 's' (dotAll) flag so `.` matches newlines for multiline patterns
@@ -352,7 +365,12 @@ export function processOutput(tabId: string, data: Uint8Array) {
 
   const text = new TextDecoder().decode(data);
   const clean = stripAnsi(text).replace(/\r/g, '');
-  let buffer = (buffers.get(tabId) ?? '') + clean;
+
+  // If the raw chunk contains cursor-repositioning sequences, the TUI is
+  // redrawing existing content rather than emitting new output. Replace the
+  // buffer with only this chunk so we don't re-match previously consumed text.
+  const isRedraw = REDRAW_RE.test(text);
+  let buffer = isRedraw ? clean : (buffers.get(tabId) ?? '') + clean;
 
   // Cap buffer to prevent unbounded growth
   if (buffer.length > BUFFER_CAP) {
@@ -373,17 +391,41 @@ export function processOutput(tabId: string, data: Uint8Array) {
       if (!trigger.workspaces.includes(wsId)) continue;
     }
 
-    // Cooldown check
-    if (!checkCooldown(trigger.id, tabId, trigger.cooldown)) continue;
-
     const re = getRegex(trigger.pattern, resolveMatchMode(trigger) === 'plain_text');
     if (!re) continue;
 
     const match = buffer.match(re);
     if (match && match.index !== undefined) {
+      const matchedText = match[0];
+
+      // Always consume the matched portion from the buffer, even if we don't
+      // fire (due to cooldown or dedup). This prevents the same text from
+      // accumulating in the buffer and re-matching on every PTY chunk.
+      buffer = buffer.slice(match.index + matchedText.length);
+
+      // Cooldown check
+      if (!checkCooldown(trigger.id, tabId, trigger.cooldown)) continue;
+
+      // Dedup: if the exact same text was the last match for this trigger+tab
+      // and we're still within the dedup window, don't fire again. This
+      // prevents TUI apps (like Claude Code) from re-triggering on redrawn
+      // content. The dedup expires after DEDUP_WINDOW_MS so genuinely new
+      // identical matches (e.g. a second question) can still fire.
+      const now = Date.now();
+      const prev = lastMatches.get(trigger.id)?.get(tabId);
+      if (prev && prev.text === matchedText && (now - prev.ts) < DEDUP_WINDOW_MS) {
+        continue;
+      }
+
+      // Track matched text + timestamp for dedup
+      let tabMap = lastMatches.get(trigger.id);
+      if (!tabMap) {
+        tabMap = new Map();
+        lastMatches.set(trigger.id, tabMap);
+      }
+      tabMap.set(tabId, { text: matchedText, ts: now });
+
       fireTrigger(trigger, tabId, match);
-      // Consume matched portion from buffer to prevent re-matching
-      buffer = buffer.slice(match.index + match[0].length);
     }
   }
 
@@ -399,6 +441,9 @@ export function cleanupTab(tabId: string) {
   buffers.delete(tabId);
   variableMap.delete(tabId);
   for (const tabMap of cooldowns.values()) {
+    tabMap.delete(tabId);
+  }
+  for (const tabMap of lastMatches.values()) {
     tabMap.delete(tabId);
   }
   for (const tabMap of variableTransitions.values()) {

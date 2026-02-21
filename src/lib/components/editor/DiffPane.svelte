@@ -46,12 +46,10 @@
 
     const editorTheme = EditorView.theme({
       '&': {
-        height: '100%',
         fontSize: `${preferencesStore.fontSize}px`,
       },
       '.cm-scroller': {
         fontFamily: `"${preferencesStore.fontFamily}", Monaco, "Courier New", monospace`,
-        overflow: 'auto',
       },
     });
 
@@ -232,18 +230,11 @@
   .diff-pane :global(.cm-mergeView) {
     position: absolute;
     inset: 0;
-    overflow: hidden;
+    overflow-y: auto;
+    overflow-x: hidden;
   }
 
-  .diff-pane :global(.cm-mergeViewEditors) {
-    height: 100%;
-  }
-
-  .diff-pane :global(.cm-mergeViewEditor) {
-    min-height: 0;
-  }
-
-  .diff-pane :global(.cm-editor) {
-    height: 100%;
+  .diff-pane :global(.cm-scroller) {
+    overflow: visible !important;
   }
 </style>
