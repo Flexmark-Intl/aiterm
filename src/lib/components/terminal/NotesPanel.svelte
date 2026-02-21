@@ -34,6 +34,7 @@
   let wsMode = $state<'source' | 'render'>('source');
   let wsSaveTimer: ReturnType<typeof setTimeout> | null = null;
   let deletingNoteId = $state<string | null>(null);
+  let confirmingTabClear = $state(false);
 
   const textareaStyle = $derived(
     `font-family: '${preferencesStore.fontFamily}', monospace; font-size: ${preferencesStore.fontSize}px; white-space: ${preferencesStore.notesWordWrap ? 'pre-wrap' : 'pre'}; overflow-x: ${preferencesStore.notesWordWrap ? 'hidden' : 'auto'};`
@@ -208,6 +209,17 @@
     }
   }
 
+  function clearTabNotes() {
+    if (saveTimer) clearTimeout(saveTimer);
+    value = '';
+    workspacesStore.setTabNotes(workspaceId, paneId, tabId, null);
+    confirmingTabClear = false;
+    if (mode === 'render') {
+      mode = 'source';
+      workspacesStore.setTabNotesMode(workspaceId, paneId, tabId, 'source');
+    }
+  }
+
   // Workspace note helpers
   async function openNote(note: WorkspaceNote) {
     editingNoteId = note.id;
@@ -331,6 +343,23 @@
             <Icon name="pencil" />
           {/if}
         </button>
+      {/if}
+      {#if scope === 'tab' && value.trim()}
+        {#if confirmingTabClear}
+          <span class="delete-confirm">
+            Clear?
+            <button class="confirm-yes" onclick={clearTabNotes}>Yes</button>
+            <button class="confirm-no" onclick={() => confirmingTabClear = false}>No</button>
+          </span>
+        {:else}
+          <button
+            class="mode-toggle"
+            onclick={() => confirmingTabClear = true}
+            title="Clear notes"
+          >
+            <Icon name="trash" />
+          </button>
+        {/if}
       {/if}
       <button class="close-btn" onclick={() => {
         if (saveTimer) clearTimeout(saveTimer);

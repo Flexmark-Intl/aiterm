@@ -9,7 +9,8 @@
   import type { EditorFileInfo } from '$lib/tauri/types';
   import { readFile, readFileBase64, writeFile, scpReadFile, scpReadFileBase64, scpWriteFile } from '$lib/tauri/commands';
   import { loadLanguageExtension, detectLanguageFromContent, isImageFile, getImageMimeType } from '$lib/utils/languageDetect';
-  import { tokyoNightExtension } from '$lib/utils/editorTheme';
+  import { buildEditorExtension } from '$lib/utils/editorTheme';
+  import { getTheme } from '$lib/themes';
   import { preferencesStore } from '$lib/stores/preferences.svelte';
   import { dispatch } from '$lib/stores/notificationDispatch';
   import { workspacesStore } from '$lib/stores/workspaces.svelte';
@@ -192,7 +193,7 @@
             ...foldKeymap,
             indentWithTab,
           ]),
-          ...tokyoNightExtension,
+          ...buildEditorExtension(getTheme(preferencesStore.theme, preferencesStore.customThemes)),
           EditorView.updateListener.of((update) => {
             if (update.docChanged) {
               const isDirty = update.state.doc.toString() !== originalContent;

@@ -6,7 +6,8 @@
   import type { DiffContext } from '$lib/tauri/types';
   import * as commands from '$lib/tauri/commands';
   import { workspacesStore } from '$lib/stores/workspaces.svelte';
-  import { tokyoNightExtension } from '$lib/utils/editorTheme';
+  import { buildEditorExtension } from '$lib/utils/editorTheme';
+  import { getTheme } from '$lib/themes';
   import { dispatch as dispatchToast } from '$lib/stores/notificationDispatch';
   import { preferencesStore } from '$lib/stores/preferences.svelte';
   import { error as logError } from '@tauri-apps/plugin-log';
@@ -44,6 +45,9 @@
     attachToSlot();
     window.addEventListener('terminal-slot-ready', handleSlotReady);
 
+    const currentTheme = getTheme(preferencesStore.theme, preferencesStore.customThemes);
+    const themeExtension = buildEditorExtension(currentTheme);
+
     const editorTheme = EditorView.theme({
       '&': {
         fontSize: `${preferencesStore.fontSize}px`,
@@ -64,7 +68,7 @@
           lineNumbers(),
           highlightSpecialChars(),
           highlightActiveLine(),
-          ...tokyoNightExtension,
+          ...themeExtension,
           editorTheme,
         ],
       },
@@ -74,7 +78,7 @@
           lineNumbers(),
           highlightSpecialChars(),
           highlightActiveLine(),
-          ...tokyoNightExtension,
+          ...themeExtension,
           editorTheme,
         ],
       },
@@ -208,7 +212,7 @@
 
   .btn-accept {
     background: var(--accent);
-    color: #1a1b26;
+    color: var(--bg-dark);
   }
 
   .btn-accept:hover:not(:disabled) {
