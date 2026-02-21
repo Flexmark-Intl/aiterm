@@ -999,7 +999,10 @@ function createWorkspacesStore() {
       reordered.splice(sourceIndex + 1, 0, newTab.id);
       await commands.reorderTabs(workspaceId, paneId, reordered);
 
-      // 10. Reload workspace state
+      // 10. Switch to the new tab
+      await commands.setActiveTab(workspaceId, paneId, newTab.id);
+
+      // 11. Reload workspace state
       const data = await commands.getWindowData();
       const updatedWs = data.workspaces.find(w => w.id === workspaceId);
       if (updatedWs) {
