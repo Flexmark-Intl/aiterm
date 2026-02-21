@@ -237,4 +237,45 @@
   .diff-pane :global(.cm-scroller) {
     overflow: visible !important;
   }
+
+  /* Changed line backgrounds — mix highlight color with editor bg */
+  .diff-pane :global(.cm-merge-a .cm-changedLine),
+  .diff-pane :global(.cm-deletedLine) {
+    background-color: color-mix(in srgb, var(--red) 15%, var(--bg-dark)) !important;
+  }
+
+  .diff-pane :global(.cm-merge-b .cm-changedLine) {
+    background-color: color-mix(in srgb, var(--green) 15%, var(--bg-dark)) !important;
+  }
+
+  /* Inline changed text highlight — makes the actual diff characters pop */
+  .diff-pane :global(.cm-deletedText) {
+    background-color: color-mix(in srgb, var(--red) 35%, var(--bg-dark)) !important;
+  }
+
+  .diff-pane :global(.cm-changedText) {
+    background-color: color-mix(in srgb, var(--green) 35%, var(--bg-dark)) !important;
+  }
+
+  /* Gutter indicators for changed lines */
+  .diff-pane :global(.cm-merge-a .cm-changedLineGutter),
+  .diff-pane :global(.cm-deletedLineGutter) {
+    background-color: color-mix(in srgb, var(--red) 60%, var(--bg-dark)) !important;
+  }
+
+  .diff-pane :global(.cm-merge-b .cm-changedLineGutter) {
+    background-color: color-mix(in srgb, var(--green) 60%, var(--bg-dark)) !important;
+  }
+
+  /* Deleted chunk (whole-block deletion) */
+  .diff-pane :global(.cm-deletedChunk) {
+    background-color: color-mix(in srgb, var(--red) 10%, var(--bg-dark)) !important;
+  }
+
+  /* Collapsed unchanged lines indicator */
+  .diff-pane :global(.cm-collapsedLines) {
+    color: var(--fg-dim);
+    background: var(--bg-medium);
+    border-color: var(--bg-light);
+  }
 </style>

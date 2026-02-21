@@ -1,5 +1,8 @@
 {
   "app": {
-    "withGlobalTauri": true
+    "withGlobalTauri": true,
+    "security": {
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+    }
   }
 }

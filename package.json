@@ -9,7 +9,7 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "tauri": "tauri",
-    "tauri:dev": "tauri dev --features mcp-bridge",
+    "tauri:dev": "tauri dev --features mcp-bridge --config src-tauri/tauri.dev.conf.json",
     "tauri:build": "tauri build"
   },
   "devDependencies": {

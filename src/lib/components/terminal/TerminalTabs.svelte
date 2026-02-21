@@ -399,6 +399,7 @@
   {#each pane.tabs as tab, index (tab.id)}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     {@const isEditor = tab.tab_type === 'editor'}
+    {@const isDiff = tab.tab_type === 'diff'}
     {@const shellState = !isEditor && tab.id !== pane.active_tab_id ? activityStore.getShellState(tab.id) : undefined}
     {@const hasActivity = !isEditor && tab.id !== pane.active_tab_id && activityStore.hasActivity(tab.id)}
     {@const tabState = !isEditor && tab.id !== pane.active_tab_id ? activityStore.getTabState(tab.id) : undefined}
@@ -442,8 +443,10 @@
           />
         </div>
       {:else}
-        {#if isEditor}
-          <span class="editor-icon" title="Editor">&#x1F4C4;</span>
+        {#if isDiff}
+          <span class="editor-icon" title="Diff">&#x21C4;</span>
+        {:else if isEditor}
+          <span class="editor-icon" title="Editor">&#x2630;</span>
         {:else if tabState === 'alert'}
           <span class="indicator alert-indicator">&#x2757;</span>
         {:else if tabState === 'question'}
@@ -457,8 +460,8 @@
           <span class="auto-resume-indicator" title="Auto-resume enabled">&#x21BB;</span>
         {/if}
         <span class="tab-name">{displayName(tab)}</span>
-        <div class="tab-actions" class:single-action={isEditor}>
-          {#if !isEditor}
+        <div class="tab-actions" class:single-action={isEditor || isDiff}>
+          {#if !isEditor && !isDiff}
             <button
               class="tab-btn duplicate-btn"
               onclick={(e) => handleDuplicateTab(tab.id, e)}

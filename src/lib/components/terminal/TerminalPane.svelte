@@ -66,7 +66,10 @@
   let trackActivity = false;
   let visibilityGraceUntil = 0; // timestamp — suppress activity until this time
   let isAutoResume = $state(false);
-  // Initialized in onMount from prop (intentionally one-time read, managed locally after)
+  // Sync from props so external changes (e.g. triggers) update the local flag
+  $effect(() => {
+    isAutoResume = !!(autoResumeSshCommand || autoResumeCwd);
+  });
   let resizePtyTimeout: ReturnType<typeof setTimeout> | undefined;
   // Inline prompt for auto-resume command
   let autoResumePrompt = $state<{ cwd: string | null; sshCmd: string | null; remoteCwd: string | null } | null>(null);
@@ -184,7 +187,6 @@
 
   onMount(async () => {
     ptyId = crypto.randomUUID();
-    isAutoResume = !!(autoResumeSshCommand || autoResumeCwd);
 
     terminal = new Terminal({
       theme: getTheme(preferencesStore.theme, preferencesStore.customThemes).terminal,
@@ -517,7 +519,6 @@
         e.preventDefault();
         if (isAutoResume) {
           workspacesStore.setTabAutoResumeContext(workspaceId, paneId, tabId, null, null, null, null);
-          isAutoResume = false;
         } else {
           gatherAutoResumeContext().then(ctx => {
             autoResumePromptValue = autoResumeRememberedCommand ?? '';
