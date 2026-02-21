@@ -1022,9 +1022,8 @@ pub fn archive_tab(
             .ok_or("Tab not found")?;
         let mut tab = pane.tabs.remove(tab_index);
 
-        // Freeze display name and clear PTY
-        tab.name = display_name;
-        tab.custom_name = true;
+        // Store resolved display name for the archive list; preserve original name/custom_name
+        tab.archived_name = Some(display_name);
         tab.pty_id = None;
         tab.scrollback = scrollback;
         tab.restore_cwd = cwd;
@@ -1067,6 +1066,7 @@ pub fn restore_archived_tab(
         let arch_index = workspace.archived_tabs.iter().position(|t| t.id == tab_id)
             .ok_or("Archived tab not found")?;
         let mut tab = workspace.archived_tabs.remove(arch_index);
+        tab.archived_name = None;
         tab.archived_at = None;
 
         let pane = workspace.panes.iter_mut()

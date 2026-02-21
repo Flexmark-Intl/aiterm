@@ -622,8 +622,7 @@ function createWorkspacesStore() {
       // Build the archived tab object for local state
       const archivedTab: Tab = {
         ...tab,
-        name: displayName,
-        custom_name: true,
+        archived_name: displayName,
         pty_id: null,
         scrollback,
         restore_cwd: cwd,

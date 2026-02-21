@@ -501,7 +501,7 @@
                 class="archive-item-name"
                 onclick={() => handleRestoreArchivedTab(archivedTab.id)}
               >
-                <span class="archive-item-label">{archivedTab.name}</span>
+                <span class="archive-item-label">{archivedTab.archived_name ?? archivedTab.name}</span>
                 {#if archivedTab.archived_at}
                   <span class="archive-item-date">{relativeTime(archivedTab.archived_at)}</span>
                 {/if}
