@@ -190,7 +190,7 @@ export const builtinThemes: Theme[] = [
     ui: {
       bg_dark: '#fdf6e3',
       bg_medium: '#eee8d5',
-      bg_light: '#93a1a1',
+      bg_light: '#d3cdb8',
       fg: '#657b83',
       fg_dim: '#839496',
       accent: '#268bd2',
@@ -201,7 +201,7 @@ export const builtinThemes: Theme[] = [
       cyan: '#2aa198',
       magenta: '#d33682',
       tab_border: 'transparent',
-      tab_border_active: 'transparent',
+      tab_border_active: '#268bd2',
       tab_border_activity: 'transparent',
     },
     terminal: {
