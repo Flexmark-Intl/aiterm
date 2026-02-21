@@ -24,7 +24,14 @@
   let archiveDropdownOpen = $state(false);
   let archiveDropdownEl = $state<HTMLElement | null>(null);
   let archiveDropdownPos = $state({ top: 0, left: 0 });
-  const archivedTabs = $derived(workspacesStore.workspaces.find(w => w.id === workspaceId)?.archived_tabs ?? []);
+  const archivedTabs = $derived(
+    [...(workspacesStore.workspaces.find(w => w.id === workspaceId)?.archived_tabs ?? [])]
+      .sort((a, b) => {
+        const aTime = a.archived_at ? new Date(a.archived_at).getTime() : 0;
+        const bTime = b.archived_at ? new Date(b.archived_at).getTime() : 0;
+        return bTime - aTime; // most recent first
+      })
+  );
 
   let editingId = $state<string | null>(null);
   let editingName = $state('');
@@ -125,6 +132,20 @@
       editingId = null;
       editingName = '';
     }
+  }
+
+  function relativeTime(iso: string | null): string {
+    if (!iso) return '';
+    const diff = Date.now() - new Date(iso).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    if (days === 1) return 'yesterday';
+    if (days < 30) return `${days}d ago`;
+    return new Date(iso).toLocaleDateString();
   }
 
   async function handleNewTab() {
@@ -480,7 +501,10 @@
                 class="archive-item-name"
                 onclick={() => handleRestoreArchivedTab(archivedTab.id)}
               >
-                {archivedTab.name}
+                <span class="archive-item-label">{archivedTab.name}</span>
+                {#if archivedTab.archived_at}
+                  <span class="archive-item-date">{relativeTime(archivedTab.archived_at)}</span>
+                {/if}
               </button>
               <IconButton
                 tooltip="Restore"
@@ -905,9 +929,10 @@
 
   .archive-item-name {
     flex: 1;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
     font-size: 12px;
     color: var(--fg);
     text-align: left;
@@ -915,6 +940,20 @@
     background: none;
     border: none;
     cursor: pointer;
+    min-width: 0;
+  }
+
+  .archive-item-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .archive-item-date {
+    flex-shrink: 0;
+    font-size: 10px;
+    color: var(--fg-dim);
+    white-space: nowrap;
   }
 
 </style>

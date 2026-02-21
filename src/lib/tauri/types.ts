@@ -35,6 +35,7 @@ export interface Tab {
   notes_open: boolean;
   trigger_variables: Record<string, string>;
   last_cwd: string | null;
+  archived_at: string | null;
   tab_type: TabType;
   editor_file: EditorFileInfo | null;
   diff_context: DiffContext | null;

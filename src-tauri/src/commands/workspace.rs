@@ -1030,6 +1030,7 @@ pub fn archive_tab(
         tab.restore_cwd = cwd;
         tab.restore_ssh_command = ssh_command;
         tab.restore_remote_cwd = remote_cwd;
+        tab.archived_at = Some(iso_now());
 
         // Adjust active_tab_id (same logic as delete_tab)
         if pane.active_tab_id.as_ref() == Some(&tab_id) {
@@ -1065,7 +1066,8 @@ pub fn restore_archived_tab(
 
         let arch_index = workspace.archived_tabs.iter().position(|t| t.id == tab_id)
             .ok_or("Archived tab not found")?;
-        let tab = workspace.archived_tabs.remove(arch_index);
+        let mut tab = workspace.archived_tabs.remove(arch_index);
+        tab.archived_at = None;
 
         let pane = workspace.panes.iter_mut()
             .find(|p| p.id == pane_id)

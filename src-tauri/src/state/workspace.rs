@@ -235,6 +235,9 @@ pub struct Tab {
     /// Last known working directory (absolute path, updated live from OSC 7 / prompt patterns).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_cwd: Option<String>,
+    /// Timestamp when the tab was archived (ISO 8601).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub archived_at: Option<String>,
     #[serde(default)]
     pub tab_type: TabType,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -678,6 +681,7 @@ impl Tab {
             notes_mode: None,
             notes_open: false,
             trigger_variables: HashMap::new(),
+            archived_at: None,
             tab_type: TabType::default(),
             editor_file: None,
             last_cwd: None,
@@ -704,6 +708,7 @@ impl Tab {
             notes_mode: None,
             notes_open: false,
             trigger_variables: HashMap::new(),
+            archived_at: None,
             tab_type: TabType::Editor,
             editor_file: Some(file_info),
             last_cwd: None,
@@ -730,6 +735,7 @@ impl Tab {
             notes_mode: None,
             notes_open: false,
             trigger_variables: HashMap::new(),
+            archived_at: None,
             tab_type: TabType::Diff,
             editor_file: None,
             last_cwd: None,

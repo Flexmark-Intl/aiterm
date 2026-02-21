@@ -615,17 +615,7 @@ function createWorkspacesStore() {
         remoteCwd = osc7RemoteCwd ?? promptCwd ?? null;
       }
 
-      // Migrate notes if enabled
-      if (preferencesStore.migrateTabNotes && tab.notes?.trim()) {
-        try {
-          const note = await commands.addWorkspaceNote(workspaceId, tab.notes, tab.notes_mode ?? null);
-          if (ws) {
-            ws.workspace_notes = [...ws.workspace_notes, note];
-          }
-        } catch (e) {
-          logError(`Failed to migrate tab notes: ${e}`);
-        }
-      }
+      // Skip note migration — archived tabs preserve their notes and restore them intact
 
       await commands.archiveTab(workspaceId, paneId, tabId, displayName, scrollback, cwd, sshCommand, remoteCwd);
 
@@ -639,6 +629,7 @@ function createWorkspacesStore() {
         restore_cwd: cwd,
         restore_ssh_command: sshCommand,
         restore_remote_cwd: remoteCwd,
+        archived_at: new Date().toISOString(),
       };
 
       // Update local state
