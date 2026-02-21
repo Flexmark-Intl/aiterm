@@ -177,7 +177,14 @@ pub fn spawn_pty(
 
     // Set working directory — use provided cwd (from split) or fall back to home
     if let Some(ref dir) = cwd {
-        let path = std::path::Path::new(dir);
+        // Expand ~ to home directory (shells do this, but std::path doesn't)
+        let expanded = if dir.starts_with("~/") || dir == "~" {
+            dirs::home_dir().map(|h| h.join(&dir[if dir.len() > 1 { 2 } else { 1 }..]).to_string_lossy().to_string())
+                .unwrap_or_else(|| dir.clone())
+        } else {
+            dir.clone()
+        };
+        let path = std::path::Path::new(&expanded);
         if path.is_dir() {
             cmd.cwd(path);
         } else if let Some(home) = dirs::home_dir() {

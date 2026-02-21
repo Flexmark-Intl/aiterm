@@ -276,6 +276,7 @@ pub fn run() {
             commands::workspace::set_preferences,
             commands::workspace::copy_tab_history,
             commands::workspace::set_tab_restore_context,
+            commands::workspace::set_tab_last_cwd,
             commands::workspace::set_tab_auto_resume_context,
             commands::workspace::set_tab_trigger_variables,
             commands::workspace::get_all_workspaces,

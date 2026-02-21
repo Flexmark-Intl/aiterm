@@ -565,6 +565,28 @@ pub fn set_tab_restore_context(
 }
 
 #[tauri::command]
+pub fn set_tab_last_cwd(
+    window: tauri::Window,
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+    pane_id: String,
+    tab_id: String,
+    cwd: Option<String>,
+) -> Result<(), String> {
+    let label = window.label().to_string();
+    let mut app_data = state.app_data.write();
+    let win = app_data.window_mut(&label).ok_or("Window not found")?;
+    if let Some(workspace) = win.workspaces.iter_mut().find(|w| w.id == workspace_id) {
+        if let Some(pane) = workspace.panes.iter_mut().find(|p| p.id == pane_id) {
+            if let Some(tab) = pane.tabs.iter_mut().find(|t| t.id == tab_id) {
+                tab.last_cwd = cwd;
+            }
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub fn set_tab_auto_resume_context(
     window: tauri::Window,
     state: State<'_, Arc<AppState>>,

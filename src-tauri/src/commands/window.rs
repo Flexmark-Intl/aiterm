@@ -266,6 +266,7 @@ pub(crate) fn clone_workspace_with_id_mapping(
                 trigger_variables: tab.trigger_variables.clone(),
                 tab_type: tab.tab_type.clone(),
                 editor_file: tab.editor_file.clone(),
+                last_cwd: tab.last_cwd.clone(),
                 diff_context: tab.diff_context.clone(),
             }
         }).collect();

@@ -182,6 +182,15 @@ export async function copyTabHistory(sourceTabId: string, destTabId: string): Pr
   return invoke('copy_tab_history', { sourceTabId, destTabId });
 }
 
+export async function setTabLastCwd(
+  workspaceId: string,
+  paneId: string,
+  tabId: string,
+  cwd: string | null,
+): Promise<void> {
+  return invoke('set_tab_last_cwd', { workspaceId, paneId, tabId, cwd });
+}
+
 export async function setTabRestoreContext(
   workspaceId: string,
   paneId: string,

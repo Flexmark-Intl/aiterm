@@ -177,6 +177,22 @@ function createWorkspacesStore() {
       if (!_recentTimer) {
         _recentTimer = setInterval(() => { _recentTick++; }, 60_000);
       }
+
+      // Keep local tab.last_cwd in sync with live OSC state and persist to backend
+      terminalsStore.onOscChange((tabId, osc) => {
+        const resolvedCwd = osc.cwd ?? osc.promptCwd;
+        if (!resolvedCwd) return;
+        for (const ws of workspaces) {
+          for (const p of ws.panes) {
+            const tab = p.tabs.find(t => t.id === tabId);
+            if (tab && tab.last_cwd !== resolvedCwd) {
+              tab.last_cwd = resolvedCwd;
+              commands.setTabLastCwd(ws.id, p.id, tabId, resolvedCwd).catch(() => {});
+              return;
+            }
+          }
+        }
+      });
     },
 
     setSidebarWidth(width: number) {
@@ -430,6 +446,27 @@ function createWorkspacesStore() {
       const pane = workspaces.flatMap(w => w.panes).find(p => p.id === paneId);
       const afterTabId = pane?.active_tab_id ?? undefined;
       const tab = await commands.createTab(workspaceId, paneId, name, afterTabId);
+
+      // Open new tab at the most common CWD among sibling terminal tabs
+      const ws = workspaces.find(w => w.id === workspaceId);
+      if (ws) {
+        const cwdCounts = new Map<string, number>();
+        for (const p of ws.panes) {
+          for (const t of p.tabs) {
+            if (t.tab_type !== 'terminal' || !t.last_cwd) continue;
+            cwdCounts.set(t.last_cwd, (cwdCounts.get(t.last_cwd) ?? 0) + 1);
+          }
+        }
+        let bestCwd: string | null = null;
+        let bestCount = 0;
+        for (const [cwd, count] of cwdCounts) {
+          if (count > bestCount) { bestCwd = cwd; bestCount = count; }
+        }
+        if (bestCwd) {
+          terminalsStore.setSplitContext(tab.id, { cwd: bestCwd, sshCommand: null, remoteCwd: null });
+        }
+      }
+
       workspaces = workspaces.map(w => {
         if (w.id === workspaceId) {
           return {

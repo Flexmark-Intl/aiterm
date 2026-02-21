@@ -232,6 +232,9 @@ pub struct Tab {
     /// Trigger-extracted variables (persisted across restarts).
     #[serde(default)]
     pub trigger_variables: HashMap<String, String>,
+    /// Last known working directory (absolute path, updated live from OSC 7 / prompt patterns).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_cwd: Option<String>,
     #[serde(default)]
     pub tab_type: TabType,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -675,6 +678,7 @@ impl Tab {
             trigger_variables: HashMap::new(),
             tab_type: TabType::default(),
             editor_file: None,
+            last_cwd: None,
             diff_context: None,
         }
     }
@@ -700,6 +704,7 @@ impl Tab {
             trigger_variables: HashMap::new(),
             tab_type: TabType::Editor,
             editor_file: Some(file_info),
+            last_cwd: None,
             diff_context: None,
         }
     }
@@ -725,6 +730,7 @@ impl Tab {
             trigger_variables: HashMap::new(),
             tab_type: TabType::Diff,
             editor_file: None,
+            last_cwd: None,
             diff_context: Some(diff_context),
         }
     }
