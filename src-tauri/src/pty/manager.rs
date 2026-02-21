@@ -338,8 +338,16 @@ pub fn get_pty_info(state: &Arc<AppState>, pty_id: &str) -> Result<PtyInfo, Stri
     Ok(PtyInfo { cwd, foreground_command })
 }
 
-/// Get the current working directory of a process via lsof (Unix only)
-#[cfg(unix)]
+/// Get the current working directory of a process via /proc (Linux)
+#[cfg(target_os = "linux")]
+fn get_cwd_for_pid(pid: u32) -> Option<String> {
+    std::fs::read_link(format!("/proc/{}/cwd", pid))
+        .ok()
+        .and_then(|p| p.into_os_string().into_string().ok())
+}
+
+/// Get the current working directory of a process via lsof (macOS)
+#[cfg(target_os = "macos")]
 fn get_cwd_for_pid(pid: u32) -> Option<String> {
     let output = std::process::Command::new("lsof")
         .args(["-a", "-d", "cwd", "-p", &pid.to_string(), "-Fn"])
@@ -373,11 +381,18 @@ fn is_ssh_command(cmd: &str) -> bool {
     matches!(basename, "ssh" | "mosh" | "autossh")
 }
 
-/// Get the foreground process command via ps (Unix only)
+/// Get the foreground process command via ps (Unix)
 #[cfg(unix)]
 fn get_foreground_command(shell_pid: u32) -> Option<String> {
+    // macOS BSD ps uses -x (show processes without controlling terminal)
+    // Linux procps uses -e (select all processes) for equivalent behavior
+    #[cfg(target_os = "macos")]
+    let args: &[&str] = &["-o", "pid=,ppid=,command=", "-x"];
+    #[cfg(target_os = "linux")]
+    let args: &[&str] = &["-e", "-o", "pid=,ppid=,command="];
+
     let output = std::process::Command::new("ps")
-        .args(["-o", "pid=,ppid=,command=", "-x"])
+        .args(args)
         .output()
         .ok()?;
 
