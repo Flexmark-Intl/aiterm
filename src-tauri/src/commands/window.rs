@@ -31,7 +31,15 @@ pub fn create_window(app: tauri::AppHandle, state: State<'_, Arc<AppState>>) -> 
     };
     save_state(&data_clone)?;
 
-    build_window(&app, &label)?;
+    // Spawn window creation asynchronously so the calling window isn't blocked.
+    // On Windows, WebView2 init is heavy and blocks the main thread event loop.
+    let app_clone = app.clone();
+    let label_clone = label.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Err(e) = build_window_sync(&app_clone, &label_clone) {
+            log::error!("Failed to create window '{}': {}", label_clone, e);
+        }
+    });
 
     Ok(label)
 }
@@ -86,7 +94,14 @@ pub fn duplicate_window(
     };
     save_state(&data_clone)?;
 
-    build_window(&app, &new_label)?;
+    // Spawn window creation asynchronously (see create_window comment)
+    let app_clone = app.clone();
+    let label_clone = new_label.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Err(e) = build_window_sync(&app_clone, &label_clone) {
+            log::error!("Failed to create window '{}': {}", label_clone, e);
+        }
+    });
 
     Ok(new_label)
 }
@@ -173,7 +188,7 @@ pub fn open_preferences_window(window: tauri::WebviewWindow, app: tauri::AppHand
     Ok(())
 }
 
-fn build_window(app: &tauri::AppHandle, label: &str) -> Result<(), String> {
+fn build_window_sync(app: &tauri::AppHandle, label: &str) -> Result<(), String> {
     let url = if cfg!(debug_assertions) {
         tauri::WebviewUrl::External("http://localhost:1420".parse().unwrap())
     } else {
