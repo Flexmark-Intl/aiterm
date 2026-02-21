@@ -332,9 +332,12 @@
     <div class="editor-error">
       <div class="error-content">
         <span class="error-icon">&#x26A0;</span>
-        <span>{errorMsg}</span>
+        <span class="error-text">{errorMsg}</span>
       </div>
-      <button class="error-close-btn" onclick={() => workspacesStore.deleteTab(workspaceId, paneId, tabId)}>Close tab</button>
+      <div class="error-actions">
+        <button class="error-action-btn" onclick={() => { navigator.clipboard.writeText(errorMsg ?? ''); }}>Copy error</button>
+        <button class="error-action-btn" onclick={() => workspacesStore.deleteTab(workspaceId, paneId, tabId)}>Close tab</button>
+      </div>
     </div>
   {:else if imageDataUrl}
     <div class="image-preview">
@@ -472,7 +475,18 @@
     color: var(--yellow, #e0af68);
   }
 
-  .error-close-btn {
+  .error-text {
+    user-select: text;
+    -webkit-user-select: text;
+    cursor: text;
+  }
+
+  .error-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .error-action-btn {
     padding: 4px 12px;
     background: var(--bg-light);
     color: var(--fg);
@@ -482,7 +496,7 @@
     cursor: pointer;
   }
 
-  .error-close-btn:hover {
+  .error-action-btn:hover {
     background: var(--accent);
     color: var(--bg-dark);
   }
