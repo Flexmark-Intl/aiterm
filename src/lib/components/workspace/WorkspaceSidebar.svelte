@@ -391,6 +391,7 @@
     height: 14px;
     opacity: 0.7;
     pointer-events: none;
+    filter: brightness(var(--logo-brightness, 1));
   }
 
   .dev-badge {

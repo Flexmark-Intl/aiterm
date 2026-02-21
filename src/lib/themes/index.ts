@@ -514,6 +514,17 @@ export function getTheme(id: string, customThemes: Theme[] = []): Theme {
     ?? builtinThemes[0];
 }
 
+/** Relative luminance (0 = black, 1 = white) */
+function luminance(hex: string): number {
+  const h = hex.replace('#', '');
+  const [r, g, b] = [
+    parseInt(h.substring(0, 2), 16) / 255,
+    parseInt(h.substring(2, 4), 16) / 255,
+    parseInt(h.substring(4, 6), 16) / 255,
+  ].map((c) => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
 export function applyUiTheme(ui: UiColors): void {
   const root = document.documentElement;
   root.style.setProperty('--bg-dark', ui.bg_dark);
@@ -532,4 +543,7 @@ export function applyUiTheme(ui: UiColors): void {
   root.style.setProperty('--tab-border-active', ui.tab_border_active);
   root.style.setProperty('--tab-border-activity', ui.tab_border_activity);
 
+  // Logo adapts to background brightness: dark on light themes, unchanged on dark
+  const isLight = luminance(ui.bg_dark) > 0.2;
+  root.style.setProperty('--logo-brightness', isLight ? '0' : '1');
 }
