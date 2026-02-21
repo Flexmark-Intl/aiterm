@@ -142,12 +142,10 @@ export function detectLanguageFromContent(content: string): string | null {
   return null;
 }
 
-/** Helper to load a legacy StreamLanguage mode */
-async function legacy(mode: string, exportName?: string): Promise<Extension | null> {
+/** Helper to wrap a legacy StreamLanguage mode */
+async function legacy(langDef: object): Promise<Extension> {
   const { StreamLanguage } = await import('@codemirror/language');
-  const mod = await import(/* @vite-ignore */ `@codemirror/legacy-modes/mode/${mode}`);
-  const lang = mod[exportName ?? mode];
-  return lang ? StreamLanguage.define(lang) : null;
+  return StreamLanguage.define(langDef as Parameters<typeof StreamLanguage.define>[0]);
 }
 
 export async function loadLanguageExtension(langId: string): Promise<Extension | null> {
@@ -227,43 +225,152 @@ export async function loadLanguageExtension(langId: string): Promise<Extension |
         const { wast } = await import('@codemirror/lang-wast');
         return wast();
       }
-      // Legacy StreamLanguage modes
-      case 'shell': return legacy('shell');
-      case 'toml': return legacy('toml');
-      case 'ruby': return legacy('ruby');
-      case 'perl': return legacy('perl');
-      case 'lua': return legacy('lua');
-      case 'r': return legacy('r');
-      case 'julia': return legacy('julia');
-      case 'erlang': return legacy('erlang');
-      case 'haskell': return legacy('haskell');
-      case 'clojure': return legacy('clojure');
-      case 'elm': return legacy('elm');
-      case 'ocaml': return legacy('mllike', 'oCaml');
-      case 'fsharp': return legacy('mllike', 'fSharp');
-      case 'groovy': return legacy('groovy');
-      case 'swift': return legacy('swift');
-      case 'kotlin': return legacy('clike', 'kotlin');
-      case 'scala': return legacy('clike', 'scala');
-      case 'csharp': return legacy('clike', 'csharp');
-      case 'dart': return legacy('clike', 'dart');
-      case 'powershell': return legacy('powershell');
-      case 'dockerfile': return legacy('dockerfile');
-      case 'protobuf': return legacy('protobuf');
-      case 'diff': return legacy('diff');
-      case 'cmake': return legacy('cmake');
-      case 'octave': return legacy('octave');
-      case 'pascal': return legacy('pascal');
-      case 'verilog': return legacy('verilog');
-      case 'vhdl': return legacy('vhdl');
-      case 'tcl': return legacy('tcl');
-      case 'd': return legacy('d');
-      case 'nginx': return legacy('nginx');
-      case 'properties': return legacy('properties');
-      case 'latex': return legacy('stex', 'stex');
-      case 'coffeescript': return legacy('coffeescript');
-      case 'fortran': return legacy('fortran');
-      case 'elixir': return legacy('crystal'); // Close enough syntax highlighting
+      // Legacy StreamLanguage modes — static imports so Vite can bundle them
+      case 'shell': {
+        const m = await import('@codemirror/legacy-modes/mode/shell');
+        return legacy(m.shell);
+      }
+      case 'toml': {
+        const m = await import('@codemirror/legacy-modes/mode/toml');
+        return legacy(m.toml);
+      }
+      case 'ruby': {
+        const m = await import('@codemirror/legacy-modes/mode/ruby');
+        return legacy(m.ruby);
+      }
+      case 'perl': {
+        const m = await import('@codemirror/legacy-modes/mode/perl');
+        return legacy(m.perl);
+      }
+      case 'lua': {
+        const m = await import('@codemirror/legacy-modes/mode/lua');
+        return legacy(m.lua);
+      }
+      case 'r': {
+        const m = await import('@codemirror/legacy-modes/mode/r');
+        return legacy(m.r);
+      }
+      case 'julia': {
+        const m = await import('@codemirror/legacy-modes/mode/julia');
+        return legacy(m.julia);
+      }
+      case 'erlang': {
+        const m = await import('@codemirror/legacy-modes/mode/erlang');
+        return legacy(m.erlang);
+      }
+      case 'haskell': {
+        const m = await import('@codemirror/legacy-modes/mode/haskell');
+        return legacy(m.haskell);
+      }
+      case 'clojure': {
+        const m = await import('@codemirror/legacy-modes/mode/clojure');
+        return legacy(m.clojure);
+      }
+      case 'elm': {
+        const m = await import('@codemirror/legacy-modes/mode/elm');
+        return legacy(m.elm);
+      }
+      case 'ocaml': {
+        const m = await import('@codemirror/legacy-modes/mode/mllike');
+        return legacy(m.oCaml);
+      }
+      case 'fsharp': {
+        const m = await import('@codemirror/legacy-modes/mode/mllike');
+        return legacy(m.fSharp);
+      }
+      case 'groovy': {
+        const m = await import('@codemirror/legacy-modes/mode/groovy');
+        return legacy(m.groovy);
+      }
+      case 'swift': {
+        const m = await import('@codemirror/legacy-modes/mode/swift');
+        return legacy(m.swift);
+      }
+      case 'kotlin': {
+        const m = await import('@codemirror/legacy-modes/mode/clike');
+        return legacy(m.kotlin);
+      }
+      case 'scala': {
+        const m = await import('@codemirror/legacy-modes/mode/clike');
+        return legacy(m.scala);
+      }
+      case 'csharp': {
+        const m = await import('@codemirror/legacy-modes/mode/clike');
+        return legacy(m.csharp);
+      }
+      case 'dart': {
+        const m = await import('@codemirror/legacy-modes/mode/clike');
+        return legacy(m.dart);
+      }
+      case 'powershell': {
+        const m = await import('@codemirror/legacy-modes/mode/powershell');
+        return legacy(m.powerShell);
+      }
+      case 'dockerfile': {
+        const m = await import('@codemirror/legacy-modes/mode/dockerfile');
+        return legacy(m.dockerFile);
+      }
+      case 'protobuf': {
+        const m = await import('@codemirror/legacy-modes/mode/protobuf');
+        return legacy(m.protobuf);
+      }
+      case 'diff': {
+        const m = await import('@codemirror/legacy-modes/mode/diff');
+        return legacy(m.diff);
+      }
+      case 'cmake': {
+        const m = await import('@codemirror/legacy-modes/mode/cmake');
+        return legacy(m.cmake);
+      }
+      case 'octave': {
+        const m = await import('@codemirror/legacy-modes/mode/octave');
+        return legacy(m.octave);
+      }
+      case 'pascal': {
+        const m = await import('@codemirror/legacy-modes/mode/pascal');
+        return legacy(m.pascal);
+      }
+      case 'verilog': {
+        const m = await import('@codemirror/legacy-modes/mode/verilog');
+        return legacy(m.verilog);
+      }
+      case 'vhdl': {
+        const m = await import('@codemirror/legacy-modes/mode/vhdl');
+        return legacy(m.vhdl);
+      }
+      case 'tcl': {
+        const m = await import('@codemirror/legacy-modes/mode/tcl');
+        return legacy(m.tcl);
+      }
+      case 'd': {
+        const m = await import('@codemirror/legacy-modes/mode/d');
+        return legacy(m.d);
+      }
+      case 'nginx': {
+        const m = await import('@codemirror/legacy-modes/mode/nginx');
+        return legacy(m.nginx);
+      }
+      case 'properties': {
+        const m = await import('@codemirror/legacy-modes/mode/properties');
+        return legacy(m.properties);
+      }
+      case 'latex': {
+        const m = await import('@codemirror/legacy-modes/mode/stex');
+        return legacy(m.stex);
+      }
+      case 'coffeescript': {
+        const m = await import('@codemirror/legacy-modes/mode/coffeescript');
+        return legacy(m.coffeeScript);
+      }
+      case 'fortran': {
+        const m = await import('@codemirror/legacy-modes/mode/fortran');
+        return legacy(m.fortran);
+      }
+      case 'elixir': {
+        // Crystal has close enough syntax highlighting
+        const m = await import('@codemirror/legacy-modes/mode/crystal');
+        return legacy(m.crystal);
+      }
       default:
         return null;
     }
