@@ -17,7 +17,7 @@
   import * as commands from '$lib/tauri/commands';
   import type { ClaudeCodeToolRequest, Preferences } from '$lib/tauri/types';
   import { claudeCodeStore } from '$lib/stores/claudeCode.svelte';
-  import { isModKey } from '$lib/utils/platform';
+  import { isModKey, isMac } from '$lib/utils/platform';
   import { open as dialogOpen } from '@tauri-apps/plugin-dialog';
   import { openFileFromTerminal } from '$lib/utils/openFile';
   import { detectLanguageFromPath } from '$lib/utils/languageDetect';
@@ -157,12 +157,18 @@
 
         const count = await commands.getWindowCount();
 
-        if (count <= 1) {
-          // Last window: kill terminals and show empty state
-          logInfo('Last window — showing empty state');
+        if (count <= 1 && isMac()) {
+          // Last window on macOS: kill terminals and show empty state
+          // (macOS convention: apps stay open with no windows)
+          logInfo('Last window (macOS) — showing empty state');
           await terminalsStore.killAllTerminals();
           await commands.resetWindow();
           workspacesStore.reset();
+        } else if (count <= 1) {
+          // Last window on Windows/Linux: exit the app
+          logInfo('Last window — exiting app');
+          await terminalsStore.killAllTerminals();
+          await invoke('exit_app');
         } else {
           // Not last window: kill PTYs, remove window data, destroy
           logInfo('Closing window (not last)');
