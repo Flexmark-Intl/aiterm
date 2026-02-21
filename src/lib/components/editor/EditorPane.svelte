@@ -18,6 +18,8 @@
   import { claudeCodeStore } from '$lib/stores/claudeCode.svelte';
   import { EditorSelection } from '@codemirror/state';
   import { error as logError } from '@tauri-apps/plugin-log';
+  import IconButton from '$lib/components/ui/IconButton.svelte';
+  import Button from '$lib/components/ui/Button.svelte';
 
   interface Props {
     workspaceId: string;
@@ -335,8 +337,8 @@
         <span class="error-text">{errorMsg}</span>
       </div>
       <div class="error-actions">
-        <button class="error-action-btn" onclick={() => { navigator.clipboard.writeText(errorMsg ?? ''); }}>Copy error</button>
-        <button class="error-action-btn" onclick={() => workspacesStore.deleteTab(workspaceId, paneId, tabId)}>Close tab</button>
+        <Button variant="secondary" onclick={() => { navigator.clipboard.writeText(errorMsg ?? ''); }} style="padding:4px 12px;border-radius:4px;font-size:12px">Copy error</Button>
+        <Button variant="secondary" onclick={() => workspacesStore.deleteTab(workspaceId, paneId, tabId)} style="padding:4px 12px;border-radius:4px;font-size:12px">Close tab</Button>
       </div>
     </div>
   {:else if imageDataUrl}
@@ -351,9 +353,9 @@
           <span class="info-sep"></span>
         {/if}
         <div class="zoom-controls">
-          <button class="zoom-btn" onclick={zoomOut} disabled={displayZoom <= ZOOM_STEPS[0]} title="Zoom out">&minus;</button>
+          <IconButton tooltip="Zoom out" style="width:22px;height:20px;border-radius:3px;font-size:14px" onclick={zoomOut} disabled={displayZoom <= ZOOM_STEPS[0]}>&minus;</IconButton>
           <button class="zoom-label" class:zoom-fit={imageZoom === 0} onclick={zoomFit} title="Fit to window">{displayZoom}%</button>
-          <button class="zoom-btn" onclick={zoomIn} disabled={displayZoom >= ZOOM_STEPS[ZOOM_STEPS.length - 1]} title="Zoom in">+</button>
+          <IconButton tooltip="Zoom in" style="width:22px;height:20px;border-radius:3px;font-size:14px" onclick={zoomIn} disabled={displayZoom >= ZOOM_STEPS[ZOOM_STEPS.length - 1]}>+</IconButton>
         </div>
       </div>
       <div class="image-scroll" bind:this={imageScrollEl}>
@@ -486,21 +488,6 @@
     gap: 8px;
   }
 
-  .error-action-btn {
-    padding: 4px 12px;
-    background: var(--bg-light);
-    color: var(--fg);
-    border: none;
-    border-radius: 4px;
-    font-size: 12px;
-    cursor: pointer;
-  }
-
-  .error-action-btn:hover {
-    background: var(--accent);
-    color: var(--bg-dark);
-  }
-
   .image-preview {
     display: flex;
     flex-direction: column;
@@ -550,31 +537,6 @@
     display: flex;
     align-items: center;
     gap: 0;
-  }
-
-  .zoom-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 20px;
-    padding: 0;
-    font-size: 13px;
-    color: var(--fg-dim);
-    background: none;
-    border: none;
-    border-radius: 3px;
-    cursor: pointer;
-  }
-
-  .zoom-btn:hover:not(:disabled) {
-    background: var(--bg-light);
-    color: var(--fg);
-  }
-
-  .zoom-btn:disabled {
-    opacity: 0.3;
-    cursor: default;
   }
 
   .zoom-label {

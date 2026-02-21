@@ -27,6 +27,7 @@
   import { CLAUDE_RESUME_COMMAND } from '$lib/triggers/defaults';
   import { createFilePathLinkProvider } from '$lib/utils/filePathDetector';
   import { openFileFromTerminal } from '$lib/utils/openFile';
+  import Button from '$lib/components/ui/Button.svelte';
 
   interface Props {
     workspaceId: string;
@@ -412,10 +413,15 @@
       });
 
       processOutput(tabId, data);
-      // Ignore tiny writes (spinner frames, cursor blinks, status-line redraws)
-      // that TUI apps like Claude Code emit periodically while idle.
+      // Mark tab as active for background tabs, but skip:
+      // - tiny writes (spinner frames, cursor blinks)
+      // - TUI redraws (cursor-up/reposition sequences that just repaint existing content)
       if (!visible && trackActivity && data.length > 64 && Date.now() > visibilityGraceUntil) {
-        activityStore.markActive(tabId);
+        const text = new TextDecoder().decode(data);
+        const isRedraw = /\x1b\[\d*[AHf]|\x1b\[\d+;\d+[Hf]|\x1b\[\d*J/.test(text);
+        if (!isRedraw) {
+          activityStore.markActive(tabId);
+        }
       }
     });
 
@@ -952,13 +958,11 @@
       <div class="auto-resume-prompt-actions">
         <div class="auto-resume-presets">
           <span class="auto-resume-presets-label">Presets</span>
-          <button class="auto-resume-prompt-btn preset" onclick={() => {
-            autoResumePromptValue = CLAUDE_RESUME_COMMAND;
-          }} title="Uses trigger variables %claudeSessionId and %claudeResumeCommand">Claude Resume</button>
+          <Button variant="secondary" onclick={() => { autoResumePromptValue = CLAUDE_RESUME_COMMAND; }} style="padding:6px 14px;border-radius:4px;font-size:12px;background:var(--bg-dark);border-color:var(--bg-light)" title="Uses trigger variables %claudeSessionId and %claudeResumeCommand">Claude Resume</Button>
         </div>
         <span style="flex: 1;"></span>
-        <button class="auto-resume-prompt-btn cancel" onclick={cancelAutoResumePrompt}>Cancel</button>
-        <button class="auto-resume-prompt-btn confirm" onclick={submitAutoResumePrompt}>Save</button>
+        <Button variant="secondary" onclick={cancelAutoResumePrompt} style="padding:6px 14px;border-radius:4px;font-size:12px">Cancel</Button>
+        <Button variant="primary" onclick={submitAutoResumePrompt} style="padding:6px 14px;border-radius:4px;font-size:12px">Save</Button>
       </div>
     </div>
   </div>
@@ -986,8 +990,8 @@
           <p class="claude-setup-note">Triggers are global (configurable in Preferences &gt; Triggers) &mdash; they'll capture Claude session info in any tab. The auto-resume command is specific to this tab.</p>
         </div>
         <div class="claude-setup-actions">
-          <button class="claude-setup-btn cancel" onclick={() => { claudeSetupModal = false; }}>Cancel</button>
-          <button class="claude-setup-btn activate" onclick={async () => {
+          <Button variant="secondary" onclick={() => { claudeSetupModal = false; }} style="padding:6px 18px;border-radius:4px;font-size:13px;font-weight:500">Cancel</Button>
+          <Button variant="primary" onclick={async () => {
             try {
               const triggers = preferencesStore.triggers;
               const needsUpdate = triggers.some(t =>
@@ -1007,7 +1011,7 @@
               logError(`Auto-resume + Claude setup failed: ${e}`);
             }
             claudeSetupModal = false;
-          }}>Activate</button>
+          }} style="padding:6px 18px;border-radius:4px;font-size:13px;font-weight:500">Activate</Button>
         </div>
       </div>
     </div>
@@ -1110,33 +1114,6 @@
     margin-top: 4px;
   }
 
-  .auto-resume-prompt-btn {
-    padding: 6px 14px;
-    border-radius: 4px;
-    border: none;
-    font-size: 12px;
-    cursor: pointer;
-  }
-
-  .auto-resume-prompt-btn.cancel {
-    background: var(--bg-light);
-    color: var(--fg);
-  }
-
-  .auto-resume-prompt-btn.cancel:hover {
-    background: #525a80;
-  }
-
-  .auto-resume-prompt-btn.confirm {
-    background: var(--accent);
-    color: var(--bg-dark);
-    font-weight: 500;
-  }
-
-  .auto-resume-prompt-btn.confirm:hover {
-    opacity: 0.9;
-  }
-
   .auto-resume-presets {
     display: flex;
     align-items: center;
@@ -1146,17 +1123,6 @@
   .auto-resume-presets-label {
     font-size: 11px;
     color: var(--fg-dim);
-  }
-
-  .auto-resume-prompt-btn.preset {
-    background: var(--bg-dark);
-    color: var(--fg-dim);
-    border: 1px solid var(--bg-light);
-  }
-
-  .auto-resume-prompt-btn.preset:hover {
-    color: var(--fg);
-    border-color: var(--accent);
   }
 
   .claude-setup-backdrop {
@@ -1237,29 +1203,4 @@
     margin-top: 16px;
   }
 
-  .claude-setup-btn {
-    padding: 6px 18px;
-    border-radius: 4px;
-    font-size: 13px;
-    font-weight: 500;
-    cursor: pointer;
-  }
-
-  .claude-setup-btn.cancel {
-    background: var(--bg-light);
-    color: var(--fg);
-  }
-
-  .claude-setup-btn.cancel:hover {
-    background: #525a80;
-  }
-
-  .claude-setup-btn.activate {
-    background: var(--accent);
-    color: var(--bg-dark);
-  }
-
-  .claude-setup-btn.activate:hover {
-    opacity: 0.9;
-  }
 </style>

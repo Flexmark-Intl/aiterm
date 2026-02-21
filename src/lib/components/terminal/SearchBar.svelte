@@ -1,5 +1,6 @@
 <script lang="ts">
   import { terminalsStore } from '$lib/stores/terminals.svelte';
+  import IconButton from '$lib/components/ui/IconButton.svelte';
 
   interface Props {
     tabId: string;
@@ -49,21 +50,21 @@
         if (query) terminalsStore.findNext(tabId, query);
       }}
     />
-    <button
-      class="search-btn"
+    <IconButton
+      tooltip="Previous match (Shift+Enter)"
+      style="font-size:12px;line-height:1"
       onclick={() => terminalsStore.findPrevious(tabId, query)}
-      title="Previous match (Shift+Enter)"
-    >&#x25B2;</button>
-    <button
-      class="search-btn"
+    >&#x25B2;</IconButton>
+    <IconButton
+      tooltip="Next match (Enter)"
+      style="font-size:12px;line-height:1"
       onclick={() => terminalsStore.findNext(tabId, query)}
-      title="Next match (Enter)"
-    >&#x25BC;</button>
-    <button
-      class="search-btn close"
+    >&#x25BC;</IconButton>
+    <IconButton
+      tooltip="Close (Escape)"
+      style="font-size:16px"
       onclick={close}
-      title="Close (Escape)"
-    >&times;</button>
+    >&times;</IconButton>
   </div>
 {/if}
 
@@ -103,24 +104,4 @@
     color: var(--fg-dim);
   }
 
-  .search-btn {
-    padding: 4px 8px;
-    border-radius: 4px;
-    color: var(--fg-dim);
-    font-size: 12px;
-    background: none;
-    border: none;
-    cursor: pointer;
-    line-height: 1;
-  }
-
-  .search-btn:hover {
-    background: var(--bg-light);
-    color: var(--fg);
-  }
-
-  .search-btn.close {
-    font-size: 16px;
-    padding: 2px 6px;
-  }
 </style>

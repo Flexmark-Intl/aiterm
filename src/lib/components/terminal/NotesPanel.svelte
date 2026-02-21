@@ -5,6 +5,7 @@
   import { marked } from 'marked';
   import { open as shellOpen } from '@tauri-apps/plugin-shell';
   import Icon from '$lib/components/Icon.svelte';
+  import IconButton from '$lib/components/ui/IconButton.svelte';
   import type { WorkspaceNote } from '$lib/tauri/types';
 
   interface Props {
@@ -316,33 +317,31 @@
     </div>
     <div class="header-actions">
       {#if showWsEditor}
-        <button
-          class="header-list-btn"
+        <IconButton
+          tooltip="All workspace notes"
           onclick={() => {
             if (wsSaveTimer) clearTimeout(wsSaveTimer);
             if (editingNoteId) saveWorkspaceNote();
             wsView = 'list';
           }}
-          title="All workspace notes"
         >
           <Icon name="list" />
-        </button>
+        </IconButton>
       {/if}
       {#if showWsList}
         <!-- No mode toggle in list view -->
       {:else}
-        <button
-          class="mode-toggle"
-          class:active={currentMode() === 'render'}
+        <IconButton
+          tooltip={currentMode() === 'source' ? 'Preview' : 'Edit'}
+          active={currentMode() === 'render'}
           onclick={toggleMode}
-          title={currentMode() === 'source' ? 'Preview' : 'Edit'}
         >
           {#if currentMode() === 'source'}
             <Icon name="eye" />
           {:else}
             <Icon name="pencil" />
           {/if}
-        </button>
+        </IconButton>
       {/if}
       {#if scope === 'tab' && value.trim()}
         {#if confirmingTabClear}
@@ -352,22 +351,26 @@
             <button class="confirm-no" onclick={() => confirmingTabClear = false}>No</button>
           </span>
         {:else}
-          <button
-            class="mode-toggle"
+          <IconButton
+            tooltip="Clear notes"
+            danger
             onclick={() => confirmingTabClear = true}
-            title="Clear notes"
           >
             <Icon name="trash" />
-          </button>
+          </IconButton>
         {/if}
       {/if}
-      <button class="close-btn" onclick={() => {
-        if (saveTimer) clearTimeout(saveTimer);
-        if (wsSaveTimer) clearTimeout(wsSaveTimer);
-        if (scope === 'tab') save();
-        else if (editingNoteId) saveWorkspaceNote();
-        onclose();
-      }}>&times;</button>
+      <IconButton
+        tooltip="Close notes"
+        style="font-size:14px"
+        onclick={() => {
+          if (saveTimer) clearTimeout(saveTimer);
+          if (wsSaveTimer) clearTimeout(wsSaveTimer);
+          if (scope === 'tab') save();
+          else if (editingNoteId) saveWorkspaceNote();
+          onclose();
+        }}
+      >&times;</IconButton>
     </div>
   </div>
 
@@ -408,7 +411,7 @@
                 <button class="confirm-no" onclick={() => deletingNoteId = null}>No</button>
               </span>
             {:else}
-              <button class="ws-note-delete" onclick={() => deletingNoteId = note.id} title="Delete note">&times;</button>
+              <IconButton tooltip="Delete note" danger onclick={() => deletingNoteId = note.id} style="font-size:14px">&times;</IconButton>
             {/if}
           </div>
         </div>
@@ -504,61 +507,6 @@
     gap: 4px;
   }
 
-  .header-list-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 22px;
-    padding: 0;
-    color: var(--fg-dim);
-    border-radius: 4px;
-    transition: background 0.1s, color 0.1s;
-  }
-
-  .header-list-btn:hover {
-    background: var(--bg-light);
-    color: var(--fg);
-  }
-
-  .mode-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 22px;
-    padding: 0;
-    color: var(--fg-dim);
-    border-radius: 4px;
-    transition: background 0.1s, color 0.1s;
-  }
-
-  .mode-toggle:hover {
-    background: var(--bg-light);
-    color: var(--fg);
-  }
-
-  .mode-toggle.active {
-    color: var(--accent);
-  }
-
-  .close-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 22px;
-    padding: 0;
-    color: var(--fg-dim);
-    border-radius: 4px;
-    font-size: 14px;
-    transition: background 0.1s, color 0.1s;
-  }
-
-  .close-btn:hover {
-    background: var(--bg-light);
-    color: var(--fg);
-  }
 
   .notes-textarea {
     flex: 1;
@@ -782,25 +730,6 @@
     flex-shrink: 0;
   }
 
-  .ws-note-delete {
-    width: 22px;
-    height: 22px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--fg-dim);
-    border-radius: 4px;
-    font-size: 14px;
-    background: transparent;
-    border: none;
-    cursor: pointer;
-    transition: background 0.1s, color 0.1s;
-  }
-
-  .ws-note-delete:hover {
-    background: var(--bg-light);
-    color: var(--fg);
-  }
 
   .delete-confirm {
     font-size: 11px;

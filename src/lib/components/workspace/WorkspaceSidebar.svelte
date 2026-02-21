@@ -9,6 +9,7 @@
   import { modSymbol } from '$lib/utils/platform';
   import { claudeCodeStore } from '$lib/stores/claudeCode.svelte';
   import StatusDot from '$lib/components/ui/StatusDot.svelte';
+  import IconButton from '$lib/components/ui/IconButton.svelte';
 
   function workspaceHasActivity(workspaceId: string): boolean {
     if (workspaceId === workspacesStore.activeWorkspaceId) return false;
@@ -98,7 +99,7 @@
 
   function handlePointerDown(e: PointerEvent, workspaceId: string) {
     if (e.button !== 0 || editingId === workspaceId) return;
-    if ((e.target as HTMLElement).closest('.delete-btn')) return;
+    if ((e.target as HTMLElement).closest('.tooltip-wrapper')) return;
     pendingDragWorkspaceId = workspaceId;
     dragStartX = e.clientX;
     dragStartY = e.clientY;
@@ -292,11 +293,11 @@
         <StatusDot color="green" tooltip="IDE Connected" />
       </span>
     {/if}
-    <button class="header-btn collapse-btn" onclick={() => workspacesStore.toggleSidebar()} title="Collapse sidebar ({modSymbol}B)">&#x2039;</button>
+    <span style="margin-left:auto"><IconButton tooltip="Collapse sidebar ({modSymbol}B)" size={20} style="font-size:16px" onclick={() => workspacesStore.toggleSidebar()}>&#x2039;</IconButton></span>
   </div>
   <div class="sidebar-header">
     <span class="title">WORKSPACES</span>
-    <button class="header-btn" onclick={handleNewWorkspace} title="New workspace ({modSymbol}N)">+</button>
+    <IconButton tooltip="New workspace ({modSymbol}N)" size={20} style="font-size:16px" onclick={handleNewWorkspace}>+</IconButton>
   </div>
 
   {#if preferencesStore.showRecentWorkspaces && workspacesStore.recentWorkspaces.length > 0}
@@ -358,13 +359,14 @@
             {/if}
           </span>
           <span class="workspace-name">{workspace.name}{#if preferencesStore.showWorkspaceTabCount}<span class="tab-count"> ({workspace.panes.reduce((sum, p) => sum + p.tabs.length, 0)})</span>{/if}</span>
-          <button
-            class="delete-btn"
+          <IconButton
+            tooltip="Close workspace"
+            size={20}
+            style="border-radius:3px;font-size:13px;opacity:0;flex-shrink:0"
             onclick={(e) => handleDeleteWorkspace(workspace.id, e)}
-            title="Close workspace"
           >
             &times;
-          </button>
+          </IconButton>
         {/if}
       </div>
     {/each}
@@ -441,28 +443,6 @@
     color: var(--fg-dim);
   }
 
-  .collapse-btn {
-    margin-left: auto;
-  }
-
-  .header-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    padding: 0;
-    border-radius: 4px;
-    color: var(--fg-dim);
-    font-size: 16px;
-    line-height: 1;
-    cursor: pointer;
-  }
-
-  .header-btn:hover {
-    background: var(--bg-light);
-    color: var(--fg);
-  }
 
   .recent-section {
     padding: 8px 16px;
@@ -569,27 +549,8 @@
     color: var(--fg-dim);
   }
 
-  .delete-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    padding: 0;
-    border-radius: 3px;
-    font-size: 13px;
-    color: var(--fg-dim);
-    opacity: 0;
-    flex-shrink: 0;
-  }
-
-  .workspace-item:hover .delete-btn {
+  .workspace-item:hover :global(.tooltip-wrapper) {
     opacity: 1;
-  }
-
-  .delete-btn:hover {
-    background: var(--bg-dark);
-    color: var(--fg);
   }
 
   .edit-input {

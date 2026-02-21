@@ -11,6 +11,7 @@
   import { onVariablesChange, interpolateVariables } from '$lib/stores/triggers.svelte';
   import Icon from '$lib/components/Icon.svelte';
   import StatusDot from '$lib/components/ui/StatusDot.svelte';
+  import IconButton from '$lib/components/ui/IconButton.svelte';
   import Tooltip from '$lib/components/Tooltip.svelte';
 
   interface Props {
@@ -247,7 +248,7 @@
   function handlePointerDown(e: PointerEvent, tabId: string) {
     // Only primary button, skip if editing or clicking close button
     if (e.button !== 0 || editingId === tabId) return;
-    if ((e.target as HTMLElement).closest('.close-btn') || (e.target as HTMLElement).closest('.duplicate-btn') || (e.target as HTMLElement).closest('.archive-btn')) return;
+    if ((e.target as HTMLElement).closest('.tab-actions')) return;
     // Alt+click tab → shallow duplicate (name, cwd, history, variables only)
     if (e.altKey) {
       e.preventDefault();
@@ -481,18 +482,15 @@
               >
                 {archivedTab.name}
               </button>
-              <Tooltip text="Restore">
-                <button
-                  class="archive-item-btn restore-btn"
-                  onclick={() => handleRestoreArchivedTab(archivedTab.id)}
-                >&#x21A9;</button>
-              </Tooltip>
-              <Tooltip text="Delete permanently">
-                <button
-                  class="archive-item-btn delete-btn"
-                  onclick={(e) => handleDeleteArchivedTab(archivedTab.id, e)}
-                >&times;</button>
-              </Tooltip>
+              <IconButton
+                tooltip="Restore"
+                onclick={() => handleRestoreArchivedTab(archivedTab.id)}
+              >&#x21A9;</IconButton>
+              <IconButton
+                tooltip="Delete permanently"
+                danger
+                onclick={(e) => handleDeleteArchivedTab(archivedTab.id, e)}
+              >&times;</IconButton>
             </div>
           {/each}
         </div>
@@ -566,25 +564,24 @@
         <span class="tab-name">{displayName(tab)}</span>
         <div class="tab-actions" class:single-action={isEditor || isDiff} class:triple-action={!isEditor && !isDiff}>
           {#if !isEditor && !isDiff}
-            <Tooltip text="Archive tab">
-              <button
-                class="tab-btn archive-btn"
-                onclick={(e) => handleArchiveTab(tab.id, e)}
-              ><Icon name="archive" size={11} /></button>
-            </Tooltip>
-            <button
-              class="tab-btn duplicate-btn"
+            <IconButton
+              tooltip="Archive tab"
+              style="width:22px;height:18px;border-radius:3px"
+              onclick={(e) => handleArchiveTab(tab.id, e)}
+            ><Icon name="archive" size={11} /></IconButton>
+            <IconButton
+              tooltip="Duplicate tab ({modLabel}+Shift+T)"
+              style="width:22px;height:18px;border-radius:3px"
               onclick={(e) => handleDuplicateTab(tab.id, e)}
-              title="Duplicate tab ({modLabel}+Shift+T)"
-            >&#x29C9;</button>
+            >&#x29C9;</IconButton>
           {/if}
-          <button
-            class="tab-btn close-btn"
+          <IconButton
+            tooltip="Close tab ({modLabel}+W)"
+            style="width:22px;height:18px;border-radius:3px"
             onclick={(e) => handleCloseTab(tab.id, e)}
-            title="Close tab ({modLabel}+W)"
           >
             &times;
-          </button>
+          </IconButton>
         </div>
       {/if}
     </div>
@@ -599,13 +596,14 @@
   {#if pane.active_tab_id}
     {@const activeTabObj = pane.tabs.find(t => t.id === pane.active_tab_id)}
     {#if activeTabObj?.notes}
-      <button
-        class="notes-indicator"
+      <IconButton
+        tooltip="Toggle notes ({modLabel}+E)"
+        size={26}
+        style="margin-right:4px;flex-shrink:0;-webkit-app-region:no-drag"
         onclick={() => workspacesStore.toggleNotes(pane.active_tab_id!)}
-        title="Toggle notes ({modLabel}+E)"
       >
         <Icon name="notes" />
-      </button>
+      </IconButton>
     {/if}
   {/if}
 </div>
@@ -799,23 +797,6 @@
     width: 22px;
   }
 
-  .tab-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 18px;
-    padding: 0;
-    color: var(--fg-dim);
-    border-radius: 3px;
-    font-size: 13px;
-    transition: background 0.1s, color 0.1s;
-  }
-
-  .tab-btn:hover {
-    background: var(--bg-medium);
-    color: var(--fg);
-  }
 
   .edit-wrapper {
     display: grid;
@@ -870,26 +851,6 @@
     -webkit-app-region: drag;
   }
 
-  .notes-indicator {
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 26px;
-    height: 26px;
-    padding: 0;
-    margin-right: 4px;
-    color: var(--fg-dim);
-    border-radius: 4px;
-    font-size: 13px;
-    -webkit-app-region: no-drag;
-    transition: background 0.1s, color 0.1s;
-  }
-
-  .notes-indicator:hover {
-    background: var(--bg-light);
-    color: var(--fg);
-  }
 
   .archive-list-wrapper {
     position: relative;
@@ -956,26 +917,4 @@
     cursor: pointer;
   }
 
-  .archive-item-btn {
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 22px;
-    padding: 0;
-    border-radius: 3px;
-    font-size: 13px;
-    color: var(--fg-dim);
-    transition: background 0.1s, color 0.1s;
-  }
-
-  .archive-item-btn:hover {
-    background: var(--bg-medium);
-    color: var(--fg);
-  }
-
-  .archive-item-btn.delete-btn:hover {
-    color: var(--red, #f7768e);
-  }
 </style>

@@ -11,6 +11,7 @@
   import { dispatch as dispatchToast } from '$lib/stores/notificationDispatch';
   import { preferencesStore } from '$lib/stores/preferences.svelte';
   import { error as logError } from '@tauri-apps/plugin-log';
+  import Button from '$lib/components/ui/Button.svelte';
 
   interface Props {
     workspaceId: string;
@@ -133,12 +134,12 @@
   <div class="diff-toolbar">
     <span class="diff-file-path">{diffContext.file_path}</span>
     <div class="diff-actions">
-      <button class="btn-reject" onclick={handleReject} disabled={accepting || rejecting}>
+      <Button variant="secondary" onclick={handleReject} disabled={accepting || rejecting} style="padding:4px 12px;border-radius:4px;font-size:12px;font-weight:500">
         {rejecting ? 'Rejecting...' : 'Reject'}
-      </button>
-      <button class="btn-accept" onclick={handleAccept} disabled={accepting || rejecting}>
+      </Button>
+      <Button variant="primary" onclick={handleAccept} disabled={accepting || rejecting} style="padding:4px 12px;border-radius:4px;font-size:12px;font-weight:500">
         {accepting ? 'Saving...' : 'Accept'}
-      </button>
+      </Button>
     </div>
   </div>
   <div class="diff-content"></div>
@@ -189,39 +190,6 @@
   .diff-actions {
     display: flex;
     gap: 8px;
-  }
-
-  .btn-reject, .btn-accept {
-    padding: 4px 12px;
-    border-radius: 4px;
-    border: none;
-    cursor: pointer;
-    font-size: 12px;
-    font-weight: 500;
-  }
-
-  .btn-reject {
-    background: var(--bg-light);
-    color: var(--fg);
-  }
-
-  .btn-reject:hover:not(:disabled) {
-    background: var(--red, #f7768e);
-    color: white;
-  }
-
-  .btn-accept {
-    background: var(--accent);
-    color: var(--bg-dark);
-  }
-
-  .btn-accept:hover:not(:disabled) {
-    background: var(--blue, #89b4fa);
-  }
-
-  .btn-reject:disabled, .btn-accept:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 
   .diff-content {

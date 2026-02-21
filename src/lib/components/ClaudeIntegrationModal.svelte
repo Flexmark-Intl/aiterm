@@ -1,4 +1,7 @@
 <script lang="ts">
+  import Button from '$lib/components/ui/Button.svelte';
+  import IconButton from '$lib/components/ui/IconButton.svelte';
+
   interface Props {
     open: boolean;
     onclose: () => void;
@@ -29,7 +32,7 @@
     <div class="modal">
       <div class="header">
         <h2>Enable Claude Code Integrations?</h2>
-        <button class="close-btn" onclick={onclose}>&times;</button>
+        <IconButton tooltip="Close" style="font-size:20px;padding:4px 8px;width:auto;height:auto" onclick={onclose}>&times;</IconButton>
       </div>
 
       <div class="content">
@@ -48,9 +51,9 @@
       </div>
 
       <div class="actions">
-        <button class="btn-secondary" onclick={onclose}>No thanks</button>
-        <button class="btn-later" onclick={onlater}>Ask me later</button>
-        <button class="btn-primary" onclick={onenable}>Enable</button>
+        <Button variant="secondary" onclick={onclose}>No thanks</Button>
+        <Button variant="ghost" onclick={onlater}>Ask me later</Button>
+        <Button variant="primary" onclick={onenable}>Enable</Button>
       </div>
     </div>
   </div>
@@ -89,18 +92,6 @@
     margin: 0;
     font-size: 15px;
     font-weight: 600;
-    color: var(--fg);
-  }
-
-  .close-btn {
-    font-size: 20px;
-    color: var(--fg-dim);
-    padding: 4px 8px;
-    border-radius: 4px;
-  }
-
-  .close-btn:hover {
-    background: var(--bg-light);
     color: var(--fg);
   }
 
@@ -146,44 +137,4 @@
     border-top: 1px solid var(--bg-light);
   }
 
-  .btn-later {
-    padding: 6px 16px;
-    border-radius: 6px;
-    font-size: 13px;
-    color: var(--fg-dim);
-    background: transparent;
-    border: none;
-  }
-
-  .btn-later:hover {
-    color: var(--fg);
-  }
-
-  .btn-secondary {
-    padding: 6px 16px;
-    border-radius: 6px;
-    font-size: 13px;
-    color: var(--fg-dim);
-    background: transparent;
-    border: 1px solid var(--bg-light);
-  }
-
-  .btn-secondary:hover {
-    background: var(--bg-light);
-    color: var(--fg);
-  }
-
-  .btn-primary {
-    padding: 6px 16px;
-    border-radius: 6px;
-    font-size: 13px;
-    color: var(--bg-dark);
-    background: var(--accent);
-    border: none;
-    font-weight: 600;
-  }
-
-  .btn-primary:hover {
-    filter: brightness(1.1);
-  }
 </style>

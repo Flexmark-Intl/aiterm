@@ -1,5 +1,6 @@
 <script lang="ts">
   import { modLabel, altLabel } from '$lib/utils/platform';
+  import IconButton from '$lib/components/ui/IconButton.svelte';
 
   interface Props {
     open: boolean;
@@ -33,7 +34,7 @@
     <div class="modal">
       <div class="header">
         <h2>Keyboard Shortcuts</h2>
-        <button class="close-btn" onclick={onclose}>&times;</button>
+        <IconButton tooltip="Close" style="font-size:20px;padding:4px 8px;width:auto;height:auto" onclick={onclose}>&times;</IconButton>
       </div>
 
       <div class="content">
@@ -146,18 +147,6 @@
     margin: 0;
     font-size: 16px;
     font-weight: 600;
-    color: var(--fg);
-  }
-
-  .close-btn {
-    font-size: 20px;
-    color: var(--fg-dim);
-    padding: 4px 8px;
-    border-radius: 4px;
-  }
-
-  .close-btn:hover {
-    background: var(--bg-light);
     color: var(--fg);
   }
 
