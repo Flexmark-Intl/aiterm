@@ -31,11 +31,13 @@ pub fn create_window(app: tauri::AppHandle, state: State<'_, Arc<AppState>>) -> 
     };
     save_state(&data_clone)?;
 
-    // Spawn window creation asynchronously so the calling window isn't blocked.
-    // On Windows, WebView2 init is heavy and blocks the main thread event loop.
+    // Spawn window creation in a background thread so the command returns
+    // immediately and the calling window stays responsive. build_window_sync
+    // internally dispatches to the main thread for the actual WebView2 init,
+    // but the command handler thread (and thus the JS await) won't block.
     let app_clone = app.clone();
     let label_clone = label.clone();
-    let _ = app.run_on_main_thread(move || {
+    std::thread::spawn(move || {
         if let Err(e) = build_window_sync(&app_clone, &label_clone) {
             log::error!("Failed to create window '{}': {}", label_clone, e);
         }
@@ -94,10 +96,10 @@ pub fn duplicate_window(
     };
     save_state(&data_clone)?;
 
-    // Spawn window creation asynchronously (see create_window comment)
+    // Spawn window creation in background thread (see create_window comment)
     let app_clone = app.clone();
     let label_clone = new_label.clone();
-    let _ = app.run_on_main_thread(move || {
+    std::thread::spawn(move || {
         if let Err(e) = build_window_sync(&app_clone, &label_clone) {
             log::error!("Failed to create window '{}': {}", label_clone, e);
         }

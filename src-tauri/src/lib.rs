@@ -75,7 +75,11 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin({
             let mut ws = tauri_plugin_window_state::Builder::new()
-                .with_state_flags(tauri_plugin_window_state::StateFlags::all());
+                .with_state_flags(tauri_plugin_window_state::StateFlags::all())
+                // Only track the "main" window — dynamically created windows
+                // (UUID labels) are managed by our own state system. The plugin
+                // can cause WebView2 init issues on Windows for unknown labels.
+                .with_filter(|label| label == "main");
             if cfg!(debug_assertions) {
                 ws = ws.with_filename("window-state-dev.json");
             }
