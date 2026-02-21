@@ -1,5 +1,25 @@
 # Changelog
 
+## v1.2.0
+
+- Add tab archiving: soft-close tabs with restore, sorted by recency with relative timestamps
+- Add dynamic editor/diff themes based on active terminal theme
+- Add Windows shell selection preference and prompt patterns
+- Add auto-resume command migration for existing tabs
+- New tabs open at the most common CWD among workspace tabs
+- Switch to newly duplicated tab after clone
+- Extract reusable IconButton, Button, and StatusDot components
+- Add themed tooltip support to StatusDot and IDE Connected indicator
+- Add copy button and text selection to editor error messages
+- Adapt logo brightness for light themes
+- Fix Solarized Light theme colors
+- Fix DiffPane scroll/layout, viewport locking, and trigger dedup
+- Fix legacy language modes not loading in production builds
+- Fix Windows PTY lag, hang on quit, multi-window freeze, and close button
+- Fix Linux process introspection: use `/proc` for CWD, correct `ps` flags
+- Isolate dev/production MCP server registration in `~/.claude.json`
+- Preserve original tab name through archive/restore cycle
+
 ## v1.1.0
 
 - Add Claude Code IDE integration: WebSocket server for open-file/open-diff commands, connected status in sidebar
