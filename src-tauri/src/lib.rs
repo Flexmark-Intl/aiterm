@@ -302,6 +302,9 @@ pub fn run() {
             commands::claude_code::claude_code_respond,
             commands::claude_code::claude_code_notify_selection,
             commands::workspace::create_diff_tab,
+            commands::workspace::archive_tab,
+            commands::workspace::restore_archived_tab,
+            commands::workspace::delete_archived_tab,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

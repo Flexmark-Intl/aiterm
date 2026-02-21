@@ -273,6 +273,8 @@ pub struct Workspace {
     pub split_root: Option<SplitNode>,
     #[serde(default)]
     pub workspace_notes: Vec<WorkspaceNote>,
+    #[serde(default)]
+    pub archived_tabs: Vec<Tab>,
     // Old field kept for migration deserialization only
     #[serde(default, alias = "window_sizes", skip_serializing)]
     #[allow(dead_code)]
@@ -760,6 +762,7 @@ impl Workspace {
             active_pane_id: Some(pane_id.clone()),
             split_root: Some(SplitNode::Leaf { pane_id }),
             workspace_notes: Vec::new(),
+            archived_tabs: Vec::new(),
             pane_sizes: None,
         }
     }

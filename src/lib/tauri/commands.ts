@@ -343,3 +343,32 @@ export async function createDiffTab(
 ): Promise<Tab> {
   return invoke('create_diff_tab', { workspaceId, paneId, name, diffContext, afterTabId: afterTabId ?? null });
 }
+
+// Archive tab commands
+export async function archiveTab(
+  workspaceId: string,
+  paneId: string,
+  tabId: string,
+  displayName: string,
+  scrollback: string | null,
+  cwd: string | null,
+  sshCommand: string | null,
+  remoteCwd: string | null,
+): Promise<void> {
+  return invoke('archive_tab', { workspaceId, paneId, tabId, displayName, scrollback, cwd, sshCommand, remoteCwd });
+}
+
+export async function restoreArchivedTab(
+  workspaceId: string,
+  paneId: string,
+  tabId: string,
+): Promise<Tab> {
+  return invoke('restore_archived_tab', { workspaceId, paneId, tabId });
+}
+
+export async function deleteArchivedTab(
+  workspaceId: string,
+  tabId: string,
+): Promise<void> {
+  return invoke('delete_archived_tab', { workspaceId, tabId });
+}

@@ -993,3 +993,108 @@ pub fn create_diff_tab(
 
     Ok(tab)
 }
+
+#[tauri::command]
+pub fn archive_tab(
+    window: tauri::Window,
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+    pane_id: String,
+    tab_id: String,
+    display_name: String,
+    scrollback: Option<String>,
+    cwd: Option<String>,
+    ssh_command: Option<String>,
+    remote_cwd: Option<String>,
+) -> Result<(), String> {
+    let label = window.label().to_string();
+    let data_clone = {
+        let mut app_data = state.app_data.write();
+        let win = app_data.window_mut(&label).ok_or("Window not found")?;
+        let workspace = win.workspaces.iter_mut()
+            .find(|w| w.id == workspace_id)
+            .ok_or("Workspace not found")?;
+        let pane = workspace.panes.iter_mut()
+            .find(|p| p.id == pane_id)
+            .ok_or("Pane not found")?;
+
+        let tab_index = pane.tabs.iter().position(|t| t.id == tab_id)
+            .ok_or("Tab not found")?;
+        let mut tab = pane.tabs.remove(tab_index);
+
+        // Freeze display name and clear PTY
+        tab.name = display_name;
+        tab.custom_name = true;
+        tab.pty_id = None;
+        tab.scrollback = scrollback;
+        tab.restore_cwd = cwd;
+        tab.restore_ssh_command = ssh_command;
+        tab.restore_remote_cwd = remote_cwd;
+
+        // Adjust active_tab_id (same logic as delete_tab)
+        if pane.active_tab_id.as_ref() == Some(&tab_id) {
+            pane.active_tab_id = if pane.tabs.is_empty() {
+                None
+            } else {
+                let new_index = if tab_index > 0 { tab_index - 1 } else { 0 };
+                Some(pane.tabs[new_index].id.clone())
+            };
+        }
+
+        workspace.archived_tabs.push(tab);
+        app_data.clone()
+    };
+    save_state(&data_clone)
+}
+
+#[tauri::command]
+pub fn restore_archived_tab(
+    window: tauri::Window,
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+    pane_id: String,
+    tab_id: String,
+) -> Result<Tab, String> {
+    let label = window.label().to_string();
+    let (data_clone, tab) = {
+        let mut app_data = state.app_data.write();
+        let win = app_data.window_mut(&label).ok_or("Window not found")?;
+        let workspace = win.workspaces.iter_mut()
+            .find(|w| w.id == workspace_id)
+            .ok_or("Workspace not found")?;
+
+        let arch_index = workspace.archived_tabs.iter().position(|t| t.id == tab_id)
+            .ok_or("Archived tab not found")?;
+        let tab = workspace.archived_tabs.remove(arch_index);
+
+        let pane = workspace.panes.iter_mut()
+            .find(|p| p.id == pane_id)
+            .ok_or("Pane not found")?;
+        pane.tabs.insert(0, tab.clone());
+        pane.active_tab_id = Some(tab.id.clone());
+
+        (app_data.clone(), tab)
+    };
+    save_state(&data_clone)?;
+    Ok(tab)
+}
+
+#[tauri::command]
+pub fn delete_archived_tab(
+    window: tauri::Window,
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+    tab_id: String,
+) -> Result<(), String> {
+    let label = window.label().to_string();
+    let data_clone = {
+        let mut app_data = state.app_data.write();
+        let win = app_data.window_mut(&label).ok_or("Window not found")?;
+        let workspace = win.workspaces.iter_mut()
+            .find(|w| w.id == workspace_id)
+            .ok_or("Workspace not found")?;
+        workspace.archived_tabs.retain(|t| t.id != tab_id);
+        app_data.clone()
+    };
+    save_state(&data_clone)
+}

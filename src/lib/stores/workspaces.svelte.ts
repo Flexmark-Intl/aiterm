@@ -594,6 +594,114 @@ function createWorkspacesStore() {
       });
     },
 
+    async archiveTab(workspaceId: string, paneId: string, tabId: string, displayName: string) {
+      const ws = workspaces.find(w => w.id === workspaceId);
+      const pane = ws?.panes.find(p => p.id === paneId);
+      const tab = pane?.tabs.find(t => t.id === tabId);
+      if (!tab) return;
+
+      // Gather context
+      const { scrollback, cwd, sshCommand } = await this._gatherTabContext(tabId);
+
+      // Detect remote cwd
+      let remoteCwd: string | null = null;
+      if (sshCommand) {
+        const instance = terminalsStore.get(tabId);
+        const oscState = terminalsStore.getOsc(tabId);
+        const osc7Cwd = oscState?.cwd ?? null;
+        const promptCwd = oscState?.promptCwd ?? null;
+        const isOsc7Stale = osc7Cwd === cwd;
+        const osc7RemoteCwd = (osc7Cwd && !isOsc7Stale) ? osc7Cwd : null;
+        remoteCwd = osc7RemoteCwd ?? promptCwd ?? null;
+      }
+
+      // Migrate notes if enabled
+      if (preferencesStore.migrateTabNotes && tab.notes?.trim()) {
+        try {
+          const note = await commands.addWorkspaceNote(workspaceId, tab.notes, tab.notes_mode ?? null);
+          if (ws) {
+            ws.workspace_notes = [...ws.workspace_notes, note];
+          }
+        } catch (e) {
+          logError(`Failed to migrate tab notes: ${e}`);
+        }
+      }
+
+      await commands.archiveTab(workspaceId, paneId, tabId, displayName, scrollback, cwd, sshCommand, remoteCwd);
+
+      // Build the archived tab object for local state
+      const archivedTab: Tab = {
+        ...tab,
+        name: displayName,
+        custom_name: true,
+        pty_id: null,
+        scrollback,
+        restore_cwd: cwd,
+        restore_ssh_command: sshCommand,
+        restore_remote_cwd: remoteCwd,
+      };
+
+      // Update local state
+      workspaces = workspaces.map(w => {
+        if (w.id === workspaceId) {
+          return {
+            ...w,
+            archived_tabs: [...w.archived_tabs, archivedTab],
+            panes: w.panes.map(p => {
+              if (p.id === paneId) {
+                const oldIndex = p.tabs.findIndex(t => t.id === tabId);
+                const newTabs = p.tabs.filter(t => t.id !== tabId);
+                const newActiveId = p.active_tab_id === tabId
+                  ? (newTabs[oldIndex > 0 ? oldIndex - 1 : 0]?.id ?? null)
+                  : p.active_tab_id;
+                return { ...p, tabs: newTabs, active_tab_id: newActiveId };
+              }
+              return p;
+            })
+          };
+        }
+        return w;
+      });
+    },
+
+    async restoreArchivedTab(workspaceId: string, tabId: string) {
+      const ws = workspaces.find(w => w.id === workspaceId);
+      if (!ws) return;
+
+      // Find active pane
+      const pane = ws.panes.find(p => p.id === ws.active_pane_id) ?? ws.panes[0];
+      if (!pane) return;
+
+      const tab = await commands.restoreArchivedTab(workspaceId, pane.id, tabId);
+
+      // Update local state
+      workspaces = workspaces.map(w => {
+        if (w.id === workspaceId) {
+          return {
+            ...w,
+            archived_tabs: w.archived_tabs.filter(t => t.id !== tabId),
+            panes: w.panes.map(p => {
+              if (p.id === pane.id) {
+                return { ...p, tabs: [tab, ...p.tabs], active_tab_id: tab.id };
+              }
+              return p;
+            })
+          };
+        }
+        return w;
+      });
+    },
+
+    async deleteArchivedTab(workspaceId: string, tabId: string) {
+      await commands.deleteArchivedTab(workspaceId, tabId);
+      workspaces = workspaces.map(w => {
+        if (w.id === workspaceId) {
+          return { ...w, archived_tabs: w.archived_tabs.filter(t => t.id !== tabId) };
+        }
+        return w;
+      });
+    },
+
     async reorderTabs(workspaceId: string, paneId: string, tabIds: string[]) {
       workspaces = workspaces.map(w => {
         if (w.id === workspaceId) {

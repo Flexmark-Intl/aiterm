@@ -79,6 +79,7 @@ export interface Workspace {
   active_pane_id: string | null;
   split_root: SplitNode | null;
   workspace_notes: WorkspaceNote[];
+  archived_tabs: Tab[];
 }
 
 export type CursorStyle = 'block' | 'underline' | 'bar';

@@ -11,6 +11,7 @@
   import { onVariablesChange, interpolateVariables } from '$lib/stores/triggers.svelte';
   import Icon from '$lib/components/Icon.svelte';
   import StatusDot from '$lib/components/ui/StatusDot.svelte';
+  import Tooltip from '$lib/components/Tooltip.svelte';
 
   interface Props {
     workspaceId: string;
@@ -18,6 +19,11 @@
   }
 
   let { workspaceId, pane }: Props = $props();
+
+  let archiveDropdownOpen = $state(false);
+  let archiveDropdownEl = $state<HTMLElement | null>(null);
+  let archiveDropdownPos = $state({ top: 0, left: 0 });
+  const archivedTabs = $derived(workspacesStore.workspaces.find(w => w.id === workspaceId)?.archived_tabs ?? []);
 
   let editingId = $state<string | null>(null);
   let editingName = $state('');
@@ -125,6 +131,57 @@
     await workspacesStore.createTab(workspaceId, pane.id, `Terminal ${count}`);
   }
 
+  async function handleArchiveTab(tabId: string, e: MouseEvent) {
+    e.stopPropagation();
+    const tab = pane.tabs.find(t => t.id === tabId);
+    if (!tab) return;
+    const name = displayName(tab);
+    const ws = workspacesStore.activeWorkspace;
+
+    if (pane.tabs.length > 1) {
+      await workspacesStore.archiveTab(workspaceId, pane.id, tabId, name);
+    } else if (ws && ws.panes.length > 1) {
+      // Last tab in pane — archive then delete pane
+      await workspacesStore.archiveTab(workspaceId, pane.id, tabId, name);
+      await workspacesStore.deletePane(workspaceId, pane.id);
+    } else {
+      // Last tab in last pane — archive then create fresh tab
+      await workspacesStore.archiveTab(workspaceId, pane.id, tabId, name);
+      await workspacesStore.createTab(workspaceId, pane.id, 'Terminal 1');
+    }
+  }
+
+  async function handleRestoreArchivedTab(tabId: string) {
+    await workspacesStore.restoreArchivedTab(workspaceId, tabId);
+    archiveDropdownOpen = false;
+  }
+
+  async function handleDeleteArchivedTab(tabId: string, e: MouseEvent) {
+    e.stopPropagation();
+    await workspacesStore.deleteArchivedTab(workspaceId, tabId);
+  }
+
+  function handleArchiveDropdownClickOutside(e: MouseEvent) {
+    if (archiveDropdownEl && !archiveDropdownEl.contains(e.target as Node)) {
+      archiveDropdownOpen = false;
+    }
+  }
+
+  function handleArchiveDropdownKeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape') archiveDropdownOpen = false;
+  }
+
+  $effect(() => {
+    if (archiveDropdownOpen) {
+      document.addEventListener('click', handleArchiveDropdownClickOutside, true);
+      document.addEventListener('keydown', handleArchiveDropdownKeydown);
+      return () => {
+        document.removeEventListener('click', handleArchiveDropdownClickOutside, true);
+        document.removeEventListener('keydown', handleArchiveDropdownKeydown);
+      };
+    }
+  });
+
   async function handleDuplicateTab(tabId: string, e: MouseEvent) {
     e.stopPropagation();
     await workspacesStore.duplicateTab(workspaceId, pane.id, tabId, { shallow: e.altKey });
@@ -190,7 +247,7 @@
   function handlePointerDown(e: PointerEvent, tabId: string) {
     // Only primary button, skip if editing or clicking close button
     if (e.button !== 0 || editingId === tabId) return;
-    if ((e.target as HTMLElement).closest('.close-btn') || (e.target as HTMLElement).closest('.duplicate-btn')) return;
+    if ((e.target as HTMLElement).closest('.close-btn') || (e.target as HTMLElement).closest('.duplicate-btn') || (e.target as HTMLElement).closest('.archive-btn')) return;
     // Alt+click tab → shallow duplicate (name, cwd, history, variables only)
     if (e.altKey) {
       e.preventDefault();
@@ -397,6 +454,52 @@
 <div class="tabs-bar" bind:this={tabsBarEl} data-tauri-drag-region
   onwheel={(e) => { if (tabsBarEl) { e.preventDefault(); tabsBarEl.scrollLeft += e.deltaY || e.deltaX; } }}
 >
+  {#if archivedTabs.length > 0}
+    <div class="archive-list-wrapper" bind:this={archiveDropdownEl}>
+      <Tooltip text="Archived tabs ({archivedTabs.length})">
+        <button
+          class="archive-list-btn"
+          onclick={(e) => {
+            e.stopPropagation();
+            if (!archiveDropdownOpen) {
+              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+              archiveDropdownPos = { top: rect.bottom + 2, left: rect.left };
+            }
+            archiveDropdownOpen = !archiveDropdownOpen;
+          }}
+        >
+          <Icon name="archive" size={12} /> {archivedTabs.length}
+        </button>
+      </Tooltip>
+      {#if archiveDropdownOpen}
+        <div class="archive-dropdown" style="top: {archiveDropdownPos.top}px; left: {archiveDropdownPos.left}px;">
+          {#each archivedTabs as archivedTab (archivedTab.id)}
+            <div class="archive-item">
+              <button
+                class="archive-item-name"
+                onclick={() => handleRestoreArchivedTab(archivedTab.id)}
+              >
+                {archivedTab.name}
+              </button>
+              <Tooltip text="Restore">
+                <button
+                  class="archive-item-btn restore-btn"
+                  onclick={() => handleRestoreArchivedTab(archivedTab.id)}
+                >&#x21A9;</button>
+              </Tooltip>
+              <Tooltip text="Delete permanently">
+                <button
+                  class="archive-item-btn delete-btn"
+                  onclick={(e) => handleDeleteArchivedTab(archivedTab.id, e)}
+                >&times;</button>
+              </Tooltip>
+            </div>
+          {/each}
+        </div>
+      {/if}
+    </div>
+  {/if}
+
   {#each pane.tabs as tab, index (tab.id)}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     {@const isEditor = tab.tab_type === 'editor'}
@@ -461,8 +564,14 @@
           <span class="auto-resume-indicator" title="Auto-resume enabled">&#x21BB;</span>
         {/if}
         <span class="tab-name">{displayName(tab)}</span>
-        <div class="tab-actions" class:single-action={isEditor || isDiff}>
+        <div class="tab-actions" class:single-action={isEditor || isDiff} class:triple-action={!isEditor && !isDiff}>
           {#if !isEditor && !isDiff}
+            <Tooltip text="Archive tab">
+              <button
+                class="tab-btn archive-btn"
+                onclick={(e) => handleArchiveTab(tab.id, e)}
+              ><Icon name="archive" size={11} /></button>
+            </Tooltip>
             <button
               class="tab-btn duplicate-btn"
               onclick={(e) => handleDuplicateTab(tab.id, e)}
@@ -682,6 +791,10 @@
     margin-left: 6px;
   }
 
+  .tab:hover .tab-actions.triple-action {
+    width: 66px;
+  }
+
   .tab:hover .tab-actions.single-action {
     width: 22px;
   }
@@ -691,6 +804,7 @@
     align-items: center;
     justify-content: center;
     width: 22px;
+    height: 18px;
     padding: 0;
     color: var(--fg-dim);
     border-radius: 3px;
@@ -775,5 +889,93 @@
   .notes-indicator:hover {
     background: var(--bg-light);
     color: var(--fg);
+  }
+
+  .archive-list-wrapper {
+    position: relative;
+    flex-shrink: 0;
+    -webkit-app-region: no-drag;
+  }
+
+  .archive-list-btn {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    padding: 4px 8px;
+    margin-left: 4px;
+    border-radius: 4px;
+    color: var(--fg-dim);
+    font-size: 11px;
+    white-space: nowrap;
+    -webkit-app-region: no-drag;
+  }
+
+  .archive-list-btn:hover {
+    background: var(--bg-light);
+    color: var(--fg);
+  }
+
+  .archive-dropdown {
+    position: fixed;
+    z-index: 1000;
+    min-width: 200px;
+    max-width: 320px;
+    max-height: 300px;
+    overflow-y: auto;
+    background: var(--bg-medium);
+    border: 1px solid var(--bg-light);
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    padding: 4px;
+  }
+
+  .archive-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 6px;
+    border-radius: 4px;
+    transition: background 0.1s;
+  }
+
+  .archive-item:hover {
+    background: var(--bg-light);
+  }
+
+  .archive-item-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    color: var(--fg);
+    text-align: left;
+    padding: 2px 0;
+    background: none;
+    border: none;
+    cursor: pointer;
+  }
+
+  .archive-item-btn {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border-radius: 3px;
+    font-size: 13px;
+    color: var(--fg-dim);
+    transition: background 0.1s, color 0.1s;
+  }
+
+  .archive-item-btn:hover {
+    background: var(--bg-medium);
+    color: var(--fg);
+  }
+
+  .archive-item-btn.delete-btn:hover {
+    color: var(--red, #f7768e);
   }
 </style>

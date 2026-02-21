@@ -296,6 +296,7 @@ pub(crate) fn clone_workspace_with_id_mapping(
         active_pane_id: new_active_pane,
         split_root: new_split_root,
         workspace_notes: ws.workspace_notes.clone(),
+        archived_tabs: Vec::new(),
         pane_sizes: None,
     };
 
