@@ -8,6 +8,7 @@
   import * as commands from '$lib/tauri/commands';
   import { modSymbol } from '$lib/utils/platform';
   import { claudeCodeStore } from '$lib/stores/claudeCode.svelte';
+  import StatusDot from '$lib/components/ui/StatusDot.svelte';
 
   function workspaceHasActivity(workspaceId: string): boolean {
     if (workspaceId === workspacesStore.activeWorkspaceId) return false;
@@ -287,8 +288,8 @@
       <button class="version-badge" onclick={onversionclick}>v{appVersion}</button>
     {/if}
     {#if claudeCodeStore.connected}
-      <span class="claude-connected" title="Claude Code connected">
-        <span class="claude-dot"></span>
+      <span class="claude-connected">
+        <StatusDot color="green" title="Claude Code connected" />
       </span>
     {/if}
     <button class="header-btn collapse-btn" onclick={() => workspacesStore.toggleSidebar()} title="Collapse sidebar ({modSymbol}B)">&#x2039;</button>
@@ -353,7 +354,7 @@
             {:else if workspace.id === workspacesStore.activeWorkspaceId}
               >
             {:else if workspaceHasActivity(workspace.id)}
-              <span class="activity-dot"></span>
+              <StatusDot color="green" />
             {/if}
           </span>
           <span class="workspace-name">{workspace.name}{#if preferencesStore.showWorkspaceTabCount}<span class="tab-count"> ({workspace.panes.reduce((sum, p) => sum + p.tabs.length, 0)})</span>{/if}</span>
@@ -424,12 +425,6 @@
     margin-left: 6px;
   }
 
-  .claude-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--green, #9ece6a);
-  }
 
   .sidebar-header {
     padding: 12px 16px;
@@ -557,13 +552,6 @@
     justify-content: center;
   }
 
-  .activity-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--green, #9ece6a);
-    flex-shrink: 0;
-  }
 
   .state-emoji {
     font-size: 10px;

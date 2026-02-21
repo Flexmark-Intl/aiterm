@@ -10,6 +10,7 @@
   import { getCompiledTitlePatterns, extractDirFromTitle } from '$lib/utils/promptPattern';
   import { onVariablesChange, interpolateVariables } from '$lib/stores/triggers.svelte';
   import Icon from '$lib/components/Icon.svelte';
+  import StatusDot from '$lib/components/ui/StatusDot.svelte';
 
   interface Props {
     workspaceId: string;
@@ -454,7 +455,7 @@
         {:else if shellState?.state === 'completed'}
           <span class="indicator" class:completed-indicator={shellState.exitCode === 0} class:failed-indicator={shellState.exitCode !== 0}>{shellState.exitCode === 0 ? '\u2713' : '\u2717'}</span>
         {:else if hasActivity}
-          <span class="activity-dot"></span>
+          <span class="indicator"><StatusDot color="accent" /></span>
         {/if}
         {#if !isEditor && (tab.auto_resume_ssh_command || tab.auto_resume_cwd)}
           <span class="auto-resume-indicator" title="Auto-resume enabled">&#x21BB;</span>
@@ -632,14 +633,6 @@
     opacity: 0.7;
   }
 
-  .activity-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--accent);
-    flex-shrink: 0;
-    margin-right: 4px;
-  }
 
   .indicator {
     flex-shrink: 0;
