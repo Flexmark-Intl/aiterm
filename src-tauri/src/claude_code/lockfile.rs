@@ -1,7 +1,9 @@
 use std::fs;
 use std::path::PathBuf;
 
-const MCP_SERVER_KEY: &str = "aiterm";
+fn mcp_server_key() -> &'static str {
+    if cfg!(debug_assertions) { "aiterm-dev" } else { "aiterm" }
+}
 
 /// Check if a process is alive by PID.
 #[cfg(unix)]
@@ -90,7 +92,7 @@ fn write_mcp_settings(port: u16, auth: &str) -> Result<(), String> {
         .entry("mcpServers")
         .or_insert(serde_json::json!({}));
 
-    mcp_servers[MCP_SERVER_KEY] = serde_json::json!({
+    mcp_servers[mcp_server_key()] = serde_json::json!({
         "type": "sse",
         "url": format!("http://127.0.0.1:{}/sse", port),
         "headers": {
@@ -107,11 +109,11 @@ fn write_mcp_settings(port: u16, auth: &str) -> Result<(), String> {
         format!("Cannot update settings.json: {}", e)
     })?;
 
-    log::info!("Registered aiterm MCP server in ~/.claude.json (port {})", port);
+    log::info!("Registered {} MCP server in ~/.claude.json (port {})", mcp_server_key(), port);
     Ok(())
 }
 
-/// Remove the `mcpServers.aiterm` entry from ~/.claude.json on shutdown.
+/// Remove the MCP server entry from ~/.claude.json on shutdown.
 fn remove_mcp_settings() -> Result<(), String> {
     let path = claude_settings_path().ok_or("Could not determine home directory")?;
     if !path.exists() {
@@ -123,7 +125,7 @@ fn remove_mcp_settings() -> Result<(), String> {
         serde_json::from_str(&raw).unwrap_or(serde_json::json!({}));
 
     if let Some(mcp_servers) = settings.get_mut("mcpServers").and_then(|v| v.as_object_mut()) {
-        mcp_servers.remove(MCP_SERVER_KEY);
+        mcp_servers.remove(mcp_server_key());
         // Remove the mcpServers key entirely if now empty
         if mcp_servers.is_empty() {
             settings.as_object_mut().unwrap().remove("mcpServers");
@@ -140,7 +142,7 @@ fn remove_mcp_settings() -> Result<(), String> {
         format!("Cannot update settings.json: {}", e)
     })?;
 
-    log::info!("Removed aiterm MCP server from ~/.claude.json");
+    log::info!("Removed {} MCP server from ~/.claude.json", mcp_server_key());
     Ok(())
 }
 
