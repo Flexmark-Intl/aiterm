@@ -23,102 +23,106 @@ function luminance(hex: string): number {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
-/** Mix two hex colors: amount (0-1) of color A into color B */
-function mixHex(a: string, b: string, amount: number): string {
-  const [ar, ag, ab] = hexToRgb(a);
-  const [br, bg, bb] = hexToRgb(b);
-  const r = Math.round(ar * amount + br * (1 - amount));
-  const g = Math.round(ag * amount + bg * (1 - amount));
-  const bl = Math.round(ab * amount + bb * (1 - amount));
-  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${bl.toString(16).padStart(2, '0')}`;
+/**
+ * Editor theme using CSS variables — automatically updates when applyUiTheme()
+ * changes the root CSS custom properties. No need to recreate the editor.
+ *
+ * Uses color-mix() for derived colors (selection, line highlights, etc.) so they
+ * also react to variable changes.
+ */
+function buildCssVarEditorTheme(isDark: boolean): Extension {
+  return EditorView.theme({
+    '&': {
+      color: 'var(--fg)',
+      backgroundColor: 'var(--bg-dark)',
+    },
+    '.cm-content': {
+      caretColor: 'var(--fg)',
+    },
+    '.cm-cursor, .cm-dropCursor': {
+      borderLeftColor: 'var(--fg)',
+    },
+    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
+      backgroundColor: 'color-mix(in srgb, var(--accent) 25%, var(--bg-dark))',
+    },
+    '.cm-panels': {
+      backgroundColor: 'var(--bg-medium)',
+      color: 'var(--fg)',
+    },
+    '.cm-panels.cm-panels-top': {
+      borderBottom: '1px solid var(--bg-light)',
+    },
+    '.cm-panels.cm-panels-bottom': {
+      borderTop: '1px solid var(--bg-light)',
+    },
+    '.cm-searchMatch': {
+      backgroundColor: 'color-mix(in srgb, var(--accent) 20%, var(--bg-dark))',
+      outline: '1px solid color-mix(in srgb, var(--accent) 40%, var(--bg-dark))',
+    },
+    '.cm-searchMatch.cm-searchMatch-selected': {
+      backgroundColor: 'color-mix(in srgb, var(--accent) 40%, var(--bg-dark))',
+    },
+    '.cm-activeLine': {
+      backgroundColor: 'color-mix(in srgb, var(--bg-medium) 30%, var(--bg-dark))',
+    },
+    '.cm-selectionMatch': {
+      backgroundColor: 'color-mix(in srgb, var(--accent) 15%, var(--bg-dark))',
+    },
+    '&.cm-focused .cm-matchingBracket, &.cm-focused .cm-nonmatchingBracket': {
+      backgroundColor: 'color-mix(in srgb, var(--accent) 25%, var(--bg-dark))',
+      outline: '1px solid color-mix(in srgb, var(--accent) 50%, var(--bg-dark))',
+    },
+    '.cm-gutters': {
+      backgroundColor: 'var(--bg-dark)',
+      color: 'var(--fg-dim)',
+      borderRight: '1px solid var(--bg-light)',
+    },
+    '.cm-activeLineGutter': {
+      backgroundColor: 'color-mix(in srgb, var(--bg-medium) 30%, var(--bg-dark))',
+      color: 'var(--fg)',
+    },
+    '.cm-foldPlaceholder': {
+      backgroundColor: 'var(--bg-medium)',
+      color: 'var(--fg-dim)',
+      border: 'none',
+    },
+    '.cm-tooltip': {
+      backgroundColor: 'var(--bg-medium)',
+      border: '1px solid var(--bg-light)',
+      color: 'var(--fg)',
+    },
+    '.cm-tooltip .cm-tooltip-arrow:before': {
+      borderTopColor: 'var(--bg-light)',
+      borderBottomColor: 'var(--bg-light)',
+    },
+    '.cm-tooltip .cm-tooltip-arrow:after': {
+      borderTopColor: 'var(--bg-medium)',
+      borderBottomColor: 'var(--bg-medium)',
+    },
+    '.cm-tooltip-autocomplete': {
+      '& > ul > li[aria-selected]': {
+        backgroundColor: 'color-mix(in srgb, var(--accent) 25%, var(--bg-dark))',
+      },
+    },
+  }, { dark: isDark });
 }
 
-/** Build a CodeMirror 6 theme + syntax highlighting from an aiTerm Theme */
+/**
+ * Build a CodeMirror 6 theme + syntax highlighting from an aiTerm Theme.
+ *
+ * The editor chrome (backgrounds, gutters, selection) uses CSS variables so it
+ * automatically updates when the theme changes via applyUiTheme().
+ *
+ * Syntax highlighting uses resolved hex values from the theme — these won't
+ * auto-update, but the editor would need to be recreated for a full theme
+ * switch anyway (same as terminal tabs).
+ */
 export function buildEditorExtension(theme: Theme): Extension[] {
   const ui = theme.ui;
   const t = theme.terminal;
   const isDark = luminance(ui.bg_dark) < 0.2;
 
-  const selection = mixHex(ui.accent, ui.bg_dark, 0.25);
-  const lineHighlight = mixHex(ui.bg_medium, ui.bg_dark, 0.3);
-  const searchMatch = mixHex(ui.accent, ui.bg_dark, 0.2);
-  const searchMatchSelected = mixHex(ui.accent, ui.bg_dark, 0.4);
-  const bracketMatch = mixHex(ui.accent, ui.bg_dark, 0.25);
-
-  const editorTheme = EditorView.theme({
-    '&': {
-      color: ui.fg,
-      backgroundColor: ui.bg_dark,
-    },
-    '.cm-content': {
-      caretColor: ui.fg,
-    },
-    '.cm-cursor, .cm-dropCursor': {
-      borderLeftColor: ui.fg,
-    },
-    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
-      backgroundColor: selection,
-    },
-    '.cm-panels': {
-      backgroundColor: ui.bg_medium,
-      color: ui.fg,
-    },
-    '.cm-panels.cm-panels-top': {
-      borderBottom: `1px solid ${ui.bg_light}`,
-    },
-    '.cm-panels.cm-panels-bottom': {
-      borderTop: `1px solid ${ui.bg_light}`,
-    },
-    '.cm-searchMatch': {
-      backgroundColor: searchMatch,
-      outline: `1px solid ${mixHex(ui.accent, ui.bg_dark, 0.4)}`,
-    },
-    '.cm-searchMatch.cm-searchMatch-selected': {
-      backgroundColor: searchMatchSelected,
-    },
-    '.cm-activeLine': {
-      backgroundColor: lineHighlight,
-    },
-    '.cm-selectionMatch': {
-      backgroundColor: mixHex(ui.accent, ui.bg_dark, 0.15),
-    },
-    '&.cm-focused .cm-matchingBracket, &.cm-focused .cm-nonmatchingBracket': {
-      backgroundColor: bracketMatch,
-      outline: `1px solid ${mixHex(ui.accent, ui.bg_dark, 0.5)}`,
-    },
-    '.cm-gutters': {
-      backgroundColor: ui.bg_dark,
-      color: ui.fg_dim,
-      borderRight: `1px solid ${ui.bg_light}`,
-    },
-    '.cm-activeLineGutter': {
-      backgroundColor: lineHighlight,
-      color: ui.fg,
-    },
-    '.cm-foldPlaceholder': {
-      backgroundColor: ui.bg_medium,
-      color: ui.fg_dim,
-      border: 'none',
-    },
-    '.cm-tooltip': {
-      backgroundColor: ui.bg_medium,
-      border: `1px solid ${ui.bg_light}`,
-      color: ui.fg,
-    },
-    '.cm-tooltip .cm-tooltip-arrow:before': {
-      borderTopColor: ui.bg_light,
-      borderBottomColor: ui.bg_light,
-    },
-    '.cm-tooltip .cm-tooltip-arrow:after': {
-      borderTopColor: ui.bg_medium,
-      borderBottomColor: ui.bg_medium,
-    },
-    '.cm-tooltip-autocomplete': {
-      '& > ul > li[aria-selected]': {
-        backgroundColor: selection,
-      },
-    },
-  }, { dark: isDark });
+  const editorTheme = buildCssVarEditorTheme(isDark);
 
   const highlighting = syntaxHighlighting(HighlightStyle.define([
     { tag: tags.keyword, color: ui.magenta },
@@ -141,4 +145,3 @@ export function buildEditorExtension(theme: Theme): Extension[] {
 
   return [editorTheme, highlighting];
 }
-
