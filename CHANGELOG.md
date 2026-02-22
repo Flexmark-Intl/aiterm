@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.2.1
+
+- Fix variable triggers not re-firing when captured values change
+- Skip trigger variable cloning on shallow tab duplicates
+- Persist OSC title as tab name so restarts show last-known title
+- Include version in CI artifact names for Linux and Windows builds
+
 ## v1.2.0
 
 - Add tab archiving: soft-close tabs with restore, sorted by recency with relative timestamps
