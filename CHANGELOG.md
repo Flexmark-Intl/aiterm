@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.2.2
+
+- Auto-update unmodified default triggers on app load when templates change
+- Suppress trigger actions during post-mount scrollback restore
+- Make file path detection always active with pre-compiled regex
+- Restrict CI builds to version tags only
+
 ## v1.2.1
 
 - Fix variable triggers not re-firing when captured values change
