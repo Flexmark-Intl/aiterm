@@ -164,6 +164,17 @@ function createWorkspacesStore() {
               migrated = true;
             }
 
+            // Repair wrongly interpolated commands — older versions resolved
+            // %variables before saving, producing literal values in the stored
+            // command. Detect by matching the template skeleton with any values
+            // and reset to the uninterpolated template.
+            if (tab.auto_resume_command && tab.auto_resume_command !== CLAUDE_RESUME_COMMAND
+              && /^if \[ -n ".*" \]; then claude --resume .*; elif \[ -n ".*" \]; then eval .*; else claude --continue; fi$/.test(tab.auto_resume_command)) {
+              tab.auto_resume_command = CLAUDE_RESUME_COMMAND;
+              tab.auto_resume_remembered_command = CLAUDE_RESUME_COMMAND;
+              migrated = true;
+            }
+
             // Backfill missing SSH/CWD context from restore fields — older
             // versions stored the command but not the connection context.
             if (tab.auto_resume_command && !tab.auto_resume_ssh_command && !tab.auto_resume_cwd) {
