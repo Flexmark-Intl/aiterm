@@ -50,28 +50,37 @@ function isLikelyFile(path: string): boolean {
 }
 
 /**
- * Regex patterns to match file paths in terminal output.
+ * Single pre-compiled regex combining all file path patterns.
+ * Uses alternation with named-style groups (all captured in group 1 via outer parens).
  * Order matters — more specific patterns first.
  *
  * Note: ls -l output is NOT handled here. The `l` shell function emits
  * OSC 8 hyperlinks which xterm.js handles natively via linkHandler.
  */
-const FILE_PATH_PATTERNS = [
-  // Absolute paths: /foo/bar or ~/foo/bar (with or without extension)
-  /(?:^|[\s'"({\[,:])([~\/][\w.\-\/]+)(?=[\s'")\],:;]|$)/,
-  // Relative paths: ./foo, ../foo, or dir/file patterns
-  /(?:^|[\s'"({\[,:])(\.\.\/.+?|\.\/.+?|[\w][\w.\-]*\/[\w.\-\/]+)(?=[\s'")\],:;]|$)/,
-  // Bare filenames with extension: package.json, CHANGELOG.md
-  /(?:^|[\s'"({\[,:])([.\w][\w.\-]*\.\w+)(?=[\s'")\],:;]|$)/,
-  // Dotfiles without extension: .gitignore, .bashrc, .env
-  /(?:^|[\s'"({\[,:])(\.[a-zA-Z][\w.\-]*)(?=[\s'")\],:;]|$)/,
-  // Known extensionless filenames: Makefile, Dockerfile, LICENSE
-  /(?:^|[\s'"({\[,:])((?:Makefile|Dockerfile|Containerfile|Vagrantfile|Procfile|Gemfile|Rakefile|Brewfile|Justfile|Taskfile|LICENSE|LICENCE|COPYING|AUTHORS|CONTRIBUTORS|CHANGELOG|CHANGES|HISTORY|NEWS|README|INSTALL|TODO|HACKING|configure|gradlew))(?=[\s'")\],:;]|$)/,
-];
+const COMBINED_PATTERN = new RegExp(
+  '(?:^|[\\s\'"({\\[,:])(' +
+    // Absolute paths: /foo/bar or ~/foo/bar
+    '[~\\/][\\w.\\-\\/]+' +
+    '|' +
+    // Relative paths: ./foo, ../foo, or dir/file patterns
+    '\\.\\.\\/.+?|\\.\\/.+?|[\\w][\\w.\\-]*\\/[\\w.\\-\\/]+' +
+    '|' +
+    // Bare filenames with extension: package.json, CHANGELOG.md
+    '[.\\w][\\w.\\-]*\\.\\w+' +
+    '|' +
+    // Dotfiles without extension: .gitignore, .bashrc, .env
+    '\\.[a-zA-Z][\\w.\\-]*' +
+    '|' +
+    // Known extensionless filenames
+    '(?:Makefile|Dockerfile|Containerfile|Vagrantfile|Procfile|Gemfile|Rakefile|Brewfile|Justfile|Taskfile|LICENSE|LICENCE|COPYING|AUTHORS|CONTRIBUTORS|CHANGELOG|CHANGES|HISTORY|NEWS|README|INSTALL|TODO|HACKING|configure|gradlew)' +
+  ')(?=[\\s\'"\\)\\],:;]|$)',
+  'g'
+);
 
 /**
  * Creates a link provider that detects file paths in terminal output.
- * Handles paths from compiler errors, git status, find, grep, etc.
+ * Registered once at terminal creation — the pre-compiled regex is cheap
+ * enough to run on every hovered line (one translateToString + one exec).
  *
  * ls -l file linking is handled separately via OSC 8 hyperlinks
  * (the `l` shell function + xterm.js linkHandler).
@@ -92,28 +101,27 @@ export function createFilePathLinkProvider(
       const links: ILink[] = [];
       const seen = new Set<string>();
 
-      for (const pattern of FILE_PATH_PATTERNS) {
-        const regex = new RegExp(pattern.source, 'g');
-        let match: RegExpExecArray | null;
+      // Reset lastIndex for the global regex
+      COMBINED_PATTERN.lastIndex = 0;
+      let match: RegExpExecArray | null;
 
-        while ((match = regex.exec(text)) !== null) {
-          const filePath = match[1];
-          if (!filePath || !isLikelyFile(filePath)) continue;
+      while ((match = COMBINED_PATTERN.exec(text)) !== null) {
+        const filePath = match[1];
+        if (!filePath || !isLikelyFile(filePath)) continue;
 
-          const startIndex = match.index + match[0].indexOf(filePath);
-          const key = `${startIndex}:${filePath.length}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
+        const startIndex = match.index + match[0].indexOf(filePath);
+        const key = `${startIndex}:${filePath.length}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
 
-          links.push({
-            range: {
-              start: { x: startIndex + 1, y: bufferLineNumber },
-              end: { x: startIndex + filePath.length + 1, y: bufferLineNumber },
-            },
-            text: filePath,
-            activate: () => onActivate(filePath),
-          });
-        }
+        links.push({
+          range: {
+            start: { x: startIndex + 1, y: bufferLineNumber },
+            end: { x: startIndex + filePath.length + 1, y: bufferLineNumber },
+          },
+          text: filePath,
+          activate: () => onActivate(filePath),
+        });
       }
 
       callback(links.length > 0 ? links : undefined);

@@ -61,8 +61,6 @@
   let unlistenDragLeave: UnlistenFn;
   let resizeObserver: ResizeObserver;
   let filePathLinkDisposable: { dispose: () => void } | null = null;
-  let onModKeyDown: (e: KeyboardEvent) => void;
-  let onModKeyUp: (e: KeyboardEvent) => void;
   let initialized = $state(false);
   let trackActivity = false;
   let visibilityGraceUntil = 0; // timestamp — suppress activity until this time
@@ -226,24 +224,11 @@
 
     terminal.open(containerRef);
 
-    // File path link provider: only active while Cmd/Ctrl is held to avoid
-    // running regex on every hovered line during normal terminal use.
-    onModKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && !filePathLinkDisposable) {
-        filePathLinkDisposable = createFilePathLinkProvider(
-          terminal,
-          (path) => openFileFromTerminal(workspaceId, paneId, tabId, path),
-        );
-      }
-    };
-    onModKeyUp = (e: KeyboardEvent) => {
-      if (e.key === 'Meta' || e.key === 'Control') {
-        filePathLinkDisposable?.dispose();
-        filePathLinkDisposable = null;
-      }
-    };
-    window.addEventListener('keydown', onModKeyDown);
-    window.addEventListener('keyup', onModKeyUp);
+    // File path link provider: always active, pre-compiled regex is cheap
+    filePathLinkDisposable = createFilePathLinkProvider(
+      terminal,
+      (path) => openFileFromTerminal(workspaceId, paneId, tabId, path),
+    );
 
     // OSC 0 (icon name + title) and OSC 2 (title): shells/programs set window title
     // promptCwd is auto-derived from title in terminalsStore.updateOsc()
@@ -613,8 +598,7 @@
     // which causes race conditions with terminal.dispose() below.
 
     window.removeEventListener('terminal-slot-ready', handleSlotReady);
-    window.removeEventListener('keydown', onModKeyDown);
-    window.removeEventListener('keyup', onModKeyUp);
+
     if (unlistenOutput) unlistenOutput();
     if (unlistenClose) unlistenClose();
     if (unlistenDragOver) unlistenDragOver();
