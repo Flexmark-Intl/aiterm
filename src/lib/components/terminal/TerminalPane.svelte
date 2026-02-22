@@ -247,14 +247,24 @@
 
     // OSC 0 (icon name + title) and OSC 2 (title): shells/programs set window title
     // promptCwd is auto-derived from title in terminalsStore.updateOsc()
-    terminal.parser.registerOscHandler(0, (data) => {
-      if (data) terminalsStore.updateOsc(tabId, { title: data });
-      return true;
-    });
-    terminal.parser.registerOscHandler(2, (data) => {
-      if (data) terminalsStore.updateOsc(tabId, { title: data });
-      return true;
-    });
+    // Also persist title as tab.name for non-custom tabs so restarts show the
+    // last-known title instead of "Terminal X".
+    let lastPersistedTitle = '';
+    function handleOscTitle(data: string) {
+      if (!data) return;
+      terminalsStore.updateOsc(tabId, { title: data });
+      // Persist as tab.name if user hasn't set a custom name, and title changed
+      if (data !== lastPersistedTitle) {
+        lastPersistedTitle = data;
+        const ws = workspacesStore.workspaces.find(w => w.id === workspaceId);
+        const tab = ws?.panes.find(p => p.id === paneId)?.tabs.find(t => t.id === tabId);
+        if (tab && !tab.custom_name) {
+          workspacesStore.renameTab(workspaceId, paneId, tabId, data, false);
+        }
+      }
+    }
+    terminal.parser.registerOscHandler(0, (data) => { handleOscTitle(data); return true; });
+    terminal.parser.registerOscHandler(2, (data) => { handleOscTitle(data); return true; });
 
     // OSC 7: shells report cwd via \e]7;file://host/path\e\\
     terminal.parser.registerOscHandler(7, (data) => {
