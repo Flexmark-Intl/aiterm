@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.2.3
+
+- Fix auto-resume SSH context loss and show connection info in prompt
+
 ## v1.2.2
 
 - Auto-update unmodified default triggers on app load when templates change
