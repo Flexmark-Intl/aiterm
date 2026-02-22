@@ -1100,8 +1100,8 @@ function createWorkspacesStore() {
         await commands.setTabNotesMode(workspaceId, paneId, newTab.id, sourceTab.notes_mode);
       }
 
-      // 7c. Copy trigger variables (always in shallow mode, pref-gated in full mode)
-      if (shallow || preferencesStore.cloneVariables) {
+      // 7c. Copy trigger variables (pref-gated, skip in shallow mode — variables are session-specific)
+      if (!shallow && preferencesStore.cloneVariables) {
         const srcVars = getVariables(tabId);
         if (srcVars && srcVars.size > 0) {
           const plain: Record<string, string> = {};

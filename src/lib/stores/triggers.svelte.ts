@@ -38,9 +38,15 @@ const regexCache = new Map<string, RegExp | null>();
 // Runtime variable storage: tabId → Map<varName, value>
 const variableMap = new Map<string, Map<string, string>>();
 
-// Variable trigger transition tracking: triggerId → tabId → last evaluated result
-// Only fires on false→true transition to prevent repeated firing.
-const variableTransitions = new Map<string, Map<string, boolean>>();
+// Variable trigger transition tracking: triggerId → tabId → { result, varsSnapshot }
+// Fires on false→true transition OR when condition stays true but variable values change.
+const variableTransitions = new Map<string, Map<string, { result: boolean; snapshot: string }>>();
+
+/** Deterministic snapshot of variable values for change detection. */
+function varsSnapshot(vars: Map<string, string>): string {
+  const entries = [...vars.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  return entries.map(([k, v]) => `${k}=${v}`).join('\0');
+}
 
 /** Resolve the effective match mode for a trigger (migration compat). */
 export function resolveMatchMode(trigger: { match_mode?: MatchMode | null; plain_text?: boolean }): MatchMode {
@@ -341,17 +347,21 @@ function evaluateVariableTriggers(tabId: string) {
       continue; // invalid condition — skip
     }
 
-    // Get previous result
+    // Build a snapshot of current variable values for change detection
+    const snapshot = varsSnapshot(vars);
+
+    // Get previous state
     let tabTransitions = variableTransitions.get(trigger.id);
     if (!tabTransitions) {
       tabTransitions = new Map();
       variableTransitions.set(trigger.id, tabTransitions);
     }
-    const prev = tabTransitions.get(tabId) ?? false;
-    tabTransitions.set(tabId, result);
+    const prev = tabTransitions.get(tabId);
+    tabTransitions.set(tabId, { result, snapshot });
 
-    // Only fire on false→true transition
-    if (result && !prev) {
+    // Fire on false→true transition, or when condition stays true but values changed
+    const prevResult = prev?.result ?? false;
+    if (result && (!prevResult || snapshot !== prev?.snapshot)) {
       markFired(trigger.id, tabId);
       executeActions(trigger, tabId);
     }
@@ -467,6 +477,7 @@ export function loadTabVariables(tabId: string, vars: Record<string, string>) {
 /** Seed variable transitions with current evaluation results (no firing). */
 function initializeVariableTransitions(tabId: string, vars: Map<string, string>) {
   const triggers = preferencesStore.triggers;
+  const snapshot = varsSnapshot(vars);
   for (const trigger of triggers) {
     if (!trigger.enabled || !trigger.pattern) continue;
     if (resolveMatchMode(trigger) !== 'variable') continue;
@@ -479,7 +490,7 @@ function initializeVariableTransitions(tabId: string, vars: Map<string, string>)
         tabMap = new Map();
         variableTransitions.set(trigger.id, tabMap);
       }
-      tabMap.set(tabId, result);
+      tabMap.set(tabId, { result, snapshot });
     } catch {
       // invalid condition — skip
     }
