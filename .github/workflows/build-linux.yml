@@ -41,12 +41,16 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Get version
+        id: version
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
       - name: Build Tauri app
         run: npx tauri build
 
       - name: Upload .deb artifact
         uses: actions/upload-artifact@v4
         with:
-          name: aiterm-linux-deb
+          name: aiterm-${{ steps.version.outputs.version }}-linux-deb
           path: src-tauri/target/release/bundle/deb/*.deb
           if-no-files-found: error
