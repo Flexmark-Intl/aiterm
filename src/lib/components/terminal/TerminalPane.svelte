@@ -781,7 +781,10 @@
   async function submitAutoResumePrompt() {
     if (!autoResumePrompt) return;
     const cmd = autoResumePromptValue.trim() || null;
-    await workspacesStore.setTabAutoResumeContext(workspaceId, paneId, tabId, autoResumePrompt.cwd, autoResumePrompt.sshCmd, autoResumePrompt.remoteCwd, cmd);
+    const sshCmd = autoResumePrompt.sshCmd?.trim() || null;
+    const remoteCwd = sshCmd ? (autoResumePrompt.remoteCwd?.trim() || null) : null;
+    const cwd = autoResumePrompt.cwd?.trim() || null;
+    await workspacesStore.setTabAutoResumeContext(workspaceId, paneId, tabId, cwd, sshCmd, remoteCwd, cmd);
     isAutoResume = true;
     autoResumePrompt = null;
     autoResumePromptValue = '';
@@ -944,6 +947,29 @@
   {#if autoResumePrompt}
     <div class="auto-resume-prompt-backdrop">
     <div class="auto-resume-prompt">
+      <div class="auto-resume-context-info">
+        {#if autoResumePrompt.sshCmd != null}
+          <div class="auto-resume-context-row">
+            <span class="auto-resume-context-label">SSH</span>
+            <input class="auto-resume-context-input" type="text" bind:value={autoResumePrompt.sshCmd}
+              onkeydown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submitAutoResumePrompt(); if (e.key === 'Escape') cancelAutoResumePrompt(); }}
+              placeholder="ssh user@host" />
+          </div>
+          <div class="auto-resume-context-row">
+            <span class="auto-resume-context-label">Remote CWD</span>
+            <input class="auto-resume-context-input" type="text" bind:value={autoResumePrompt.remoteCwd}
+              onkeydown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submitAutoResumePrompt(); if (e.key === 'Escape') cancelAutoResumePrompt(); }}
+              placeholder="~/path" />
+          </div>
+        {:else}
+          <div class="auto-resume-context-row">
+            <span class="auto-resume-context-label">CWD</span>
+            <input class="auto-resume-context-input" type="text" bind:value={autoResumePrompt.cwd}
+              onkeydown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submitAutoResumePrompt(); if (e.key === 'Escape') cancelAutoResumePrompt(); }}
+              placeholder="/path/to/dir" />
+          </div>
+        {/if}
+      </div>
       <!-- svelte-ignore a11y_label_has_associated_control -- label is visual context for custom ResizableTextarea component -->
       <label class="auto-resume-prompt-label">Command to run after {autoResumePrompt.sshCmd ? 'connect' : 'start'}</label>
       <ResizableTextarea
@@ -1100,6 +1126,48 @@
     color: var(--fg);
     font-size: 13px;
     font-weight: 500;
+  }
+
+  .auto-resume-context-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .auto-resume-context-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    background: var(--bg-dark);
+    border: 1px solid var(--bg-light);
+    border-radius: 4px;
+    padding: 6px 10px;
+  }
+
+  .auto-resume-context-label {
+    color: var(--fg-dim);
+    font-size: 11px;
+    min-width: 70px;
+    flex-shrink: 0;
+  }
+
+  .auto-resume-context-input,
+  .auto-resume-context-input:focus {
+    appearance: none;
+    -webkit-appearance: none;
+    color: var(--fg);
+    color-scheme: dark;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    font-family: inherit;
+    font-size: 12px;
+    padding: 0;
+    flex: 1;
+    min-width: 0;
+    outline: 0;
+    outline-style: none;
   }
 
   .auto-resume-prompt-hint {

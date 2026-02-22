@@ -318,10 +318,30 @@ async function handleEnableAutoResume(tabId: string, commandTemplate: string) {
       remoteCwd = (osc7Cwd && !isOsc7Stale) ? osc7Cwd : promptCwd ?? null;
     }
 
-    const cmd = interpolateVariables(tabId, commandTemplate, true);
+    // Save the command template raw — interpolation happens at execution time
+    // in TerminalPane so it always uses the latest trigger variables.
+    const cmd = commandTemplate || null;
+
+    // Prevent SSH context downgrade: if the tab already has an SSH auto-resume
+    // context but the current PTY shows no SSH (e.g. SSH replay failed on
+    // restore), preserve the existing SSH/CWD fields and only update the command.
+    if (!sshCmd) {
+      const ws = workspacesStore.workspaces.find(w => w.id === instance.workspaceId);
+      const pane = ws?.panes.find(p => p.id === instance.paneId);
+      const tab = pane?.tabs.find(t => t.id === tabId);
+      if (tab?.auto_resume_ssh_command) {
+        await workspacesStore.setTabAutoResumeContext(
+          instance.workspaceId, instance.paneId, tabId,
+          tab.auto_resume_cwd, tab.auto_resume_ssh_command,
+          tab.auto_resume_remote_cwd, cmd,
+        );
+        return;
+      }
+    }
+
     await workspacesStore.setTabAutoResumeContext(
       instance.workspaceId, instance.paneId, tabId,
-      localCwd, sshCmd, remoteCwd, cmd || null,
+      localCwd, sshCmd, remoteCwd, cmd,
     );
   } catch (e) {
     logError(`enable_auto_resume failed for tab ${tabId}: ${e}`);

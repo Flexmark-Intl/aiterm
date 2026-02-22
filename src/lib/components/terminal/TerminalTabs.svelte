@@ -583,7 +583,11 @@
           <span class="indicator"><StatusDot color="accent" /></span>
         {/if}
         {#if !isEditor && (tab.auto_resume_ssh_command || tab.auto_resume_cwd)}
-          <span class="auto-resume-indicator" title="Auto-resume enabled">&#x21BB;</span>
+          <span class="auto-resume-indicator" title={
+            tab.auto_resume_ssh_command
+              ? `Auto-resume: ${tab.auto_resume_ssh_command}${tab.auto_resume_remote_cwd ? ` (${tab.auto_resume_remote_cwd})` : ''}`
+              : `Auto-resume: ${tab.auto_resume_cwd ?? 'enabled'}`
+          }>&#x21BB;</span>
         {/if}
         <span class="tab-name">{displayName(tab)}</span>
         <div class="tab-actions" class:single-action={isEditor || isDiff} class:triple-action={!isEditor && !isDiff}>
