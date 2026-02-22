@@ -148,20 +148,38 @@ function createWorkspacesStore() {
       }
       notesVisible = seeded;
 
-      // Migration: update old auto-resume commands to current version
+      // Migration: update old auto-resume commands and backfill missing context
       const OLD_RESUME_COMMANDS = [
         'if [ -n "%claudeSessionId" ]; then claude --resume %claudeSessionId; elif [ -n "%claudeResumeCommand" ]; then %claudeResumeCommand; else claude --continue; fi',
       ];
       for (const ws of workspaces) {
         for (const pane of ws.panes) {
           for (const tab of pane.tabs) {
+            let migrated = false;
+
+            // Update old auto-resume command templates to current version
             if (tab.auto_resume_command && OLD_RESUME_COMMANDS.includes(tab.auto_resume_command)) {
               tab.auto_resume_command = CLAUDE_RESUME_COMMAND;
               tab.auto_resume_remembered_command = CLAUDE_RESUME_COMMAND;
+              migrated = true;
+            }
+
+            // Backfill missing SSH/CWD context from restore fields — older
+            // versions stored the command but not the connection context.
+            if (tab.auto_resume_command && !tab.auto_resume_ssh_command && !tab.auto_resume_cwd) {
+              if (tab.restore_ssh_command || tab.restore_cwd) {
+                tab.auto_resume_ssh_command = tab.restore_ssh_command;
+                tab.auto_resume_cwd = tab.restore_cwd;
+                tab.auto_resume_remote_cwd = tab.restore_remote_cwd;
+                migrated = true;
+              }
+            }
+
+            if (migrated) {
               await commands.setTabAutoResumeContext(
                 ws.id, pane.id, tab.id,
                 tab.auto_resume_cwd, tab.auto_resume_ssh_command,
-                tab.auto_resume_remote_cwd, CLAUDE_RESUME_COMMAND,
+                tab.auto_resume_remote_cwd, tab.auto_resume_command,
               );
             }
           }
