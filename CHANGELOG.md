@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.2.4
+
+- Migrate existing auto-resume tabs to include SSH/CWD context on load
+- Repair pre-interpolated auto-resume commands that contained stale variable values
+
 ## v1.2.3
 
 - Fix auto-resume SSH context loss and show connection info in prompt
