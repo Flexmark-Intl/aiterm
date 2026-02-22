@@ -17,43 +17,6 @@
   import { parseCondition } from '$lib/triggers/variableCondition';
   import type { MatchMode } from '$lib/tauri/types';
 
-  function actionsEqual(a: TriggerActionEntry[], b: TriggerActionEntry[]): boolean {
-    if (a.length !== b.length) return false;
-    return a.every((ae, i) => {
-      const be = b[i];
-      return ae.action_type === be.action_type
-        && (ae.command ?? null) === (be.command ?? null)
-        && (ae.title ?? null) === (be.title ?? null)
-        && (ae.message ?? null) === (be.message ?? null)
-        && (ae.tab_state ?? null) === (be.tab_state ?? null);
-    });
-  }
-
-  function variablesEqual(a: VariableMapping[], b: VariableMapping[]): boolean {
-    if (a.length !== b.length) return false;
-    return a.every((av, i) => {
-      const bv = b[i];
-      return av.name === bv.name
-        && av.group === bv.group
-        && (av.template ?? null) === (bv.template ?? null);
-    });
-  }
-
-  /** Check if a default trigger has been modified from its template. */
-  function isDefaultModified(trigger: Trigger): boolean {
-    if (!trigger.default_id) return false;
-    const tmpl = DEFAULT_TRIGGERS[trigger.default_id];
-    if (!tmpl) return false;
-    return trigger.name !== tmpl.name
-      || (trigger.description ?? '') !== (tmpl.description ?? '')
-      || trigger.pattern !== tmpl.pattern
-      || trigger.cooldown !== tmpl.cooldown
-      || trigger.plain_text !== tmpl.plain_text
-      || resolveMatchMode(trigger) !== resolveMatchMode(tmpl)
-      || !actionsEqual(trigger.actions, tmpl.actions)
-      || !variablesEqual(trigger.variables, tmpl.variables);
-  }
-
   /** Restore a default trigger to its template values (keeps enabled, workspaces, id). */
   function restoreDefault(trigger: Trigger) {
     if (!trigger.default_id) return;
@@ -68,6 +31,7 @@
       match_mode: tmpl.match_mode ?? null,
       actions: structuredClone(tmpl.actions),
       variables: structuredClone(tmpl.variables),
+      user_modified: false,
     });
   }
 
@@ -152,9 +116,15 @@
     if (patch.variables) {
       patch.variables = [...patch.variables].sort((a, b) => a.group - b.group);
     }
-    const updated = preferencesStore.triggers.map(t =>
-      t.id === id ? { ...t, ...patch } : t
-    );
+    const updated = preferencesStore.triggers.map(t => {
+      if (t.id !== id) return t;
+      const merged = { ...t, ...patch };
+      // Mark default triggers as user-modified (unless the patch explicitly sets user_modified)
+      if (merged.default_id && !('user_modified' in patch)) {
+        merged.user_modified = true;
+      }
+      return merged;
+    });
     preferencesStore.setTriggers(updated);
   }
 
@@ -964,7 +934,7 @@
               {#if trigger.default_id}
                 <button
                   class="restore-default-btn"
-                  disabled={!isDefaultModified(trigger)}
+                  disabled={!trigger.user_modified}
                   onclick={() => restoreDefault(trigger)}
                   title="Restore to default"
                 >Reset</button>

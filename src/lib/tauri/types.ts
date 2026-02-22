@@ -119,6 +119,7 @@ export interface Trigger {
   plain_text: boolean;
   match_mode?: MatchMode | null;
   default_id?: string | null;
+  user_modified?: boolean;
 }
 
 export interface Preferences {

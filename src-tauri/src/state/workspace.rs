@@ -512,6 +512,10 @@ pub struct Trigger {
     /// Links this trigger to an app-provided default template (e.g. "claude-resume").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_id: Option<String>,
+    /// True when the user has manually edited this default trigger.
+    /// Prevents auto-updating from the app-provided template.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub user_modified: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]

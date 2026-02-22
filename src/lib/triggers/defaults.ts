@@ -35,7 +35,7 @@ export const DEFAULT_TRIGGERS: Record<string, Omit<Trigger, 'id' | 'enabled' | '
   'claude-question': {
     name: 'Claude Asking Question',
     description: 'Detects when Claude Code stops to ask a question or request confirmation. Sends a notification and sets the tab to "question" state.',
-    pattern: '(Do you want to proceed?|Enter to confirm \u00b7 Esc to cancel)',
+    pattern: '(Do you want to proceed?|Do you want to make this edit|Enter to confirm \u00b7 Esc to cancel)',
     actions: [
       { action_type: 'notify', command: null, title: null, message: 'Claude needs your attention.', tab_state: null },
       { action_type: 'set_tab_state', command: null, title: null, message: null, tab_state: 'question' },
@@ -109,8 +109,16 @@ export function seedDefaultTriggers(
 
     const linked = list.find(t => t.default_id === defaultId);
     if (linked) {
-      if (!linked.description && tmpl.description) {
-        linked.description = tmpl.description;
+      // Auto-update unmodified defaults to latest template values
+      if (!linked.user_modified) {
+        linked.name = tmpl.name;
+        linked.description = tmpl.description ?? null;
+        linked.pattern = tmpl.pattern;
+        linked.cooldown = tmpl.cooldown;
+        linked.plain_text = tmpl.plain_text;
+        linked.match_mode = tmpl.match_mode ?? null;
+        linked.actions = structuredClone(tmpl.actions);
+        linked.variables = structuredClone(tmpl.variables);
         changed = true;
       }
       continue;
