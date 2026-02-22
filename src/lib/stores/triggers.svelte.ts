@@ -38,6 +38,11 @@ const regexCache = new Map<string, RegExp | null>();
 // Runtime variable storage: tabId → Map<varName, value>
 const variableMap = new Map<string, Map<string, string>>();
 
+// Tabs where triggers should extract variables but NOT fire actions.
+// Used during terminal restore/auto-resume to prevent old output from
+// triggering notifications and commands.
+const suppressedTabs = new Set<string>();
+
 // Variable trigger transition tracking: triggerId → tabId → { result, varsSnapshot }
 // Fires on false→true transition OR when condition stays true but variable values change.
 const variableTransitions = new Map<string, Map<string, { result: boolean; snapshot: string }>>();
@@ -288,6 +293,9 @@ async function fireTrigger(
   // Extract variables (always, independent of actions)
   extractAndStoreVariables(tabId, match, trigger.variables);
 
+  // Skip actions during the post-mount suppression window (restore/auto-resume)
+  if (suppressedTabs.has(tabId)) return;
+
   // Execute actions
   await executeActions(trigger, tabId);
 }
@@ -363,7 +371,7 @@ function evaluateVariableTriggers(tabId: string) {
     const prevResult = prev?.result ?? false;
     if (result && (!prevResult || snapshot !== prev?.snapshot)) {
       markFired(trigger.id, tabId);
-      executeActions(trigger, tabId);
+      if (!suppressedTabs.has(tabId)) executeActions(trigger, tabId);
     }
   }
 }
@@ -450,6 +458,7 @@ export function processOutput(tabId: string, data: Uint8Array) {
 export function cleanupTab(tabId: string) {
   buffers.delete(tabId);
   variableMap.delete(tabId);
+  suppressedTabs.delete(tabId);
   for (const tabMap of cooldowns.values()) {
     tabMap.delete(tabId);
   }
@@ -459,6 +468,17 @@ export function cleanupTab(tabId: string) {
   for (const tabMap of variableTransitions.values()) {
     tabMap.delete(tabId);
   }
+}
+
+/** Suppress action execution for a tab (variables still extracted).
+ *  Call on mount to prevent restored/auto-resumed output from firing triggers. */
+export function suppressTab(tabId: string) {
+  suppressedTabs.add(tabId);
+}
+
+/** Re-enable action execution for a tab after the restore window. */
+export function unsuppressTab(tabId: string) {
+  suppressedTabs.delete(tabId);
 }
 
 /** Load persisted trigger variables into runtime map (called on mount).

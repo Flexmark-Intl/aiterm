@@ -22,7 +22,7 @@
   import { isModKey, modSymbol } from '$lib/utils/platform';
   import { buildShellIntegrationSnippet, buildInstallSnippet } from '$lib/utils/shellIntegration';
   import ResizableTextarea from '$lib/components/ResizableTextarea.svelte';
-  import { processOutput, cleanupTab, loadTabVariables, interpolateVariables, getVariables, clearTabVariables } from '$lib/stores/triggers.svelte';
+  import { processOutput, cleanupTab, loadTabVariables, interpolateVariables, getVariables, clearTabVariables, suppressTab, unsuppressTab } from '$lib/stores/triggers.svelte';
   import { dispatch } from '$lib/stores/notificationDispatch';
   import { CLAUDE_RESUME_COMMAND } from '$lib/triggers/defaults';
   import { createFilePathLinkProvider } from '$lib/utils/filePathDetector';
@@ -387,6 +387,11 @@
     if (cols < 1) cols = 80;
     if (rows < 1) rows = 24;
 
+    // Suppress trigger actions during the restore/auto-resume window.
+    // Variables are still extracted so state is correct, but notifications
+    // and commands won't fire from old scrollback or Claude redraw output.
+    suppressTab(tabId);
+
     // Listen for PTY output
     unlistenOutput = await listen<number[]>(`pty-output-${ptyId}`, (event) => {
       const data = new Uint8Array(event.payload);
@@ -588,8 +593,9 @@
 
     initialized = true;
     terminal.focus();
-    // Delay activity tracking so initial shell prompt doesn't trigger indicator
-    setTimeout(() => { trackActivity = true; }, 2000);
+    // Delay activity tracking and trigger actions so initial shell prompt
+    // and restored/auto-resumed output don't fire indicators or triggers.
+    setTimeout(() => { trackActivity = true; unsuppressTab(tabId); }, 2000);
   });
 
   onDestroy(() => {
