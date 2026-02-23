@@ -3,7 +3,7 @@ mod commands;
 mod pty;
 mod state;
 
-pub const APP_DISPLAY_NAME: &str = "aiTerm";
+pub const APP_DISPLAY_NAME: &str = if cfg!(debug_assertions) { "aiTermDev" } else { "aiTerm" };
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 use state::{load_state, AppState, WindowData, Workspace};
