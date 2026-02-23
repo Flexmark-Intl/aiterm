@@ -2,7 +2,7 @@ import type { ClaudeCodeToolRequest, DiffContext } from '$lib/tauri/types';
 import * as commands from '$lib/tauri/commands';
 import { workspacesStore } from '$lib/stores/workspaces.svelte';
 import { terminalsStore } from '$lib/stores/terminals.svelte';
-import { getEditorByFilePath } from '$lib/stores/editorRegistry';
+import { getEditorByFilePath } from '$lib/stores/editorRegistry.svelte';
 import { error as logError, info as logInfo } from '@tauri-apps/plugin-log';
 
 export interface PendingSelection {

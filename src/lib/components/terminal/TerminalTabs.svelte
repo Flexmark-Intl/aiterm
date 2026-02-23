@@ -9,6 +9,7 @@
   import { preferencesStore } from '$lib/stores/preferences.svelte';
   import { getCompiledTitlePatterns, extractDirFromTitle } from '$lib/utils/promptPattern';
   import { onVariablesChange, interpolateVariables } from '$lib/stores/triggers.svelte';
+  import { isEditorDirty } from '$lib/stores/editorRegistry.svelte';
   import Icon from '$lib/components/Icon.svelte';
   import StatusDot from '$lib/components/ui/StatusDot.svelte';
   import IconButton from '$lib/components/ui/IconButton.svelte';
@@ -572,7 +573,7 @@
         {#if isDiff}
           <span class="editor-icon" title="Diff">&#x21C4;</span>
         {:else if isEditor}
-          <span class="editor-icon" title="Editor">&#x2630;</span>
+          <span class="editor-icon" class:editor-dirty={isEditorDirty(tab.id)} title={isEditorDirty(tab.id) ? 'Unsaved changes' : 'Editor'}>&#x2630;</span>
         {:else if tabState === 'alert'}
           <span class="indicator alert-indicator">&#x2757;</span>
         {:else if tabState === 'question'}
@@ -766,6 +767,11 @@
     margin-right: 4px;
     line-height: 1;
     opacity: 0.7;
+  }
+
+  .editor-icon.editor-dirty {
+    color: var(--yellow, #e0af68);
+    opacity: 1;
   }
 
 

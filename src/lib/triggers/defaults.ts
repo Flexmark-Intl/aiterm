@@ -73,6 +73,7 @@ export const DEFAULT_TRIGGERS: Record<string, Omit<Trigger, 'id' | 'enabled' | '
     pattern: 'Conversation compacted',
     actions: [
       { action_type: 'set_tab_state', command: null, title: null, message: null, tab_state: 'alert' },
+      { action_type: 'notify', command: null, title: null, message: 'Compaction complete.', tab_state: null },
     ],
     cooldown: 0.3,
     variables: [],

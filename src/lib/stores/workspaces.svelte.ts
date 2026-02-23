@@ -1180,6 +1180,13 @@ function createWorkspacesStore() {
       const sourceTab = pane?.tabs.find(t => t.id === tabId);
       if (!ws || !pane || !sourceTab) return;
 
+      // Editor tabs: re-read file from disk
+      if (sourceTab.tab_type === 'editor') {
+        window.dispatchEvent(new CustomEvent('editor-reload', { detail: { tabId } }));
+        return;
+      }
+
+      // Terminal tabs: duplicate + delete for full PTY restart
       // Remember exact name and position before duplication
       const tabName = sourceTab.name;
       const isCustom = sourceTab.custom_name;

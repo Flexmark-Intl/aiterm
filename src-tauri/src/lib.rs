@@ -138,7 +138,7 @@ pub fn run() {
             let reload_all_item = MenuItem::with_id(app, "reload_all", "Reload All Windows", true, None::<&str>)?;
             let new_window_item = MenuItem::with_id(app, "new_window", "New Window", true, Some("CmdOrCtrl+N"))?;
             let duplicate_window_item = MenuItem::with_id(app, "duplicate_window", "Duplicate Window", true, Some("CmdOrCtrl+Shift+N"))?;
-            let reload_tab_item = MenuItem::with_id(app, "reload_tab", "Reload Current Tab", true, None::<&str>)?;
+            let reload_tab_item = MenuItem::with_id(app, "reload_tab", "Reload Current Tab", true, Some("CmdOrCtrl+Shift+R"))?;
             let reload_window_item = MenuItem::with_id(app, "reload_window", "Reload Current Window", true, None::<&str>)?;
 
             let app_menu = SubmenuBuilder::new(app, "aiTerm")

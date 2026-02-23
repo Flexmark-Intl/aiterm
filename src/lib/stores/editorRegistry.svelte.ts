@@ -9,17 +9,33 @@ export interface EditorRegistryEntry {
 // Simple mutable map - not reactive (accessed by reference)
 const registry = new Map<string, EditorRegistryEntry>();
 
+// Reactive set of dirty tab IDs for UI (e.g. tab indicators)
+let dirtyTabs = $state(new Set<string>());
+
 export function registerEditor(tabId: string, view: EditorView, filePath: string): void {
   registry.set(tabId, { view, filePath, isDirty: false });
 }
 
 export function unregisterEditor(tabId: string): void {
   registry.delete(tabId);
+  if (dirtyTabs.has(tabId)) {
+    dirtyTabs = new Set([...dirtyTabs].filter(id => id !== tabId));
+  }
 }
 
 export function setEditorDirty(tabId: string, dirty: boolean): void {
   const entry = registry.get(tabId);
   if (entry) entry.isDirty = dirty;
+  // Update reactive set
+  if (dirty && !dirtyTabs.has(tabId)) {
+    dirtyTabs = new Set(dirtyTabs).add(tabId);
+  } else if (!dirty && dirtyTabs.has(tabId)) {
+    dirtyTabs = new Set([...dirtyTabs].filter(id => id !== tabId));
+  }
+}
+
+export function isEditorDirty(tabId: string): boolean {
+  return dirtyTabs.has(tabId);
 }
 
 export function getEditorByTabId(tabId: string): EditorRegistryEntry | undefined {

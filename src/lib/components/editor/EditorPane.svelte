@@ -14,7 +14,7 @@
   import { preferencesStore } from '$lib/stores/preferences.svelte';
   import { dispatch } from '$lib/stores/notificationDispatch';
   import { workspacesStore } from '$lib/stores/workspaces.svelte';
-  import { registerEditor, unregisterEditor, setEditorDirty } from '$lib/stores/editorRegistry';
+  import { registerEditor, unregisterEditor, setEditorDirty } from '$lib/stores/editorRegistry.svelte';
   import { claudeCodeStore } from '$lib/stores/claudeCode.svelte';
   import { EditorSelection } from '@codemirror/state';
   import { error as logError } from '@tauri-apps/plugin-log';
@@ -110,6 +110,38 @@
     }
   }
 
+  function handleEditorReload(e: Event) {
+    const detail = (e as CustomEvent).detail;
+    if (detail?.tabId === tabId) {
+      reloadFile();
+    }
+  }
+
+  async function reloadFile() {
+    if (!editorView) return;
+    const filePath = editorFile.remote_path ?? editorFile.file_path;
+    try {
+      let content: string;
+      if (editorFile.is_remote && editorFile.remote_ssh_command && editorFile.remote_path) {
+        const result = await scpReadFile(editorFile.remote_ssh_command, editorFile.remote_path);
+        content = result.content;
+      } else {
+        const result = await readFile(editorFile.file_path);
+        content = result.content;
+      }
+      originalContent = content;
+      editorView.dispatch({
+        changes: { from: 0, to: editorView.state.doc.length, insert: content },
+      });
+      dirty = false;
+      setEditorDirty(tabId, false);
+      dispatch('File reloaded', filePath.split('/').pop() ?? 'file', 'info');
+    } catch (e) {
+      dispatch('Reload failed', String(e), 'error');
+      logError(`Failed to reload file: ${e}`);
+    }
+  }
+
   async function saveFile() {
     if (!editorView || !dirty) return;
     const content = editorView.state.doc.toString();
@@ -133,6 +165,7 @@
     attachToSlot();
     window.addEventListener('terminal-slot-ready', handleSlotReady);
     window.addEventListener('editor-save', handleEditorSave);
+    window.addEventListener('editor-reload', handleEditorReload);
 
     const filePath = editorFile.remote_path ?? editorFile.file_path;
     const isImage = isImageFile(filePath);
@@ -306,6 +339,7 @@
   onDestroy(() => {
     window.removeEventListener('terminal-slot-ready', handleSlotReady);
     window.removeEventListener('editor-save', handleEditorSave);
+    window.removeEventListener('editor-reload', handleEditorReload);
     unregisterEditor(tabId);
     if (editorView) {
       editorView.destroy();
@@ -368,9 +402,6 @@
         />
       </div>
     </div>
-  {/if}
-  {#if dirty}
-    <div class="dirty-indicator" title="Unsaved changes"></div>
   {/if}
 </div>
 
@@ -560,14 +591,4 @@
     color: var(--accent);
   }
 
-  .dirty-indicator {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--yellow, #e0af68);
-    z-index: 5;
-  }
 </style>

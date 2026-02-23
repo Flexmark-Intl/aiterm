@@ -856,7 +856,14 @@
       ...(getVariables(tabId)?.size ? [
         {
           label: 'Clear Trigger Variables',
-          action: () => { clearTabVariables(tabId); },
+          action: () => {
+            const vars = getVariables(tabId);
+            if (vars?.size) {
+              const entries = [...vars.entries()].map(([k, v]) => `${k}: ${v}`).join('\n');
+              dispatch('Variables Cleared', entries, 'info');
+            }
+            clearTabVariables(tabId);
+          },
         },
       ] : []),
       { label: '', separator: true, action: () => {} },
