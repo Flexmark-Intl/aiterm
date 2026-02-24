@@ -24,6 +24,10 @@ export function getImageMimeType(filePath: string): string | null {
   return IMAGE_MIME[filePath.slice(dot + 1).toLowerCase()] ?? null;
 }
 
+export function isPdfFile(filePath: string): boolean {
+  return filePath.toLowerCase().endsWith('.pdf');
+}
+
 /** Extensionless filenames that are known shell scripts */
 const SHELL_FILENAMES = new Set([
   '.bashrc', '.bash_profile', '.bash_login', '.bash_logout', '.bash_aliases',

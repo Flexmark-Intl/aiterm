@@ -8,7 +8,7 @@
   import { search, searchKeymap, highlightSelectionMatches } from '@codemirror/search';
   import type { EditorFileInfo } from '$lib/tauri/types';
   import { readFile, readFileBase64, writeFile, scpReadFile, scpReadFileBase64, scpWriteFile } from '$lib/tauri/commands';
-  import { loadLanguageExtension, detectLanguageFromContent, isImageFile, getImageMimeType } from '$lib/utils/languageDetect';
+  import { loadLanguageExtension, detectLanguageFromContent, isImageFile, getImageMimeType, isPdfFile } from '$lib/utils/languageDetect';
   import { buildEditorExtension } from '$lib/utils/editorTheme';
   import { getTheme } from '$lib/themes';
   import { preferencesStore } from '$lib/stores/preferences.svelte';
@@ -45,8 +45,35 @@
   let imageZoom = $state(0);
   let imageEl = $state<HTMLImageElement | null>(null);
   let imageScrollEl = $state<HTMLDivElement | null>(null);
+  let altKeyHeld = $state(false);
+
+  // PDF viewer state
+  let pdfDoc = $state<any>(null);
+  let pdfPageCount = $state(0);
+  let pdfCurrentPage = $state(1);
+  let pdfZoom = $state(100);
+  let pdfCanvasRefs = $state<HTMLCanvasElement[]>([]);
+  let pdfScrollEl = $state<HTMLDivElement | null>(null);
+  let pdfFileSize = $state(0);
+  let pdfRendering = $state(false);
+
+  const PDF_ZOOM_STEPS = [50, 75, 100, 125, 150, 200, 300, 400];
 
   const ZOOM_STEPS = [10, 25, 50, 75, 100, 150, 200, 300, 400, 500];
+
+  let cursorX = $state(0);
+  let cursorY = $state(0);
+  let cursorVisible = $state(false);
+
+  function handleImageMouseMove(e: MouseEvent) {
+    cursorX = e.clientX;
+    cursorY = e.clientY;
+    cursorVisible = true;
+  }
+
+  function handleImageMouseLeave() {
+    cursorVisible = false;
+  }
 
   /** Compute the actual display percentage when in fit-to-window mode. */
   const fitPercent = $derived.by(() => {
@@ -61,20 +88,69 @@
   /** The effective zoom percentage shown in the label. */
   const displayZoom = $derived(imageZoom === 0 ? fitPercent : imageZoom);
 
-  function zoomIn() {
-    const current = displayZoom;
-    const next = ZOOM_STEPS.find(z => z > current);
-    imageZoom = next ?? ZOOM_STEPS[ZOOM_STEPS.length - 1];
+  /**
+   * Zoom and keep the given point (in scroll-container coordinates) anchored.
+   * If no point is given, anchors on the current viewport center.
+   */
+  function zoomTo(newZoom: number, anchorX?: number, anchorY?: number) {
+    const sc = imageScrollEl;
+    if (!sc || !imageNaturalWidth) {
+      imageZoom = newZoom;
+      return;
+    }
+
+    const oldZoom = displayZoom;
+    // Anchor point in scroll-container viewport coords (default = center)
+    const ax = anchorX ?? sc.clientWidth / 2;
+    const ay = anchorY ?? sc.clientHeight / 2;
+    // Point in image-natural-pixel space
+    const imgX = (sc.scrollLeft + ax) / (oldZoom / 100);
+    const imgY = (sc.scrollTop + ay) / (oldZoom / 100);
+
+    imageZoom = newZoom;
+
+    // After Svelte updates the DOM with the new size, restore scroll
+    requestAnimationFrame(() => {
+      const effectiveZoom = newZoom === 0 ? fitPercent : newZoom;
+      sc.scrollLeft = imgX * (effectiveZoom / 100) - ax;
+      sc.scrollTop = imgY * (effectiveZoom / 100) - ay;
+    });
   }
 
-  function zoomOut() {
+  function zoomIn(anchorX?: number, anchorY?: number) {
+    const current = displayZoom;
+    const next = ZOOM_STEPS.find(z => z > current);
+    zoomTo(next ?? ZOOM_STEPS[ZOOM_STEPS.length - 1], anchorX, anchorY);
+  }
+
+  function zoomOut(anchorX?: number, anchorY?: number) {
     const current = displayZoom;
     const prev = [...ZOOM_STEPS].reverse().find(z => z < current);
-    imageZoom = prev ?? ZOOM_STEPS[0];
+    zoomTo(prev ?? ZOOM_STEPS[0], anchorX, anchorY);
   }
 
   function zoomFit() {
     imageZoom = 0;
+  }
+
+  function handleImageClick(e: MouseEvent) {
+    const sc = imageScrollEl;
+    if (!sc) return;
+    // Anchor at click position relative to scroll container
+    const rect = sc.getBoundingClientRect();
+    const ax = e.clientX - rect.left;
+    const ay = e.clientY - rect.top;
+
+    if (e.altKey || e.button === 2) {
+      zoomOut(ax, ay);
+    } else {
+      zoomIn(ax, ay);
+    }
+  }
+
+  function handleImageContextMenu(e: MouseEvent) {
+    e.preventDefault();
+    handleImageClick(e);
   }
 
   function formatFileSize(bytes: number): string {
@@ -87,6 +163,93 @@
     const img = e.target as HTMLImageElement;
     imageNaturalWidth = img.naturalWidth;
     imageNaturalHeight = img.naturalHeight;
+  }
+
+  let pdfTextLayerRefs = $state<HTMLDivElement[]>([]);
+
+  async function renderPdfPages() {
+    if (!pdfDoc || pdfRendering) return;
+    pdfRendering = true;
+    const scale = pdfZoom / 100;
+    const dpr = window.devicePixelRatio || 1;
+
+    for (let i = 0; i < pdfDoc.numPages; i++) {
+      const page = await pdfDoc.getPage(i + 1);
+      const cssViewport = page.getViewport({ scale });
+      const renderViewport = page.getViewport({ scale: scale * dpr });
+      const canvas = pdfCanvasRefs[i];
+      if (!canvas) continue;
+
+      canvas.width = renderViewport.width;
+      canvas.height = renderViewport.height;
+      canvas.style.width = `${cssViewport.width}px`;
+      canvas.style.height = `${cssViewport.height}px`;
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) continue;
+      await page.render({ canvasContext: ctx, viewport: renderViewport }).promise;
+
+      // Render text layer for selection/copy
+      const textDiv = pdfTextLayerRefs[i];
+      if (textDiv) {
+        textDiv.innerHTML = '';
+        textDiv.style.width = `${cssViewport.width}px`;
+        textDiv.style.height = `${cssViewport.height}px`;
+
+        const textContent = await page.getTextContent();
+        const { TextLayer } = await import('pdfjs-dist');
+        const textLayer = new TextLayer({
+          textContentSource: textContent,
+          container: textDiv,
+          viewport: cssViewport,
+        });
+        await textLayer.render();
+
+        // pdfjs uses CSS custom properties for sizing; override with explicit dimensions
+        textDiv.style.setProperty('--total-scale-factor', String(scale));
+        textDiv.style.setProperty('--scale-round-x', '1px');
+        textDiv.style.setProperty('--scale-round-y', '1px');
+      }
+    }
+    pdfRendering = false;
+  }
+
+  function pdfZoomIn() {
+    const next = PDF_ZOOM_STEPS.find(z => z > pdfZoom);
+    if (next) {
+      pdfZoom = next;
+      renderPdfPages();
+    }
+  }
+
+  function pdfZoomOut() {
+    const prev = [...PDF_ZOOM_STEPS].reverse().find(z => z < pdfZoom);
+    if (prev) {
+      pdfZoom = prev;
+      renderPdfPages();
+    }
+  }
+
+  function pdfGoToPage(page: number) {
+    const clamped = Math.max(1, Math.min(page, pdfPageCount));
+    pdfCurrentPage = clamped;
+    const canvas = pdfCanvasRefs[clamped - 1];
+    canvas?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function handlePdfScroll() {
+    if (!pdfScrollEl || !pdfCanvasRefs.length) return;
+    const scrollTop = pdfScrollEl.scrollTop;
+    const scrollMid = scrollTop + pdfScrollEl.clientHeight / 2;
+    let cumulative = 0;
+    for (let i = 0; i < pdfCanvasRefs.length; i++) {
+      const h = pdfCanvasRefs[i]?.offsetHeight ?? 0;
+      cumulative += h + 12; // 12px gap
+      if (cumulative > scrollMid) {
+        pdfCurrentPage = i + 1;
+        break;
+      }
+    }
   }
 
   function attachToSlot() {
@@ -169,6 +332,7 @@
 
     const filePath = editorFile.remote_path ?? editorFile.file_path;
     const isImage = isImageFile(filePath);
+    const isPdf = isPdfFile(filePath);
 
     try {
       if (isImage) {
@@ -188,6 +352,34 @@
         imageDataUrl = `data:${mime};base64,${data}`;
         imageFileSize = size;
         loading = false;
+      } else if (isPdf) {
+        // Load PDF via pdfjs-dist
+        let data: string;
+        let size: number;
+        if (editorFile.is_remote && editorFile.remote_ssh_command && editorFile.remote_path) {
+          const result = await scpReadFileBase64(editorFile.remote_ssh_command, editorFile.remote_path);
+          data = result.data;
+          size = result.size;
+        } else {
+          const result = await readFileBase64(editorFile.file_path);
+          data = result.data;
+          size = result.size;
+        }
+        pdfFileSize = size;
+
+        const pdfjsLib = await import('pdfjs-dist');
+        pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url).href;
+
+        const raw = Uint8Array.from(atob(data), c => c.charCodeAt(0));
+        const doc = await pdfjsLib.getDocument({ data: raw }).promise;
+        pdfDoc = doc;
+        pdfPageCount = doc.numPages;
+        pdfCanvasRefs = new Array(doc.numPages);
+        pdfTextLayerRefs = new Array(doc.numPages);
+        loading = false;
+
+        // Render after DOM updates with canvas refs
+        requestAnimationFrame(() => renderPdfPages());
       } else {
         // Load text file into CodeMirror
         let content: string;
@@ -326,7 +518,7 @@
       if (raw.startsWith('FILE_TOO_LARGE:')) {
         const sizeMb = raw.split(':')[1];
         errorMsg = `File is too large (${sizeMb} MB)`;
-      } else if (!isImage && raw.toLowerCase().includes('binary')) {
+      } else if (!isImage && !isPdf && raw.toLowerCase().includes('binary')) {
         errorMsg = 'Binary file — cannot open in editor';
       } else {
         errorMsg = raw;
@@ -345,6 +537,25 @@
       editorView.destroy();
       editorView = null;
     }
+    if (pdfDoc) {
+      pdfDoc.destroy();
+      pdfDoc = null;
+    }
+  });
+
+  // Track Alt key for zoom-out cursor on image viewer
+  $effect(() => {
+    if (!imageDataUrl && !pdfDoc) return;
+    const onKey = (e: KeyboardEvent) => { altKeyHeld = e.altKey; };
+    const onBlur = () => { altKeyHeld = false; };
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('keyup', onKey);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keyup', onKey);
+      window.removeEventListener('blur', onBlur);
+    };
   });
 
   // Focus editor when becoming visible
@@ -387,12 +598,14 @@
           <span class="info-sep"></span>
         {/if}
         <div class="zoom-controls">
-          <IconButton tooltip="Zoom out" style="width:22px;height:20px;border-radius:3px;font-size:14px" onclick={zoomOut} disabled={displayZoom <= ZOOM_STEPS[0]}>&minus;</IconButton>
+          <IconButton tooltip="Zoom out" style="width:22px;height:20px;border-radius:3px;font-size:14px" onclick={() => zoomOut()} disabled={displayZoom <= ZOOM_STEPS[0]}>&minus;</IconButton>
           <button class="zoom-label" class:zoom-fit={imageZoom === 0} onclick={zoomFit} title="Fit to window">{displayZoom}%</button>
-          <IconButton tooltip="Zoom in" style="width:22px;height:20px;border-radius:3px;font-size:14px" onclick={zoomIn} disabled={displayZoom >= ZOOM_STEPS[ZOOM_STEPS.length - 1]}>+</IconButton>
+          <IconButton tooltip="Zoom in" style="width:22px;height:20px;border-radius:3px;font-size:14px" onclick={() => zoomIn()} disabled={displayZoom >= ZOOM_STEPS[ZOOM_STEPS.length - 1]}>+</IconButton>
         </div>
       </div>
-      <div class="image-scroll" bind:this={imageScrollEl}>
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="image-scroll" bind:this={imageScrollEl} onclick={handleImageClick} oncontextmenu={handleImageContextMenu} onmousemove={handleImageMouseMove} onmouseleave={handleImageMouseLeave}>
         <img
           bind:this={imageEl}
           src={imageDataUrl}
@@ -402,6 +615,65 @@
         />
       </div>
     </div>
+    {#if cursorVisible}
+      <div class="zoom-cursor" style="left: {cursorX}px; top: {cursorY}px;">
+        <svg width="24" height="24" viewBox="0 0 24 24">
+          <circle cx="10" cy="10" r="6.5" fill="rgba(0,0,0,0.15)" stroke="#000" stroke-width="2.5" opacity=".3"/>
+          <circle cx="10" cy="10" r="6.5" fill="rgba(0,0,0,0.15)" stroke="#fff" stroke-width="1.5"/>
+          <line x1="15" y1="15" x2="22" y2="22" stroke="#000" stroke-width="2.5" stroke-linecap="round" opacity=".3"/>
+          <line x1="15" y1="15" x2="22" y2="22" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>
+          {#if altKeyHeld}
+            <line x1="7.5" y1="10" x2="12.5" y2="10" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>
+          {:else}
+            <line x1="7.5" y1="10" x2="12.5" y2="10" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>
+            <line x1="10" y1="7.5" x2="10" y2="12.5" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>
+          {/if}
+        </svg>
+      </div>
+    {/if}
+  {:else if pdfDoc}
+    <div class="pdf-preview">
+      <div class="image-info-bar">
+        <div class="pdf-page-nav">
+          <IconButton tooltip="Previous page" style="width:22px;height:20px;border-radius:3px;font-size:14px" onclick={() => pdfGoToPage(pdfCurrentPage - 1)} disabled={pdfCurrentPage <= 1}>&#x25C0;</IconButton>
+          <span class="info-item">
+            <input
+              type="number"
+              class="pdf-page-input"
+              value={pdfCurrentPage}
+              min="1"
+              max={pdfPageCount}
+              onchange={(e) => pdfGoToPage(parseInt((e.target as HTMLInputElement).value) || 1)}
+            /> / {pdfPageCount}
+          </span>
+          <IconButton tooltip="Next page" style="width:22px;height:20px;border-radius:3px;font-size:14px" onclick={() => pdfGoToPage(pdfCurrentPage + 1)} disabled={pdfCurrentPage >= pdfPageCount}>&#x25B6;</IconButton>
+        </div>
+        <span class="info-sep"></span>
+        {#if pdfFileSize > 0}
+          <span class="info-item">{formatFileSize(pdfFileSize)}</span>
+          <span class="info-sep"></span>
+        {/if}
+        <div class="zoom-controls">
+          <IconButton tooltip="Zoom out" style="width:22px;height:20px;border-radius:3px;font-size:14px" onclick={pdfZoomOut} disabled={pdfZoom <= PDF_ZOOM_STEPS[0]}>&minus;</IconButton>
+          <span class="zoom-label">{pdfZoom}%</span>
+          <IconButton tooltip="Zoom in" style="width:22px;height:20px;border-radius:3px;font-size:14px" onclick={pdfZoomIn} disabled={pdfZoom >= PDF_ZOOM_STEPS[PDF_ZOOM_STEPS.length - 1]}>+</IconButton>
+        </div>
+      </div>
+      <div class="pdf-scroll" bind:this={pdfScrollEl} onscroll={handlePdfScroll}>
+        {#each Array(pdfPageCount) as _, i}
+          <div class="pdf-page-wrapper">
+            <canvas
+              bind:this={pdfCanvasRefs[i]}
+              class="pdf-page"
+            ></canvas>
+            <div
+              bind:this={pdfTextLayerRefs[i]}
+              class="pdf-text-layer"
+            ></div>
+          </div>
+        {/each}
+      </div>
+    </div>
   {/if}
 </div>
 
@@ -409,6 +681,8 @@
   .editor-container {
     position: relative;
     flex: 1;
+    min-height: 0;
+    min-width: 0;
     background: var(--bg-dark);
     overflow: hidden;
   }
@@ -520,19 +794,25 @@
   }
 
   .image-preview {
+    position: absolute;
+    inset: 0;
     display: flex;
     flex-direction: column;
-    height: 100%;
   }
 
   .image-scroll {
     flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
     overflow: auto;
     padding: 16px;
     min-height: 0;
+    cursor: none;
+    /* Center small images via margin auto on the img; large images scroll naturally */
+  }
+
+  .image-scroll img {
+    display: block;
+    margin: auto;
+    cursor: none;
   }
 
   .image-preview img {
@@ -589,6 +869,97 @@
 
   .zoom-label.zoom-fit {
     color: var(--accent);
+  }
+
+  .zoom-cursor {
+    position: fixed;
+    pointer-events: none;
+    z-index: 9999;
+    transform: translate(-10px, -10px);
+    filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.5));
+  }
+
+  /* PDF viewer */
+  .pdf-preview {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .pdf-scroll {
+    flex: 1;
+    overflow: auto;
+    padding: 16px;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    background: var(--bg-dark);
+  }
+
+  .pdf-page-wrapper {
+    position: relative;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  .pdf-page {
+    display: block;
+  }
+
+  .pdf-text-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    overflow: hidden;
+    line-height: 1;
+    pointer-events: auto;
+  }
+
+  .pdf-text-layer :global(span) {
+    position: absolute;
+    white-space: pre;
+    color: transparent;
+    cursor: text;
+    pointer-events: auto;
+    user-select: text;
+    -webkit-user-select: text;
+  }
+
+  .pdf-text-layer :global(span::selection) {
+    background: rgba(122, 162, 247, 0.3);
+  }
+
+  .pdf-text-layer :global(br) {
+    display: none;
+  }
+
+  .pdf-page-nav {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .pdf-page-input {
+    width: 36px;
+    text-align: center;
+    padding: 1px 2px;
+    border: 1px solid var(--bg-light);
+    border-radius: 3px;
+    background: var(--bg-dark);
+    color: var(--fg);
+    font-size: 11px;
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+
+  .pdf-page-input::-webkit-inner-spin-button,
+  .pdf-page-input::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
   }
 
 </style>

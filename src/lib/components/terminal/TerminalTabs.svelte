@@ -10,6 +10,7 @@
   import { getCompiledTitlePatterns, extractDirFromTitle } from '$lib/utils/promptPattern';
   import { onVariablesChange, interpolateVariables } from '$lib/stores/triggers.svelte';
   import { isEditorDirty } from '$lib/stores/editorRegistry.svelte';
+  import { isImageFile, isPdfFile } from '$lib/utils/languageDetect';
   import Icon from '$lib/components/Icon.svelte';
   import StatusDot from '$lib/components/ui/StatusDot.svelte';
   import IconButton from '$lib/components/ui/IconButton.svelte';
@@ -573,7 +574,13 @@
         {#if isDiff}
           <span class="editor-icon" title="Diff">&#x21C4;</span>
         {:else if isEditor}
-          <span class="editor-icon" class:editor-dirty={isEditorDirty(tab.id)} title={isEditorDirty(tab.id) ? 'Unsaved changes' : 'Editor'}>&#x2630;</span>
+          {#if tab.editor_file && isPdfFile(tab.editor_file.file_path)}
+            <span class="editor-icon" title="PDF"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512" fill="currentColor"><path d="M181.9 256.1c-5-16-4.9-46.9-2-46.9 8.4 0 7.6 36.9 2 46.9zm-1.7 47.2c-7.7 20.2-17.3 43.3-28.4 62.7 18.3-7 39-17.2 62.9-21.9-12.7-9.6-24.9-23.4-34.5-40.8zM86.1 428.1c0 .8 13.2-5.4 34.9-40.2-6.7 6.3-29.1 24.5-34.9 40.2zM248 160h136v328c0 13.3-10.7 24-24 24H24c-13.3 0-24-10.7-24-24V24C0 10.7 10.7 0 24 0h200v136c0 13.2 10.8 24 24 24zm-8 171.8c-20-12.2-33.3-29-42.7-53.8 4.5-18.5 11.6-46.6 6.2-64.2-4.7-29.4-42.4-26.5-47.8-6.8-5 18.3-.4 44.1 8.1 77-11.6 27.6-28.7 64.6-40.8 85.8-.1 0-.1.1-.2.1-27.1 13.9-73.6 44.5-54.5 68 5.6 6.9 16 10 21.5 10 17.9 0 35.7-18 61.1-61.8 25.8-8.5 54.1-19.1 79-23.2 21.7 11.8 47.1 19.5 64 19.5 29.2 0 31.2-32 19.7-43.4-13.9-13.6-54.3-9.7-73.6-7.2zM377 105L279 7c-4.5-4.5-10.6-7-17-7h-6v128h128v-6.1c0-6.3-2.5-12.4-7-16.9zm-74.1 255.3c4.1-2.7-2.5-11.9-42.8-9 37.1 15.8 42.8 9 42.8 9z"/></svg></span>
+          {:else if tab.editor_file && isImageFile(tab.editor_file.file_path)}
+            <span class="editor-icon" title="Image"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="currentColor"><path d="M464 448H48c-26.51 0-48-21.49-48-48V112c0-26.51 21.49-48 48-48h416c26.51 0 48 21.49 48 48v288c0 26.51-21.49 48-48 48zM112 120c-30.928 0-56 25.072-56 56s25.072 56 56 56 56-25.072 56-56-25.072-56-56-56zM64 384h384V272l-87.515-87.515c-4.686-4.686-12.284-4.686-16.971 0L208 320l-55.515-55.515c-4.686-4.686-12.284-4.686-16.971 0L64 336v48z"/></svg></span>
+          {:else}
+            <span class="editor-icon" class:editor-dirty={isEditorDirty(tab.id)} title={isEditorDirty(tab.id) ? 'Unsaved changes' : 'Editor'}><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512" fill="currentColor"><path d="M224 136V0H24C10.7 0 0 10.7 0 24v464c0 13.3 10.7 24 24 24h336c13.3 0 24-10.7 24-24V160H248c-13.2 0-24-10.8-24-24zm64 236c0 6.6-5.4 12-12 12H108c-6.6 0-12-5.4-12-12v-8c0-6.6 5.4-12 12-12h168c6.6 0 12 5.4 12 12v8zm0-64c0 6.6-5.4 12-12 12H108c-6.6 0-12-5.4-12-12v-8c0-6.6 5.4-12 12-12h168c6.6 0 12 5.4 12 12v8zm0-72v8c0 6.6-5.4 12-12 12H108c-6.6 0-12-5.4-12-12v-8c0-6.6 5.4-12 12-12h168c6.6 0 12 5.4 12 12zm96-114.1v6.1H256V0h6.1c6.4 0 12.5 2.5 17 7l97.9 98c4.5 4.5 7 10.6 7 16.9z"/></svg></span>
+          {/if}
         {:else if tabState === 'alert'}
           <span class="indicator alert-indicator">&#x2757;</span>
         {:else if tabState === 'question'}
@@ -763,10 +770,16 @@
 
   .editor-icon {
     flex-shrink: 0;
-    font-size: 10px;
     margin-right: 4px;
-    line-height: 1;
+    margin-top: -3px;
+    margin-bottom: -3px;
+    line-height: 0;
     opacity: 0.7;
+  }
+
+  .editor-icon :global(svg) {
+    width: 14px;
+    height: 14px;
   }
 
   .editor-icon.editor-dirty {
