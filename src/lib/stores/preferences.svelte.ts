@@ -47,6 +47,7 @@ function createPreferencesStore() {
   let claudeTriggersPrompted = $state(false);
   let claudeCodeIde = $state(false);
   let windowsShell = $state('powershell');
+  let fileLinkAction = $state('click');
 
   return {
     /** Resolves once the initial load() has completed. */
@@ -91,6 +92,7 @@ function createPreferencesStore() {
     get claudeTriggersPrompted() { return claudeTriggersPrompted; },
     get claudeCodeIde() { return claudeCodeIde; },
     get windowsShell() { return windowsShell; },
+    get fileLinkAction() { return fileLinkAction; },
 
     async load() {
       const prefs = await commands.getPreferences();
@@ -145,6 +147,7 @@ function createPreferencesStore() {
       claudeTriggersPrompted = prefs.claude_triggers_prompted ?? false;
       claudeCodeIde = prefs.claude_code_ide ?? false;
       windowsShell = prefs.windows_shell ?? 'powershell';
+      fileLinkAction = prefs.file_link_action ?? 'click';
       _resolveReady();
     },
 
@@ -343,6 +346,11 @@ function createPreferencesStore() {
       await this.save();
     },
 
+    async setFileLinkAction(value: string) {
+      fileLinkAction = value;
+      await this.save();
+    },
+
     async addCustomTheme(t: Theme) {
       customThemes = [...customThemes, t];
       await this.save();
@@ -406,6 +414,7 @@ function createPreferencesStore() {
       claudeTriggersPrompted = prefs.claude_triggers_prompted ?? false;
       claudeCodeIde = prefs.claude_code_ide ?? false;
       windowsShell = prefs.windows_shell ?? 'powershell';
+      fileLinkAction = prefs.file_link_action ?? 'click';
     },
 
     async save() {
@@ -451,6 +460,7 @@ function createPreferencesStore() {
         claude_triggers_prompted: claudeTriggersPrompted,
         claude_code_ide: claudeCodeIde,
         windows_shell: windowsShell,
+        file_link_action: fileLinkAction,
       };
       await commands.setPreferences(prefs);
     }

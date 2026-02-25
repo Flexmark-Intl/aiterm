@@ -201,6 +201,9 @@
         activate: (event, uri) => {
           if (event.button !== 0) return; // left click only
           if (uri.startsWith('file://')) {
+            const mode = preferencesStore.fileLinkAction;
+            if (mode === 'disabled') return;
+            if (mode === 'modifier_click' && !event.metaKey && !event.ctrlKey) return;
             const filePath = decodeURIComponent(new URL(uri).pathname);
             openFileFromTerminal(workspaceId, paneId, tabId, filePath);
           } else {
@@ -224,11 +227,8 @@
 
     terminal.open(containerRef);
 
-    // File path link provider: always active, pre-compiled regex is cheap
-    filePathLinkDisposable = createFilePathLinkProvider(
-      terminal,
-      (path) => openFileFromTerminal(workspaceId, paneId, tabId, path),
-    );
+    // File path link provider: managed reactively based on preference
+    // (initial registration handled by $effect below)
 
     // OSC 0 (icon name + title) and OSC 2 (title): shells/programs set window title
     // promptCwd is auto-derived from title in terminalsStore.updateOsc()
@@ -671,6 +671,24 @@
         resizeTerminal(ptyId, cols, rows).catch(e => logError(String(e)));
       }
     });
+  });
+
+  // React to file link preference changes — register/dispose provider
+  $effect(() => {
+    if (!initialized || !terminal) return;
+    const mode = preferencesStore.fileLinkAction;
+    filePathLinkDisposable?.dispose();
+    filePathLinkDisposable = null;
+    if (mode !== 'disabled') {
+      filePathLinkDisposable = createFilePathLinkProvider(terminal, (path, event) => {
+        if (mode === 'modifier_click' && !event.metaKey && !event.ctrlKey) return;
+        openFileFromTerminal(workspaceId, paneId, tabId, path);
+      });
+    }
+    return () => {
+      filePathLinkDisposable?.dispose();
+      filePathLinkDisposable = null;
+    };
   });
 
   // React to auto-save interval changes

@@ -87,7 +87,7 @@ const COMBINED_PATTERN = new RegExp(
  */
 export function createFilePathLinkProvider(
   terminal: Terminal,
-  onActivate: (path: string) => void,
+  onActivate: (path: string, event: MouseEvent) => void,
 ): { dispose: () => void } {
   const provider: ILinkProvider = {
     provideLinks(bufferLineNumber: number, callback: (links: ILink[] | undefined) => void) {
@@ -120,7 +120,7 @@ export function createFilePathLinkProvider(
             end: { x: startIndex + filePath.length + 1, y: bufferLineNumber },
           },
           text: filePath,
-          activate: () => onActivate(filePath),
+          activate: (event: MouseEvent) => onActivate(filePath, event),
         });
       }
 

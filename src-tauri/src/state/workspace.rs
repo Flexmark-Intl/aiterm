@@ -399,6 +399,10 @@ fn default_windows_shell() -> String {
     "powershell".to_string()
 }
 
+fn default_file_link_action() -> String {
+    "click".to_string()
+}
+
 fn default_true() -> bool {
     true
 }
@@ -618,6 +622,9 @@ pub struct Preferences {
     /// Windows shell preference: "powershell", "pwsh", "cmd", "gitbash", "wsl"
     #[serde(default = "default_windows_shell")]
     pub windows_shell: String,
+    /// File link click behavior: "click", "modifier_click", "disabled"
+    #[serde(default = "default_file_link_action")]
+    pub file_link_action: String,
 }
 
 impl Default for Preferences {
@@ -664,6 +671,7 @@ impl Default for Preferences {
             claude_triggers_prompted: false,
             claude_code_ide: true,
             windows_shell: default_windows_shell(),
+            file_link_action: default_file_link_action(),
         }
     }
 }

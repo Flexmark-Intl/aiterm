@@ -164,6 +164,7 @@ export interface Preferences {
   claude_triggers_prompted: boolean;
   claude_code_ide: boolean;
   windows_shell: string;
+  file_link_action: string;
 }
 
 export interface WindowData {

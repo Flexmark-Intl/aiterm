@@ -453,6 +453,27 @@
           </button>
         </div>
 
+        <h3 class="section-heading" style="margin-top: 20px;">File Links</h3>
+
+        <div class="setting" style="align-items: flex-start;">
+          <div>
+            <label for="file-link-action">Click Behavior</label>
+            <p class="setting-hint">
+              How clicking detected file paths and <code>l</code> command links behaves.
+              {preferencesStore.fileLinkAction === 'modifier_click' ? `Hold ${modLabel}+Click to open.` : ''}
+            </p>
+          </div>
+          <select
+            id="file-link-action"
+            value={preferencesStore.fileLinkAction}
+            onchange={(e) => preferencesStore.setFileLinkAction(e.currentTarget.value)}
+          >
+            <option value="click">Click opens file</option>
+            <option value="modifier_click">{modLabel}+Click opens file</option>
+            <option value="disabled">Disabled</option>
+          </select>
+        </div>
+
         <h3 class="section-heading" style="margin-top: 20px;">Prompt Patterns</h3>
         <p class="section-desc">
           Patterns for detecting the remote directory when splitting SSH panes.
