@@ -230,7 +230,7 @@ export function buildShellIntegrationSnippet(opts: {
   const lsSetup = buildLsSetupOneLiner();
 
   // stty -echo hides the setup commands from the terminal output
-  return `stty -echo\n${shellHooks}\n${lsSetup}\nstty echo`;
+  return `stty -echo\nexport COLORTERM=truecolor\n${shellHooks}\n${lsSetup}\nstty echo`;
 }
 
 /**
@@ -254,6 +254,7 @@ export function buildInstallSnippet(): string {
   const zshLines = [
     "",
     "# aiterm-shell-integration",
+    "export COLORTERM=truecolor",
     "autoload -Uz add-zsh-hook",
     "_aiterm_precmd() {",
     "  print -Pn '\\e]133;D;%?\\a\\e]133;A\\a'",
@@ -271,6 +272,7 @@ export function buildInstallSnippet(): string {
   const bashLines = [
     "",
     "# aiterm-shell-integration",
+    "export COLORTERM=truecolor",
     "__aiterm_pc() {",
     "  local ec=$?",
     "  printf '\\033]133;D;%d\\007' \"$ec\"",
