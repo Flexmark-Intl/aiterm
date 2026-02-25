@@ -8,7 +8,9 @@
   import { search, searchKeymap, highlightSelectionMatches } from '@codemirror/search';
   import type { EditorFileInfo } from '$lib/tauri/types';
   import { readFile, readFileBase64, writeFile, scpReadFile, scpReadFileBase64, scpWriteFile } from '$lib/tauri/commands';
-  import { loadLanguageExtension, detectLanguageFromContent, isImageFile, getImageMimeType, isPdfFile } from '$lib/utils/languageDetect';
+  import { loadLanguageExtension, detectLanguageFromContent, isImageFile, getImageMimeType, isPdfFile, isMarkdownFile } from '$lib/utils/languageDetect';
+  import { marked } from 'marked';
+  import { open as shellOpen } from '@tauri-apps/plugin-shell';
   import { buildEditorExtension } from '$lib/utils/editorTheme';
   import { getTheme } from '$lib/themes';
   import { preferencesStore } from '$lib/stores/preferences.svelte';
@@ -19,6 +21,7 @@
   import { EditorSelection } from '@codemirror/state';
   import { error as logError } from '@tauri-apps/plugin-log';
   import IconButton from '$lib/components/ui/IconButton.svelte';
+  import Icon from '$lib/components/Icon.svelte';
   import Button from '$lib/components/ui/Button.svelte';
 
   interface Props {
@@ -56,6 +59,27 @@
   let pdfScrollEl = $state<HTMLDivElement | null>(null);
   let pdfFileSize = $state(0);
   let pdfRendering = $state(false);
+
+  // Markdown preview state
+  let markdownPreview = $state(false);
+  let markdownHtml = $state('');
+  const isMarkdown = isMarkdownFile(editorFile.remote_path ?? editorFile.file_path);
+
+  function toggleMarkdownPreview() {
+    markdownPreview = !markdownPreview;
+    if (markdownPreview && editorView) {
+      const src = editorView.state.doc.toString();
+      markdownHtml = marked.parse(src, { breaks: true, gfm: true }) as string;
+    }
+  }
+
+  function handleMarkdownClick(e: MouseEvent) {
+    const anchor = (e.target as HTMLElement).closest('a');
+    if (anchor?.href) {
+      e.preventDefault();
+      shellOpen(anchor.href);
+    }
+  }
 
   const PDF_ZOOM_STEPS = [50, 75, 100, 125, 150, 200, 300, 400];
 
@@ -675,6 +699,26 @@
       </div>
     </div>
   {/if}
+  {#if isMarkdown && !loading && !errorMsg && !imageDataUrl && !pdfDoc}
+    <div class="md-bar">
+      <IconButton
+        tooltip={markdownPreview ? 'Edit' : 'Preview'}
+        active={markdownPreview}
+        onclick={toggleMarkdownPreview}
+      >
+        {#if markdownPreview}
+          <Icon name="pencil" />
+        {:else}
+          <Icon name="eye" />
+        {/if}
+      </IconButton>
+    </div>
+    {#if markdownPreview}
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="md-render" onclick={handleMarkdownClick}>{@html markdownHtml}</div>
+    {/if}
+  {/if}
 </div>
 
 <style>
@@ -960,6 +1004,157 @@
   .pdf-page-input::-webkit-outer-spin-button {
     -webkit-appearance: none;
     margin: 0;
+  }
+
+  /* Markdown preview */
+  .md-bar {
+    position: absolute;
+    top: 4px;
+    right: 20px;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .md-render {
+    position: absolute;
+    inset: 0;
+    overflow-y: auto;
+    padding: 24px 32px;
+    background: var(--bg-dark);
+    color: var(--fg);
+    line-height: 1.6;
+    z-index: 4;
+  }
+
+  .md-render :global(h1),
+  .md-render :global(h2),
+  .md-render :global(h3),
+  .md-render :global(h4) {
+    margin: 0.8em 0 0.4em;
+    color: var(--fg);
+    line-height: 1.3;
+  }
+
+  .md-render :global(h1) { font-size: 1.5em; }
+  .md-render :global(h2) { font-size: 1.3em; }
+  .md-render :global(h3) { font-size: 1.15em; }
+  .md-render :global(h4) { font-size: 1.05em; }
+
+  .md-render :global(p) {
+    margin: 0 0 0.6em;
+  }
+
+  .md-render :global(code) {
+    background: var(--bg-light);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 0.9em;
+  }
+
+  .md-render :global(pre) {
+    background: var(--bg-medium);
+    padding: 12px 14px;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 0 0 0.8em;
+  }
+
+  .md-render :global(pre code) {
+    background: none;
+    padding: 0;
+  }
+
+  .md-render :global(ul),
+  .md-render :global(ol) {
+    margin: 0 0 0.6em;
+    padding-left: 1.5em;
+  }
+
+  .md-render :global(li) {
+    margin-bottom: 0.2em;
+  }
+
+  .md-render :global(blockquote) {
+    border-left: 3px solid var(--bg-light);
+    margin: 0 0 0.6em;
+    padding: 4px 12px;
+    color: var(--fg-dim);
+  }
+
+  .md-render :global(a) {
+    color: var(--accent);
+    text-decoration: none;
+  }
+
+  .md-render :global(a:hover) {
+    text-decoration: underline;
+  }
+
+  .md-render :global(hr) {
+    border: none;
+    border-top: 1px solid var(--bg-light);
+    margin: 0.8em 0;
+  }
+
+  .md-render :global(table) {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 0 0 0.8em;
+    font-size: 0.9em;
+  }
+
+  .md-render :global(th),
+  .md-render :global(td) {
+    border: 1px solid var(--bg-light);
+    padding: 6px 10px;
+    text-align: left;
+  }
+
+  .md-render :global(th) {
+    background: var(--bg-medium);
+    font-weight: 600;
+  }
+
+  .md-render :global(img) {
+    max-width: 100%;
+    border-radius: 4px;
+  }
+
+  .md-render :global(input[type="checkbox"]) {
+    appearance: none;
+    width: 1em;
+    height: 1em;
+    border: 2px solid var(--fg-dim);
+    border-radius: 3px;
+    background: transparent;
+    vertical-align: middle;
+    margin-right: 6px;
+    position: relative;
+    top: -1px;
+  }
+
+  .md-render :global(input[type="checkbox"]:checked) {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+
+  .md-render :global(input[type="checkbox"]:checked::after) {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 45%;
+    width: 5px;
+    height: 9px;
+    border: solid var(--bg-dark);
+    border-width: 0 2px 2px 0;
+    transform: translate(-50%, -60%) rotate(45deg);
+  }
+
+  .md-render :global(li:has(> input[type="checkbox"])) {
+    list-style: none;
+    margin-left: -1.5em;
   }
 
 </style>

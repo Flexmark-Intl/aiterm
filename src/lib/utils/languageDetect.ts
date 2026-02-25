@@ -28,6 +28,14 @@ export function isPdfFile(filePath: string): boolean {
   return filePath.toLowerCase().endsWith('.pdf');
 }
 
+const MARKDOWN_EXTS = new Set(['md', 'markdown', 'mdown', 'mkd', 'mkdn', 'mdx']);
+
+export function isMarkdownFile(filePath: string): boolean {
+  const dot = filePath.lastIndexOf('.');
+  if (dot === -1) return false;
+  return MARKDOWN_EXTS.has(filePath.slice(dot + 1).toLowerCase());
+}
+
 /** Extensionless filenames that are known shell scripts */
 const SHELL_FILENAMES = new Set([
   '.bashrc', '.bash_profile', '.bash_login', '.bash_logout', '.bash_aliases',
