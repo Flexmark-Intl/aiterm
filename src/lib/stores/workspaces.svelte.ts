@@ -629,19 +629,27 @@ function createWorkspacesStore() {
       const tab = pane?.tabs.find(t => t.id === tabId);
       if (!tab) return;
 
-      // Gather context
-      const { scrollback, cwd, sshCommand } = await this._gatherTabContext(tabId);
-
-      // Detect remote cwd
+      // Gather context (terminal-specific for terminal tabs, null for editor/diff)
+      let scrollback: string | null = null;
+      let cwd: string | null = null;
+      let sshCommand: string | null = null;
       let remoteCwd: string | null = null;
-      if (sshCommand) {
-        const instance = terminalsStore.get(tabId);
-        const oscState = terminalsStore.getOsc(tabId);
-        const osc7Cwd = oscState?.cwd ?? null;
-        const promptCwd = oscState?.promptCwd ?? null;
-        const isOsc7Stale = osc7Cwd === cwd;
-        const osc7RemoteCwd = (osc7Cwd && !isOsc7Stale) ? osc7Cwd : null;
-        remoteCwd = osc7RemoteCwd ?? promptCwd ?? null;
+
+      if (tab.tab_type === 'terminal') {
+        const ctx = await this._gatherTabContext(tabId);
+        scrollback = ctx.scrollback;
+        cwd = ctx.cwd;
+        sshCommand = ctx.sshCommand;
+
+        // Detect remote cwd
+        if (sshCommand) {
+          const oscState = terminalsStore.getOsc(tabId);
+          const osc7Cwd = oscState?.cwd ?? null;
+          const promptCwd = oscState?.promptCwd ?? null;
+          const isOsc7Stale = osc7Cwd === cwd;
+          const osc7RemoteCwd = (osc7Cwd && !isOsc7Stale) ? osc7Cwd : null;
+          remoteCwd = osc7RemoteCwd ?? promptCwd ?? null;
+        }
       }
 
       // Skip note migration — archived tabs preserve their notes and restore them intact

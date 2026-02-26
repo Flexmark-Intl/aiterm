@@ -496,9 +496,50 @@
         </button>
       </Tooltip>
       {#if archiveDropdownOpen}
+        {@const shellTabs = archivedTabs.filter(t => t.tab_type === 'terminal' || !t.tab_type)}
+        {@const viewerTabs = archivedTabs.filter(t => t.tab_type === 'editor' || t.tab_type === 'diff')}
+        {@const showHeaders = shellTabs.length > 0 && viewerTabs.length > 0}
         <div class="archive-dropdown" style="top: {archiveDropdownPos.top}px; left: {archiveDropdownPos.left}px;">
-          {#each archivedTabs as archivedTab (archivedTab.id)}
+          {#if showHeaders && shellTabs.length > 0}
+            <div class="archive-section-header">Shells</div>
+          {/if}
+          {#each shellTabs as archivedTab (archivedTab.id)}
             <div class="archive-item">
+              <span class="archive-item-icon" title="Terminal">&gt;_</span>
+              <button
+                class="archive-item-name"
+                onclick={() => handleRestoreArchivedTab(archivedTab.id)}
+              >
+                <span class="archive-item-label">{archivedTab.archived_name ?? archivedTab.name}</span>
+                {#if archivedTab.archived_at}
+                  <span class="archive-item-date">{relativeTime(archivedTab.archived_at)}</span>
+                {/if}
+              </button>
+              <IconButton
+                tooltip="Restore"
+                onclick={() => handleRestoreArchivedTab(archivedTab.id)}
+              >&#x21A9;</IconButton>
+              <IconButton
+                tooltip="Delete permanently"
+                danger
+                onclick={(e) => handleDeleteArchivedTab(archivedTab.id, e)}
+              >&times;</IconButton>
+            </div>
+          {/each}
+          {#if showHeaders && viewerTabs.length > 0}
+            <div class="archive-section-header">Viewers</div>
+          {/if}
+          {#each viewerTabs as archivedTab (archivedTab.id)}
+            <div class="archive-item">
+              {#if archivedTab.tab_type === 'diff'}
+                <span class="archive-item-icon" title="Diff">&#x21C4;</span>
+              {:else if archivedTab.editor_file && isPdfFile(archivedTab.editor_file.file_path)}
+                <span class="archive-item-icon" title="PDF"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512" fill="currentColor"><path d="M181.9 256.1c-5-16-4.9-46.9-2-46.9 8.4 0 7.6 36.9 2 46.9zm-1.7 47.2c-7.7 20.2-17.3 43.3-28.4 62.7 18.3-7 39-17.2 62.9-21.9-12.7-9.6-24.9-23.4-34.5-40.8zM86.1 428.1c0 .8 13.2-5.4 34.9-40.2-6.7 6.3-29.1 24.5-34.9 40.2zM248 160h136v328c0 13.3-10.7 24-24 24H24c-13.3 0-24-10.7-24-24V24C0 10.7 10.7 0 24 0h200v136c0 13.2 10.8 24 24 24zm-8 171.8c-20-12.2-33.3-29-42.7-53.8 4.5-18.5 11.6-46.6 6.2-64.2-4.7-29.4-42.4-26.5-47.8-6.8-5 18.3-.4 44.1 8.1 77-11.6 27.6-28.7 64.6-40.8 85.8-.1 0-.1.1-.2.1-27.1 13.9-73.6 44.5-54.5 68 5.6 6.9 16 10 21.5 10 17.9 0 35.7-18 61.1-61.8 25.8-8.5 54.1-19.1 79-23.2 21.7 11.8 47.1 19.5 64 19.5 29.2 0 31.2-32 19.7-43.4-13.9-13.6-54.3-9.7-73.6-7.2zM377 105L279 7c-4.5-4.5-10.6-7-17-7h-6v128h128v-6.1c0-6.3-2.5-12.4-7-16.9zm-74.1 255.3c4.1-2.7-2.5-11.9-42.8-9 37.1 15.8 42.8 9 42.8 9z"/></svg></span>
+              {:else if archivedTab.editor_file && isImageFile(archivedTab.editor_file.file_path)}
+                <span class="archive-item-icon" title="Image"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="currentColor"><path d="M464 448H48c-26.51 0-48-21.49-48-48V112c0-26.51 21.49-48 48-48h416c26.51 0 48 21.49 48 48v288c0 26.51-21.49 48-48 48zM112 120c-30.928 0-56 25.072-56 56s25.072 56 56 56 56-25.072 56-56-25.072-56-56-56zM64 384h384V272l-87.515-87.515c-4.686-4.686-12.284-4.686-16.971 0L208 320l-55.515-55.515c-4.686-4.686-12.284-4.686-16.971 0L64 336v48z"/></svg></span>
+              {:else}
+                <span class="archive-item-icon" title="Editor"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512" fill="currentColor"><path d="M224 136V0H24C10.7 0 0 10.7 0 24v464c0 13.3 10.7 24 24 24h336c13.3 0 24-10.7 24-24V160H248c-13.2 0-24-10.8-24-24zm64 236c0 6.6-5.4 12-12 12H108c-6.6 0-12-5.4-12-12v-8c0-6.6 5.4-12 12-12h168c6.6 0 12 5.4 12 12v8zm0-64c0 6.6-5.4 12-12 12H108c-6.6 0-12-5.4-12-12v-8c0-6.6 5.4-12 12-12h168c6.6 0 12 5.4 12 12v8zm0-72v8c0 6.6-5.4 12-12 12H108c-6.6 0-12-5.4-12-12v-8c0-6.6 5.4-12 12-12h168c6.6 0 12 5.4 12 12zm96-114.1v6.1H256V0h6.1c6.4 0 12.5 2.5 17 7l97.9 98c4.5 4.5 7 10.6 7 16.9z"/></svg></span>
+              {/if}
               <button
                 class="archive-item-name"
                 onclick={() => handleRestoreArchivedTab(archivedTab.id)}
@@ -598,13 +639,13 @@
           }>&#x21BB;</span>
         {/if}
         <span class="tab-name">{displayName(tab)}</span>
-        <div class="tab-actions" class:single-action={isEditor || isDiff} class:triple-action={!isEditor && !isDiff}>
+        <div class="tab-actions" class:single-action={false} class:double-action={isEditor || isDiff} class:triple-action={!isEditor && !isDiff}>
+          <IconButton
+            tooltip="Archive tab"
+            style="width:22px;height:18px;border-radius:3px"
+            onclick={(e) => handleArchiveTab(tab.id, e)}
+          ><Icon name="archive" size={11} /></IconButton>
           {#if !isEditor && !isDiff}
-            <IconButton
-              tooltip="Archive tab"
-              style="width:22px;height:18px;border-radius:3px"
-              onclick={(e) => handleArchiveTab(tab.id, e)}
-            ><Icon name="archive" size={11} /></IconButton>
             <IconButton
               tooltip="Duplicate tab ({modLabel}+Shift+T)"
               style="width:22px;height:18px;border-radius:3px"
@@ -840,8 +881,8 @@
     width: 66px;
   }
 
-  .tab:hover .tab-actions.single-action {
-    width: 22px;
+  .tab:hover .tab-actions.double-action {
+    width: 44px;
   }
 
 
@@ -977,6 +1018,38 @@
     font-size: 10px;
     color: var(--fg-dim);
     white-space: nowrap;
+  }
+
+  .archive-section-header {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--fg-dim);
+    padding: 6px 6px 2px;
+  }
+
+  .archive-section-header:not(:first-child) {
+    margin-top: 4px;
+    border-top: 1px solid var(--bg-light);
+    padding-top: 8px;
+  }
+
+  .archive-item-icon {
+    flex-shrink: 0;
+    width: 14px;
+    height: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    opacity: 0.6;
+    color: var(--fg-dim);
+  }
+
+  .archive-item-icon :global(svg) {
+    width: 12px;
+    height: 12px;
   }
 
 </style>
