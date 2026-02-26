@@ -235,6 +235,7 @@
     flex: 1;
     display: flex;
     min-height: 0;
+    min-width: 0;
   }
 
   .terminal-slot.hidden-tab {
