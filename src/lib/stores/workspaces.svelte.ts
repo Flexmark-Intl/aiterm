@@ -1386,3 +1386,24 @@ function createWorkspacesStore() {
 }
 
 export const workspacesStore = createWorkspacesStore();
+
+/**
+ * Navigate to a specific tab by finding its workspace and pane.
+ * Used by toast clicks and OS notification deep-links.
+ */
+export async function navigateToTab(tabId: string): Promise<void> {
+  for (const ws of workspacesStore.workspaces) {
+    for (const pane of ws.panes) {
+      const tab = pane.tabs.find(t => t.id === tabId);
+      if (tab) {
+        if (ws.id !== workspacesStore.activeWorkspaceId) {
+          await workspacesStore.setActiveWorkspace(ws.id);
+        }
+        if (pane.active_tab_id !== tabId) {
+          await workspacesStore.setActiveTab(ws.id, pane.id, tabId);
+        }
+        return;
+      }
+    }
+  }
+}

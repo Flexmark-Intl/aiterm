@@ -10,14 +10,18 @@ import {
 import { info as logInfo } from '@tauri-apps/plugin-log';
 import { playSystemSound } from '$lib/tauri/commands';
 
-async function sendOsNotification(title: string, body: string): Promise<void> {
+async function sendOsNotification(title: string, body: string, source?: ToastSource): Promise<void> {
   let granted = await isPermissionGranted();
   if (!granted) {
     const permission = await requestPermission();
     granted = permission === 'granted';
   }
   if (!granted) return;
-  sendNotification({ title, body });
+  sendNotification({
+    title,
+    body,
+    ...(source?.tabId ? { extra: { tabId: source.tabId } } : {}),
+  });
 }
 
 /** Shared AudioContext — reused across calls to avoid WebKit's context limit. */
@@ -110,7 +114,7 @@ export async function dispatch(
 
   if (mode === 'native') {
     logInfo(`Notification (native): ${body}`);
-    await sendOsNotification(title, body);
+    await sendOsNotification(title, body, source);
     return;
   }
 
@@ -128,7 +132,7 @@ export async function dispatch(
       toastStore.addToast(title, body, type, source);
     } else {
       logInfo(`Notification (auto/native): ${body}`);
-      await sendOsNotification(title, body);
+      await sendOsNotification(title, body, source);
     }
   } catch {
     // Fallback to in-app if focus check fails

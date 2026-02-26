@@ -1,30 +1,12 @@
 <script lang="ts">
   import { toastStore } from '$lib/stores/toasts.svelte';
-  import { workspacesStore } from '$lib/stores/workspaces.svelte';
+  import { navigateToTab } from '$lib/stores/workspaces.svelte';
   import { preferencesStore } from '$lib/stores/preferences.svelte';
   import { fly, fade } from 'svelte/transition';
 
-  async function navigateToSource(tabId: string) {
-    // Find which workspace/pane contains this tab
-    for (const ws of workspacesStore.workspaces) {
-      for (const pane of ws.panes) {
-        const tab = pane.tabs.find(t => t.id === tabId);
-        if (tab) {
-          if (ws.id !== workspacesStore.activeWorkspaceId) {
-            await workspacesStore.setActiveWorkspace(ws.id);
-          }
-          if (pane.active_tab_id !== tabId) {
-            await workspacesStore.setActiveTab(ws.id, pane.id, tabId);
-          }
-          return;
-        }
-      }
-    }
-  }
-
   function handleToastClick(toast: typeof toastStore.toasts[0]) {
     if (toast.source?.tabId) {
-      navigateToSource(toast.source.tabId);
+      navigateToTab(toast.source.tabId);
       toastStore.removeToast(toast.id);
     }
   }

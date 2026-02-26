@@ -4,7 +4,7 @@
   import { invoke } from '@tauri-apps/api/core';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { listen } from '@tauri-apps/api/event';
-  import { workspacesStore } from '$lib/stores/workspaces.svelte';
+  import { workspacesStore, navigateToTab } from '$lib/stores/workspaces.svelte';
   import { terminalsStore } from '$lib/stores/terminals.svelte';
   import HelpModal from '$lib/components/HelpModal.svelte';
   import ClaudeIntegrationModal from '$lib/components/ClaudeIntegrationModal.svelte';
@@ -14,6 +14,7 @@
   import { getTheme, applyUiTheme } from '$lib/themes';
   import { error as logError, info as logInfo } from '@tauri-apps/plugin-log';
   import { attachConsole } from '@tauri-apps/plugin-log';
+  import { onAction as onNotificationAction } from '@tauri-apps/plugin-notification';
   import * as commands from '$lib/tauri/commands';
   import type { ClaudeCodeToolRequest, Preferences } from '$lib/tauri/types';
   import { claudeCodeStore } from '$lib/stores/claudeCode.svelte';
@@ -146,6 +147,16 @@
     listen<{ connected: boolean }>('claude-code-connection', (event) => {
       claudeCodeStore.setConnected(event.payload.connected);
     }).then(unlisten => { unlistenClaudeConnection = unlisten; });
+
+    // OS notification click → deep-link to workspace+tab
+    let unlistenNotificationAction: { unregister: () => Promise<void> } | undefined;
+    onNotificationAction((notification) => {
+      const tabId = (notification.extra as Record<string, unknown>)?.tabId;
+      if (typeof tabId === 'string') {
+        appWindow.setFocus();
+        navigateToTab(tabId);
+      }
+    }).then(listener => { unlistenNotificationAction = listener; });
 
     // Handle single-window close (traffic light / Cmd+W on last tab+pane).
     let unlistenClose: (() => void) | undefined;
@@ -527,6 +538,7 @@
       unlistenReloadTab?.();
       unlistenClaudeTool?.();
       unlistenClaudeConnection?.();
+      unlistenNotificationAction?.unregister();
       unlistenPrefs?.();
       detachConsole?.();
     };
