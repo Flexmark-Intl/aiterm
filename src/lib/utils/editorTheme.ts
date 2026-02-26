@@ -42,8 +42,8 @@ function buildCssVarEditorTheme(isDark: boolean): Extension {
     '.cm-cursor, .cm-dropCursor': {
       borderLeftColor: 'var(--fg)',
     },
-    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
-      backgroundColor: 'color-mix(in srgb, var(--accent) 25%, var(--bg-dark))',
+    '.cm-content ::selection': {
+      backgroundColor: 'color-mix(in srgb, var(--accent) 40%, transparent) !important',
     },
     '.cm-panels': {
       backgroundColor: 'var(--bg-medium)',
@@ -56,11 +56,12 @@ function buildCssVarEditorTheme(isDark: boolean): Extension {
       borderTop: '1px solid var(--bg-light)',
     },
     '.cm-searchMatch': {
-      backgroundColor: 'color-mix(in srgb, var(--accent) 20%, var(--bg-dark))',
-      outline: '1px solid color-mix(in srgb, var(--accent) 40%, var(--bg-dark))',
+      backgroundColor: 'color-mix(in srgb, var(--accent) 35%, var(--bg-dark))',
+      outline: '1px solid color-mix(in srgb, var(--accent) 60%, var(--bg-dark))',
     },
     '.cm-searchMatch.cm-searchMatch-selected': {
-      backgroundColor: 'color-mix(in srgb, var(--accent) 40%, var(--bg-dark))',
+      backgroundColor: 'color-mix(in srgb, var(--yellow, #e0af68) 50%, var(--bg-dark))',
+      outline: '2px solid var(--yellow, #e0af68)',
     },
     '.cm-activeLine': {
       backgroundColor: 'color-mix(in srgb, var(--bg-medium) 30%, var(--bg-dark))',

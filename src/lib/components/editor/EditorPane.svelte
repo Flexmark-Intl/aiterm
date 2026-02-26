@@ -1,11 +1,12 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { EditorView, keymap, lineNumbers, highlightActiveLineGutter, highlightSpecialChars, drawSelection, dropCursor, rectangularSelection, crosshairCursor, highlightActiveLine } from '@codemirror/view';
+  import { EditorView, keymap, lineNumbers, highlightActiveLineGutter, highlightSpecialChars, dropCursor, rectangularSelection, crosshairCursor, highlightActiveLine } from '@codemirror/view';
   import { EditorState } from '@codemirror/state';
   import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
   import { foldGutter, indentOnInput, bracketMatching, foldKeymap } from '@codemirror/language';
   import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
-  import { search, searchKeymap, highlightSelectionMatches } from '@codemirror/search';
+  import { search, searchKeymap, highlightSelectionMatches, getSearchQuery } from '@codemirror/search';
+  import { ViewPlugin } from '@codemirror/view';
   import type { EditorFileInfo } from '$lib/tauri/types';
   import { readFile, readFileBase64, writeFile, scpReadFile, scpReadFileBase64, scpWriteFile } from '$lib/tauri/commands';
   import { loadLanguageExtension, detectLanguageFromContent, isImageFile, getImageMimeType, isPdfFile, isMarkdownFile } from '$lib/utils/languageDetect';
@@ -425,7 +426,6 @@
           highlightSpecialChars(),
           history(),
           foldGutter(),
-          drawSelection(),
           dropCursor(),
           EditorState.allowMultipleSelections.of(true),
           indentOnInput(),
@@ -436,6 +436,45 @@
           highlightActiveLine(),
           highlightSelectionMatches(),
           search({ top: true }),
+          // No-results indicator: toggle class on editor wrapper when search has no matches
+          ViewPlugin.define((view) => {
+            let prevNoResults = false;
+            function check(v: EditorView) {
+              const query = getSearchQuery(v.state);
+              const hasQuery = query.search.length > 0;
+              let noResults = false;
+              if (hasQuery) {
+                const cursor = query.getCursor(v.state.doc);
+                noResults = !cursor.next().done ? false : true;
+              }
+              if (noResults !== prevNoResults) {
+                prevNoResults = noResults;
+                v.dom.closest('.editor-container')?.classList.toggle('search-no-results', noResults);
+              }
+            }
+            check(view);
+            return {
+              update(update) { check(update.view); },
+              destroy() {
+                view.dom.closest('.editor-container')?.classList.remove('search-no-results');
+              },
+            };
+          }),
+          // Center viewport when search navigates to a match (not on regular clicks)
+          ViewPlugin.define(() => {
+            return {
+              update(update) {
+                if (!update.selectionSet) return;
+                // Only react to search navigation, not user clicks/edits
+                const isSearchNav = update.transactions.some(tr => tr.isUserEvent('select.search'));
+                if (!isSearchNav) return;
+                const sel = update.state.selection.main.from;
+                requestAnimationFrame(() => {
+                  update.view.dispatch({ effects: EditorView.scrollIntoView(sel, { y: 'center' }) });
+                });
+              },
+            };
+          }),
           keymap.of([
             ...closeBracketsKeymap,
             ...defaultKeymap,
@@ -759,6 +798,12 @@
   .editor-container :global(.cm-panel.cm-search input[type="text"]:focus) {
     border-color: var(--accent);
     outline: none;
+  }
+
+  /* No-results indicator: red border on search input when query has no matches */
+  :global(.search-no-results .cm-panel.cm-search input[name="search"]) {
+    border-color: var(--red, #f7768e) !important;
+    background: color-mix(in srgb, var(--red, #f7768e) 15%, var(--bg-dark)) !important;
   }
 
   .editor-container :global(.cm-panel.cm-search button) {
