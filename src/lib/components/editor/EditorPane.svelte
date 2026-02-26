@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { EditorView, keymap, lineNumbers, highlightActiveLineGutter, highlightSpecialChars, dropCursor, rectangularSelection, crosshairCursor, highlightActiveLine } from '@codemirror/view';
-  import { EditorState } from '@codemirror/state';
+  import { EditorState, Compartment } from '@codemirror/state';
   import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
   import { foldGutter, indentOnInput, bracketMatching, foldKeymap } from '@codemirror/language';
   import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
@@ -50,6 +50,8 @@
   let imageEl = $state<HTMLImageElement | null>(null);
   let imageScrollEl = $state<HTMLDivElement | null>(null);
   let altKeyHeld = $state(false);
+  let wordWrap = $state(false);
+  const wrapCompartment = new Compartment();
 
   // PDF viewer state
   let pdfDoc = $state<any>(null);
@@ -66,11 +68,71 @@
   let markdownHtml = $state('');
   const isMarkdown = isMarkdownFile(editorFile.remote_path ?? editorFile.file_path);
 
+  /** Resolve a potentially relative path against the directory of the current file. */
+  function resolveRelativePath(src: string): string | null {
+    // Skip absolute URLs, data URIs, and protocol URLs
+    if (/^(https?:|data:|blob:|file:)/i.test(src)) return null;
+    const filePath = editorFile.remote_path ?? editorFile.file_path;
+    const dir = filePath.substring(0, filePath.lastIndexOf('/'));
+    if (src.startsWith('/')) return src;
+    // Resolve relative: ./foo, ../foo, foo
+    const parts = `${dir}/${src}`.split('/');
+    const resolved: string[] = [];
+    for (const p of parts) {
+      if (p === '.' || p === '') continue;
+      if (p === '..') { resolved.pop(); continue; }
+      resolved.push(p);
+    }
+    return '/' + resolved.join('/');
+  }
+
+  /** After rendering markdown HTML, replace relative img src with base64 data URLs. */
+  async function resolveMarkdownImages(html: string): Promise<string> {
+    const imgRe = /<img\s+([^>]*?)src="([^"]+)"([^>]*)>/gi;
+    const replacements: { original: string; replacement: string }[] = [];
+    let match;
+    while ((match = imgRe.exec(html)) !== null) {
+      const fullTag = match[0];
+      const src = match[2];
+      const absPath = resolveRelativePath(src);
+      if (!absPath) continue;
+      const mime = getImageMimeType(absPath) ?? 'image/png';
+      try {
+        let data: string;
+        if (editorFile.is_remote && editorFile.remote_ssh_command) {
+          const result = await scpReadFileBase64(editorFile.remote_ssh_command, absPath);
+          data = result.data;
+        } else {
+          const result = await readFileBase64(absPath);
+          data = result.data;
+        }
+        const dataUrl = `data:${mime};base64,${data}`;
+        replacements.push({ original: fullTag, replacement: fullTag.replace(src, dataUrl) });
+      } catch {
+        // Leave broken — file might not exist
+      }
+    }
+    for (const { original, replacement } of replacements) {
+      html = html.replace(original, replacement);
+    }
+    return html;
+  }
+
+  function toggleWordWrap() {
+    wordWrap = !wordWrap;
+    editorView?.dispatch({
+      effects: wrapCompartment.reconfigure(wordWrap ? EditorView.lineWrapping : []),
+    });
+  }
+
   function toggleMarkdownPreview() {
     markdownPreview = !markdownPreview;
     if (markdownPreview && editorView) {
       const src = editorView.state.doc.toString();
-      markdownHtml = marked.parse(src, { breaks: true, gfm: true }) as string;
+      const html = marked.parse(src, { breaks: true, gfm: true }) as string;
+      markdownHtml = html;
+      // Async: resolve relative images after initial render
+      resolveMarkdownImages(html).then(resolved => { markdownHtml = resolved; });
     }
   }
 
@@ -435,6 +497,7 @@
           crosshairCursor(),
           highlightActiveLine(),
           highlightSelectionMatches(),
+          wrapCompartment.of([]),
           search({ top: true }),
           // No-results indicator: toggle class on editor wrapper when search has no matches
           ViewPlugin.define((view) => {
@@ -738,19 +801,28 @@
       </div>
     </div>
   {/if}
-  {#if isMarkdown && !loading && !errorMsg && !imageDataUrl && !pdfDoc}
-    <div class="md-bar">
+  {#if !loading && !errorMsg && !imageDataUrl && !pdfDoc}
+    <div class="editor-bar">
       <IconButton
-        tooltip={markdownPreview ? 'Edit' : 'Preview'}
-        active={markdownPreview}
-        onclick={toggleMarkdownPreview}
+        tooltip={wordWrap ? 'Disable word wrap' : 'Enable word wrap'}
+        active={wordWrap}
+        onclick={toggleWordWrap}
       >
-        {#if markdownPreview}
-          <Icon name="pencil" />
-        {:else}
-          <Icon name="eye" />
-        {/if}
+        <Icon name="word-wrap" />
       </IconButton>
+      {#if isMarkdown}
+        <IconButton
+          tooltip={markdownPreview ? 'Edit' : 'Preview'}
+          active={markdownPreview}
+          onclick={toggleMarkdownPreview}
+        >
+          {#if markdownPreview}
+            <Icon name="pencil" />
+          {:else}
+            <Icon name="eye" />
+          {/if}
+        </IconButton>
+      {/if}
     </div>
     {#if markdownPreview}
       <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -1051,8 +1123,8 @@
     margin: 0;
   }
 
-  /* Markdown preview */
-  .md-bar {
+  /* Editor toolbar (word wrap, markdown preview) */
+  .editor-bar {
     position: absolute;
     top: 4px;
     right: 20px;

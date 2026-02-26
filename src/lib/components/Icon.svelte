@@ -1,5 +1,5 @@
 <script lang="ts">
-  type IconName = 'trash' | 'notes' | 'eye' | 'pencil' | 'list' | 'archive';
+  type IconName = 'trash' | 'notes' | 'eye' | 'pencil' | 'list' | 'archive' | 'word-wrap';
 
   interface Props {
     name: IconName;
@@ -21,4 +21,6 @@
   <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="5" y1="4" x2="14" y2="4"/><line x1="5" y1="8" x2="14" y2="8"/><line x1="5" y1="12" x2="14" y2="12"/><circle cx="2.5" cy="4" r="0.75" fill="currentColor" stroke="none"/><circle cx="2.5" cy="8" r="0.75" fill="currentColor" stroke="none"/><circle cx="2.5" cy="12" r="0.75" fill="currentColor" stroke="none"/></svg>
 {:else if name === 'archive'}
   <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="1" width="14" height="4" rx="1"/><path d="M2 5v9a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V5"/><path d="M6 9h4"/></svg>
+{:else if name === 'word-wrap'}
+  <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h12"/><path d="M2 8h9a2 2 0 0 1 0 4H9"/><path d="M11 14l-2-2 2-2"/><path d="M2 12h3"/></svg>
 {/if}
