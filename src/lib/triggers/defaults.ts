@@ -1,14 +1,14 @@
 import type { Trigger, MatchMode } from '$lib/tauri/types';
 
 /** Shared Claude resume command — used by auto-resume presets and the claude-auto-resume trigger. */
-export const CLAUDE_RESUME_COMMAND = 'if [ -n "%claudeSessionId" ]; then claude --resume %claudeSessionId; elif [ -n "%claudeResumeCommand" ]; then eval %claudeResumeCommand; else claude --continue; fi';
+export const CLAUDE_RESUME_COMMAND = "if [ -n '%claudeSessionId' ]; then claude --resume %claudeSessionId; elif [ -n '%claudeResumeCommand' ]; then eval %claudeResumeCommand; else claude --continue; fi";
 
 /** App-provided default trigger templates. Keyed by stable default_id. */
 export const DEFAULT_TRIGGERS: Record<string, Omit<Trigger, 'id' | 'enabled' | 'workspaces' | 'default_id'> & { match_mode?: MatchMode }> = {
   'claude-resume': {
     name: 'Claude Resume',
     description: 'Captures the claude --resume command and session ID when Claude Code exits. Useful for setting up auto-resume to reconnect to the same session.',
-    pattern: 'Resume this session with:.*?(claude --resume (?:"[^"\\n]+"|([^\\s"\\n]+)))',
+    pattern: 'Resume this session with:.*?(claude --resume (?:"(?:[^"\\\\\\n]|\\\\.)*"|([^\\s"\\n]+)))',
     actions: [
       { action_type: 'notify', command: null, title: null, message: 'Captured: %claudeResumeCommand', tab_state: null },
     ],
