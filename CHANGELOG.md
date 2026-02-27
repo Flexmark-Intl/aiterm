@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.3.2
+
+- Fix Claude Code refusing to launch inside aiTerm ("cannot be launched inside another Claude Code session")
+
 ## v1.3.1
 
 - Fix claude-resume trigger not matching session names that contain escaped quotes
