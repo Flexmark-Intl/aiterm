@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.3.1
+
+- Fix claude-resume trigger not matching session names that contain escaped quotes
+
 ## v1.3.0
 
 - Add PDF viewer for editor tabs with page navigation
