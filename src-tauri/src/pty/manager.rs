@@ -174,6 +174,7 @@ pub fn spawn_pty(
     cmd.env("TERM", "xterm-256color");
     cmd.env("COLORTERM", "truecolor");
     cmd.env("TERM_PROGRAM", "aiterm");
+    cmd.env_remove("CLAUDECODE");
 
     // Set working directory — use provided cwd (from split) or fall back to home
     if let Some(ref dir) = cwd {
