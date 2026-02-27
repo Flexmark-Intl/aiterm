@@ -10,6 +10,9 @@ import {
 import { info as logInfo } from '@tauri-apps/plugin-log';
 import { playSystemSound } from '$lib/tauri/commands';
 
+// NOTE: The `extra` field is passed through to Rust but only used on mobile (iOS/Android).
+// On desktop, tauri-plugin-notification uses notify_rust which discards extra data and has
+// no click callback. The extra.tabId is prep work for future mobile support.
 async function sendOsNotification(title: string, body: string, source?: ToastSource): Promise<void> {
   let granted = await isPermissionGranted();
   if (!granted) {

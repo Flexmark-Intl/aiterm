@@ -7,6 +7,7 @@ A Tauri-based terminal emulator with workspace organization, built with Svelte 5
 - **Frontend**: Svelte 5 (runes), SvelteKit, TypeScript, Vite
 - **Backend**: Rust, Tauri 2
 - **Terminal**: xterm.js with fit, serialize, and web-links addons
+- **Editor**: CodeMirror 6 (+ MergeView for diffs)
 - **PTY**: portable-pty for cross-platform pseudo-terminal support
 - **State**: parking_lot RwLock for thread-safe Rust state
 
@@ -16,21 +17,29 @@ A Tauri-based terminal emulator with workspace organization, built with Svelte 5
 src/                          # Frontend (Svelte/TypeScript)
 ├── routes/                   # SvelteKit routes
 │   ├── +layout.svelte        # App shell, keyboard shortcuts, modals
-│   └── +page.svelte          # Main terminal view
+│   └── +page.svelte          # Main terminal view, portal rendering
 ├── lib/
 │   ├── components/           # Svelte components
-│   │   ├── editor/           # EditorPane (CodeMirror 6)
+│   │   ├── editor/           # EditorPane (CodeMirror 6), DiffPane (MergeView)
 │   │   ├── terminal/         # TerminalPane, TerminalTabs
 │   │   ├── workspace/        # WorkspaceSidebar
 │   │   └── pane/             # SplitPane
 │   ├── stores/               # Svelte 5 stores (.svelte.ts)
-│   │   ├── workspaces.svelte.ts
-│   │   ├── terminals.svelte.ts
-│   │   ├── preferences.svelte.ts
-│   │   ├── activity.svelte.ts
-│   │   ├── triggers.svelte.ts    # Trigger engine (pattern matching, variables)
-│   │   ├── toasts.svelte.ts      # In-app toast notification store
+│   │   ├── workspaces.svelte.ts   # Workspace/pane/tab CRUD, navigateToTab()
+│   │   ├── terminals.svelte.ts    # Terminal instances, OSC state
+│   │   ├── preferences.svelte.ts  # User preferences
+│   │   ├── activity.svelte.ts     # Tab activity indicators (OSC 133)
+│   │   ├── triggers.svelte.ts     # Trigger engine (pattern matching, variables)
+│   │   ├── claudeCode.svelte.ts   # Claude Code IDE tool request handler
+│   │   ├── editorRegistry.svelte.ts # Editor state tracking (dirty, view refs)
+│   │   ├── notifications.svelte.ts  # Command completion notification logic
+│   │   ├── toasts.svelte.ts       # In-app toast notification store
 │   │   └── notificationDispatch.ts # Routes to toast or OS notification
+│   ├── triggers/             # Trigger definitions and parsing
+│   │   ├── defaults.ts       # Built-in Claude Code trigger templates
+│   │   └── variableCondition.ts # Variable expression parser (&&, ||, ==, !=)
+│   ├── themes/               # Theme system
+│   │   └── index.ts          # 10 built-in themes, custom theme support, CSS application
 │   ├── utils/                # Pure utility modules
 │   │   ├── shellIntegration.ts  # Remote shell hook snippets
 │   │   ├── promptPattern.ts     # PS1 prompt pattern matching
@@ -38,7 +47,8 @@ src/                          # Frontend (Svelte/TypeScript)
 │   │   ├── editorTheme.ts       # Tokyo Night CodeMirror 6 theme
 │   │   ├── languageDetect.ts    # Extension/filename → language + CM6 loader
 │   │   ├── filePathDetector.ts  # xterm.js ILinkProvider for file paths
-│   │   └── openFile.ts          # Orchestrates file open (local/remote/editor tab)
+│   │   ├── openFile.ts          # Orchestrates file open (local/remote/editor tab)
+│   │   └── platform.ts         # OS detection, modifier key helpers (isMac, isModKey)
 │   └── tauri/                # Tauri IPC layer
 │       ├── commands.ts       # invoke() wrappers
 │       └── types.ts          # TypeScript interfaces matching Rust
@@ -48,10 +58,16 @@ src-tauri/src/                # Backend (Rust)
 ├── commands/                 # Tauri command handlers
 │   ├── workspace.rs          # State CRUD operations
 │   ├── editor.rs             # File read/write, SCP, binary/image loading
-│   └── terminal.rs           # PTY spawn/write/resize/kill
+│   ├── terminal.rs           # PTY spawn/write/resize/kill
+│   ├── window.rs             # Multi-window management, preferences window
+│   └── claude_code.rs        # Claude Code tool response + selection notification
+├── claude_code/              # Claude Code IDE integration
+│   ├── server.rs             # WebSocket + SSE MCP server (axum)
+│   ├── protocol.rs           # JSON-RPC protocol, tool list, initialize response
+│   └── lockfile.rs           # Lock file management + MCP server registration
 ├── state/                    # Application state
 │   ├── workspace.rs          # Data structures (Workspace, Pane, Tab, Preferences)
-│   ├── app_state.rs          # Global state container
+│   ├── app_state.rs          # Global state container (incl. Claude Code fields)
 │   └── persistence.rs        # JSON file storage
 └── pty/                      # PTY management
     └── manager.rs            # spawn_pty, PTY I/O handling
@@ -62,10 +78,12 @@ src-tauri/src/                # Backend (Rust)
 ```bash
 npm run dev          # Start Vite dev server (frontend only)
 npm run check        # TypeScript + Svelte type checking
-npm run tauri dev    # Full app development (frontend + backend)
-npm run tauri build  # Production build
+npm run tauri:dev    # Full app development (frontend + backend + MCP bridge)
+npm run tauri:build  # Production build
 cargo check          # Check Rust compilation (in src-tauri/)
 ```
+
+**Note**: `npm run tauri:dev` passes `--features mcp-bridge --config src-tauri/tauri.dev.conf.json` to enable the Claude Code MCP bridge and apply dev-specific CSP overrides.
 
 ## Key Patterns
 
@@ -112,7 +130,7 @@ export const myStore = createMyStore();
 
 ## Styling
 
-**Theme**: Tokyo Night color scheme
+**Theme system**: 10 built-in themes + custom theme support. Default is Tokyo Night.
 
 ```css
 --bg-dark: #1a1b26;     /* Main background */
@@ -122,6 +140,8 @@ export const myStore = createMyStore();
 --fg-dim: #565f89;      /* Secondary text */
 --accent: #7aa2f7;      /* Interactive elements */
 ```
+
+Themes defined in `src/lib/themes/index.ts`. Each theme has separate `UiColors` (CSS variables) and `TerminalColors` (ANSI 16 + cursor/selection). Applied via `applyUiTheme()` which sets CSS variables on `document.documentElement`. Custom themes editable via `ThemeEditor.svelte` in Preferences.
 
 Use CSS variables from `app.css`. Component styles are scoped.
 
@@ -142,9 +162,10 @@ Pane
 
 Tab
 ├── id, name, custom_name (bool — true if user explicitly renamed)
-├── tab_type: 'terminal' | 'editor'
+├── tab_type: 'terminal' | 'editor' | 'diff'
 ├── pty_id (terminal tabs — links to running PTY)
 ├── editor_file (editor tabs — EditorFileInfo: file_path, is_remote, remote_ssh_command, remote_path, language)
+├── diff_context (diff tabs — DiffContext: request_id, file_path, old_content, new_content, tab_name)
 ├── scrollback (serialized terminal state)
 ├── notes, notes_open, notes_mode (per-tab markdown notes)
 └── trigger_variables (persisted variable map from triggers)
@@ -152,21 +173,26 @@ Tab
 SplitNode = SplitLeaf { pane_id } | SplitBranch { id, direction, ratio, children }
 
 Trigger
-├── id, name, description, pattern (regex)
-├── actions: TriggerActionEntry[] (notify, send_command)
+├── id, name, description, pattern (regex or text)
+├── match_mode: 'regex' | 'plain_text' | 'variable'
+├── actions: TriggerActionEntry[] (notify, send_command, enable_auto_resume, set_tab_state)
 ├── variables: VariableMapping[] (capture group → named variable)
 ├── enabled, cooldown, workspaces (scope filter)
 └── default_id (links to app-provided default template, if any)
 
 Preferences
+├── theme, custom_themes
 ├── font_size, font_family
 ├── cursor_style, cursor_blink
 ├── auto_save_interval, scrollback_limit
 ├── prompt_patterns (PS1-like patterns for remote cwd detection)
 ├── clone_cwd, clone_scrollback, clone_ssh, clone_history, clone_notes, clone_auto_resume, clone_variables
 ├── notification_mode (auto, in_app, native, disabled)
+├── notification_sound, notification_volume, toast_duration, notify_min_duration
 ├── workspace_sort_order (default, alphabetical, recent)
 ├── show_workspace_tab_count, show_recent_workspaces
+├── claude_code_ide (bool — enable Claude Code integration)
+├── notes_font_size, notes_font_family, notes_width
 ├── triggers: Trigger[]
 └── hidden_default_triggers (IDs of deleted app-provided defaults)
 ```
@@ -183,7 +209,7 @@ When the split tree changes (leaf → split node), Svelte destroys and recreates
 
 **Do not** move TerminalPane rendering into SplitPane — this breaks terminal persistence on split.
 
-**EditorPane uses the same portal pattern** — `attachToSlot()` portals into `data-terminal-slot={tabId}`, listens for `terminal-slot-ready`, and handles `editor-save` CustomEvents from the layout layer.
+**EditorPane and DiffPane use the same portal pattern** — `attachToSlot()` portals into `data-terminal-slot={tabId}`, listens for `terminal-slot-ready`.
 
 ## CodeMirror Editor Tabs
 
@@ -205,6 +231,56 @@ Editor tabs (`tab_type === 'editor'`) render `EditorPane.svelte` instead of `Ter
 **Search panel**: Uses `search({ top: true })` — positioned at top of editor. Styled via `:global(.cm-panel.cm-search)` CSS in EditorPane.
 
 **Tab insertion**: New editor tabs insert after the currently active tab, not at the end.
+
+## Diff Tabs
+
+Diff tabs (`tab_type === 'diff'`) render `DiffPane.svelte` using CodeMirror's `MergeView` for side-by-side comparison. Created by Claude Code's `openDiff` tool.
+
+- **Accept**: Writes `new_content` to `file_path` (local or SCP), responds to Claude with success
+- **Reject**: Responds to Claude with `DIFF_REJECTED`, closes tab
+- **Blocking**: Claude Code waits for the accept/reject response before continuing
+- **DiffContext**: `{ request_id, file_path, old_content, new_content, tab_name }`
+
+## Claude Code IDE Integration
+
+aiTerm exposes an MCP server that Claude Code CLI discovers and connects to, providing IDE-like capabilities.
+
+### Architecture
+
+```
+Claude Code CLI ←→ WebSocket/SSE ←→ axum server (Rust) ←→ Tauri events ←→ Frontend (Svelte)
+```
+
+**Backend** (`src-tauri/src/claude_code/`):
+- `server.rs` — axum router with WebSocket (`/`) and SSE (`/sse` + `/message`) endpoints. Random port (10000–65535), 32-char auth token.
+- `protocol.rs` — JSON-RPC request/response types, `tool_list_response()` (11 tools), `initialize_response()`
+- `lockfile.rs` — writes `~/.claude/ide/{port}.lock` for discovery, registers `mcpServers.aiterm` (or `aiterm-dev`) in `~/.claude.json`
+
+**Frontend** (`src/lib/stores/claudeCode.svelte.ts`):
+- Listens for `claude-code-tool` Tauri events
+- Dispatches to tool handlers (getOpenEditors, openFile, openDiff, etc.)
+- Responds via `claude_code_respond` Tauri command
+
+**Enabled by**: `preferences.claude_code_ide` (default true). Server starts in `lib.rs` as a background tokio task.
+
+### Tools Exposed
+
+| Tool | Description |
+|------|-------------|
+| getOpenEditors | List open editor tabs (path, language, dirty state) |
+| getWorkspaceFolders | Workspace root paths |
+| getDiagnostics | Language diagnostics for a file |
+| checkDocumentDirty | Check if file has unsaved changes |
+| saveDocument | Save file to disk |
+| getCurrentSelection | Active editor selection + cursor |
+| getLatestSelection | Most recent selection in any tab |
+| openFile | Open file in editor tab (with optional line/text selection) |
+| openDiff | Show side-by-side diff for review (blocking) |
+| closeAllDiffTabs | Close all pending diff tabs |
+
+### Editor Registry
+
+`editorRegistry.svelte.ts` maintains a map of open editor views, used by Claude Code tools to query editor state (dirty tabs, file paths, selections) and by DiffPane for tracking.
 
 ## OSC 8 File Hyperlinks (`l` Command)
 
@@ -303,10 +379,10 @@ trap '[[ "$__aiterm_at_prompt" == 1 ]] && __aiterm_at_prompt= && printf B' DEBUG
 
 Dev and production builds use **separate data directories** so they can run simultaneously without state corruption:
 
-- **Dev** (`tauri dev`): `~/Library/Application Support/com.aiterm.dev/`
-- **Production** (`tauri build`): `~/Library/Application Support/com.aiterm.app/`
+- **Dev** (`tauri:dev`): `~/Library/Application Support/com.aiterm.dev/`
+- **Production** (`tauri:build`): `~/Library/Application Support/com.aiterm.app/`
 
-Controlled by `cfg!(debug_assertions)` in `state/persistence.rs` → `app_data_slug()`. The window title is set to "aiTerm (Dev)" in debug builds, and the sidebar shows a DEV badge via `+layout.svelte` exposing an `isDevMode` flag.
+Controlled by `cfg!(debug_assertions)` in `state/persistence.rs` → `app_data_slug()`. The window title is set to "aiTerm (Dev)" in debug builds. `APP_DISPLAY_NAME` is "aiTermDev" (dev) or "aiTerm" (prod) — used in Claude Code lock files and MCP server registration. The sidebar shows a DEV badge via `+layout.svelte` exposing an `isDevMode` flag.
 
 **Do not** hardcode `com.aiterm.app` anywhere — always use `app_data_slug()` in Rust. State files, backups, and temp files all derive their paths from this slug.
 
@@ -323,14 +399,24 @@ Triggers watch terminal output for regex patterns and fire actions. Configured i
 
 - **Engine**: `src/lib/stores/triggers.svelte.ts` — `processOutput()` called from TerminalPane's PTY listener
 - **Flow**: raw PTY bytes → redraw detection → ANSI-stripped → buffer (append or replace) → regex match → dedup check → fire
+- **Match modes**: `regex` (default), `plain_text`, `variable` (evaluates variable-condition expressions)
+- **Variable conditions** (`src/lib/triggers/variableCondition.ts`): Expression parser supporting `a || b && c`, `!x`, `x == "value"`, `x != "value"`. Cached AST.
 - **Redraw detection**: Raw PTY data is tested for cursor-repositioning sequences (`\e[A`, `\e[H`, `\e[J`) before ANSI stripping. If detected, the buffer is **replaced** (not appended) with the current chunk's stripped text, since TUI redraws overwrite existing content.
 - **Dedup**: Tracks last matched text + timestamp per trigger per tab. If the exact same text matches again within 10s (`DEDUP_WINDOW_MS`), the match is consumed from the buffer but the trigger doesn't fire. Prevents TUI apps (Claude Code / Ink) from re-triggering on redrawn content.
 - **Buffer consumption**: Matched text is always consumed from the buffer, even when blocked by cooldown or dedup. This prevents stale matches from accumulating and re-firing after cooldown expires.
-- **Actions**: `notify` (dispatches via notification system), `send_command` (writes to PTY)
+- **Actions**: `notify` (dispatches via notification system), `send_command` (writes to PTY), `enable_auto_resume`, `set_tab_state`
 - **Variables**: Capture groups extracted into named variables (`%varName`), persisted per-tab via `trigger_variables`
 - **Variable interpolation**: `interpolateVariables(tabId, text)` replaces `%varName` tokens — used in tab titles, auto-resume commands, notification messages
 - **Cooldown**: Per-trigger per-tab, prevents rapid re-firing
-- **Default triggers**: App-provided templates (e.g. `claude-resume`, `claude-session-id`) with stable `default_id`. Seeded on Preferences page mount. Users can edit them; "Reset" button restores template values. Deleted defaults tracked in `hidden_default_triggers`.
+- **Default triggers** (`src/lib/triggers/defaults.ts`): 6+ app-provided templates with stable `default_id`:
+  - `claude-resume` — captures `claude --resume` command
+  - `claude-session-id` — extracts UUID from `/status` output
+  - `claude-question` — detects "Do you want to proceed?" prompts
+  - `claude-plan-ready` — detects plan ready message
+  - `claude-compacting` — notifies during context compaction
+  - `claude-compaction-complete` — alerts when compaction finishes
+  - `claude-auto-resume` — variable-mode trigger for auto-resume enablement
+- Seeded on Preferences page mount via `seedDefaultTriggers()`. Users can edit; "Reset" restores template values. Deleted defaults tracked in `hidden_default_triggers`.
 
 ## Notifications
 
@@ -341,7 +427,13 @@ Three-mode notification system controlled by `notification_mode` preference:
 - **native**: Always use OS notifications
 - **disabled**: No notifications
 
-Architecture: `notificationDispatch.ts` routes `dispatch(title, body, type)` calls based on mode + focus state. Toast UI in `Toast.svelte` (rendered in `+layout.svelte`), store in `toasts.svelte.ts` (max 3 visible, 5s auto-dismiss).
+Architecture: `notificationDispatch.ts` routes `dispatch(title, body, type, source?)` calls based on mode + focus state. Toast UI in `Toast.svelte` (rendered in `+layout.svelte`), store in `toasts.svelte.ts` (max 3 visible, configurable auto-dismiss).
+
+**Deep-linking**: Both toasts and OS notifications carry `source.tabId`. Clicking a toast calls `navigateToTab(tabId)` (exported from `workspaces.svelte.ts`). OS notifications pass `tabId` via the `extra` field; `+layout.svelte` registers an `onAction` listener to focus the window and navigate. **Note**: `onAction` only fires on mobile (iOS/Android) — on desktop, `tauri-plugin-notification` uses `notify_rust` which is fire-and-forget with no click callback. The `extra` data and listener are prep work for future mobile support.
+
+**Sound**: `playNotificationSound()` plays built-in chirp (Web Audio: two-tone 800Hz + 1200Hz) or system sound via Rust backend. Configurable sound choice and volume in preferences.
+
+**Command completion** (`notifications.svelte.ts`): Self-initializing store that subscribes to `activityStore.onCommandStart/onCommandComplete`. Only notifies if tab is not visible and command duration exceeds `notify_min_duration` (default 30s).
 
 ## Keyboard Shortcuts
 
@@ -435,7 +527,7 @@ Do **not** use `eprintln!()` or `console.error()` — they bypass the log file a
 
 ### Reading logs during development
 
-Logs also stream to stdout (the terminal running `npm run tauri dev`). To tail the log file directly:
+Logs also stream to stdout (the terminal running `npm run tauri:dev`). To tail the log file directly:
 
 ```bash
 # macOS
@@ -475,3 +567,7 @@ Check `~/Library/Application Support/com.aiterm.dev/aiterm-state.json` (dev) or 
 - **Hover state cleared before context menu interaction**: If you snapshot reactive hover state when the context menu opens, the `leave` callback fires as the mouse moves to the menu, clearing it. Use a plain (non-reactive) variable for the snapshot, set it at open time.
 - **TUI redraws cause false triggers and activity**: TUI apps like Claude Code (Ink) redraw on the normal buffer using cursor-up sequences, sending the same stripped text repeatedly. This re-triggers pattern matches and falsely marks background tabs as active. Detect redraws via `\e[A`, `\e[H`, `\e[J` in the raw PTY data *before* ANSI stripping. In triggers: replace buffer instead of appending. In activity: skip `markActive()`. Note: the redraw check in TerminalPane's PTY listener decodes `data` to string separately from `processOutput()` — acceptable since it only runs for non-visible tabs, but worth consolidating if performance becomes a concern.
 - **TUI cursor-up causes viewport scroll jumps**: Ink-style TUI redraws on the normal buffer (not alternate screen) use cursor-up sequences that cause xterm.js to scroll the viewport into the scrollback region. Fix: save `distFromBottom = baseY - viewportY` before `terminal.write()`, restore via `scrollToLine(newBaseY - distFromBottom)` in the write callback. Do NOT use `scrollToBottom()` — that just creates rapid top/bottom flipping.
+- **Tauri PluginListener cleanup**: `onAction()` and similar Tauri plugin listener registrations return `PluginListener` objects, not functions. Clean up with `.unregister()`, not direct invocation.
+- **Tauri notification `onAction` is mobile-only**: `tauri-plugin-notification` v2 uses `notify_rust` on desktop, which is fire-and-forget — no click callback, `extra` data discarded. `onAction`/`onNotificationReceived` events only fire on iOS/Android. The `extra.tabId` and `onAction` listener in `+layout.svelte` are prep for future mobile support.
+- **Serde round-trip pitfall**: Rust `skip_serializing_if = "Option::is_none"` omits null fields → loaded JS objects have `undefined` instead of `null`. Use field-by-field comparison with `?? null` normalization, NOT `JSON.stringify`.
+- **SSH ControlMaster on restore**: Users with `ControlMaster auto` get "socket already exists" warnings. `buildSshCommand()` injects `-o ControlMaster=no`, and `cleanSshCommand()` strips it (+ `-t`) before rebuilding to prevent flag accumulation across restore cycles.

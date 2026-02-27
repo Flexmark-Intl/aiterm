@@ -1,14 +1,7 @@
-<p align="center">
-  <img src="src-tauri/icons/icon.png" alt="aiTerm" width="128" />
-</p>
-
-<h1 align="center">aiTerm</h1>
-
-<p align="center">
-  A terminal built for AI workflows — not AI built into a terminal.
-</p>
-
----
+<table><tr>
+<td><img src="src-tauri/icons/icon.png" alt="aiTerm" width="128" /></td>
+<td><h1>aiTerm</h1>A terminal built for AI workflows — not AI built into a terminal.</td>
+</tr></table>
 
 A terminal emulator built with Tauri 2 + Svelte 5, designed to make terminal-based AI workflows better and more organized. aiTerm is not "AI in a terminal" — there is no built-in LLM, no chat sidebar, no magic autocomplete. Instead, it's a proper terminal that understands what AI coding agents are doing and gives you the tools to manage them.
 
@@ -20,10 +13,57 @@ Our initial focus is on **Claude Code** integrations:
 - **Workspace organization** — group related Claude sessions by project; split panes to run multiple agents side by side
 - **Scrollback persistence** — full terminal state survives restarts, so you never lose Claude's output
 - **SSH session cloning** — split into a second shell at the same remote CWD while Claude works in the first
+- **IDE integration** — exposes MCP tools to Claude Code CLI for file operations, diff review, and editor control
 
 aiTerm is fully written by AI (Claude), with human engineering direction and architectural rails.
 
 Runs on macOS, Windows, and Linux.
+
+## Why aiTerm?
+
+Other terminals give you tabs and splits. aiTerm gives you a system for managing the chaos of real AI-assisted development — where you're juggling multiple Claude sessions across projects, SSHing into servers, and trying to remember what you were doing three hours ago.
+
+### Organize by workspace, not just tabs
+
+Group your terminals by project. Each workspace has its own pane layout, tabs, and context. Switch between "ACME Project" and "Production Server" without losing your place in either.
+
+![Workspaces and tabs](screenshots/workspaces-tabs.png)
+
+### Notes on every tab
+
+Each tab has its own markdown notes panel. Track TODOs, paste connection strings, jot down what you're debugging — right next to the terminal doing the work. Workspace-level notes too.
+
+![Per-tab notes panel](screenshots/notes-panel.png)
+
+### Built-in editor, integrated with your terminal
+
+Click any file path in terminal output to open it in an editor tab. Works over SSH too — remote files load transparently via SCP. Syntax highlighting for 50+ languages, image/PDF preview, and Claude Code's diff review all live alongside your terminal tabs.
+
+![Code editor tab](screenshots/editor-tab.png)
+
+### Deep clone everything
+
+Duplicate a tab and get *everything*: scrollback history, CWD, SSH session, Claude resume command, tab name, notes, trigger variables. Or shallow clone for just the name and CWD. New tabs automatically inherit the workspace's most common working directory.
+
+### Tab names that make sense
+
+Tabs auto-update from terminal titles (OSC 0/2), but you can override with your own name — or combine both. Rename a tab "billing API debug" and it stays that way even as the terminal title changes underneath.
+
+### Per-tab command history
+
+Every tab maintains its own shell history. Clone a tab and its history comes with it. No more scrolling through one giant shared history trying to find the command you ran in a specific context.
+
+### Auto-resume: never lose a session
+
+Reboot your machine, restart aiTerm — everything comes back. Terminal scrollback, tab layout, workspace state. Configure triggers to automatically resume Claude Code sessions, reconnect SSH sessions to the right remote CWD, and pick up exactly where you left off.
+
+### Archive and restore tabs
+
+Done with a Claude session but not ready to lose it? Archive the tab. It disappears from your tab bar but preserves everything — scrollback, notes, trigger state. Restore it later and resume right where you left off. Perfect for when `/rename` and `--continue` aren't enough.
+
+### Stay in the loop with notifications
+
+Triggers watch your terminal output for patterns — Claude asking a question, a long build finishing, context compaction starting. Get notified via in-app toasts or OS notifications, with deep-linking straight to the right workspace and tab.
 
 ## Features
 
@@ -34,13 +74,14 @@ Runs on macOS, Windows, and Linux.
 - **Multiple tabs** — per-pane tabs with activity indicators and completion detection
 - **Scrollback persistence** — saves and restores terminal state across restarts
 - **SSH session cloning** — split an SSH session to get a second shell at the same remote CWD
+- **Multi-window** — open additional windows, duplicate windows with full tab context
 
 ### Shell Integration
 - **OSC 133 (FinalTerm)** — command start/finish detection for tab completion indicators
 - **OSC 7** — directory tracking (remote CWD awareness through SSH)
 - **OSC 8 file hyperlinks** — `l` command wraps `ls` to emit clickable file links; underline appears on hover
 - **`l` shell function** — always available in local shells; also injectable into remote shells via context menu
-- **Tab indicators** — completed (✓/✗), at-prompt (›), and activity dot; no spinner (interactive programs stay stable)
+- **Tab indicators** — completed (checkmark/cross), at-prompt (›), and activity dot; no spinner (interactive programs stay stable)
 - **Remote install** — one-liner session setup or permanent `~/.bashrc`/`~/.zshrc` installation
 
 ### Code Editor
@@ -48,6 +89,7 @@ Runs on macOS, Windows, and Linux.
 - **Click to open** — click any file path in terminal output to open it in an editor tab
 - **`Cmd+O`** — file dialog that defaults to the active terminal's CWD
 - **Local + remote files** — remote files read/written via SCP, transparent to the user
+- **Diff review** — side-by-side diff tabs with accept/reject workflow (used by Claude Code integration)
 - **Image preview** — PNG, JPG, GIF, WebP, SVG, AVIF, BMP, ICO with zoom controls (fit, +/-, presets)
 - **50+ languages** — syntax highlighting via CodeMirror 6 first-class packages and legacy StreamLanguage modes
 - **Language detection** — by extension, known filename (`.bashrc`, `Dockerfile`), and shebang line
@@ -56,23 +98,39 @@ Runs on macOS, Windows, and Linux.
 - **Close protection** — inline confirm (no `window.confirm`) for unsaved changes
 - **Portal pattern** — editor survives split tree changes (same as terminals)
 
+### Claude Code IDE Integration
+- **MCP server** — WebSocket + SSE server exposes tools to Claude Code CLI
+- **11 tools** — getOpenEditors, getWorkspaceFolders, getDiagnostics, checkDocumentDirty, saveDocument, getCurrentSelection, getLatestSelection, openFile, openDiff, closeAllDiffTabs
+- **Diff review** — Claude proposes file changes; you accept or reject in a side-by-side diff tab
+- **Auto-discovery** — writes lock file to `~/.claude/ide/` and registers in `~/.claude.json` for automatic connection
+- **Dev/prod isolation** — dev builds register as `aiterm-dev` with display name "aiTermDev"
+
 ### Trigger System
 - **Regex triggers** — watch terminal output for patterns, fire actions
-- **Actions**: `notify` (toast or OS notification), `send_command` (write to PTY), `enable_auto_resume`
+- **Match modes** — regex, plain text, or variable-condition expressions
+- **Actions** — `notify` (toast or OS notification), `send_command` (write to PTY), `enable_auto_resume`, `set_tab_state`
 - **Variables** — capture groups mapped to named variables (`%varName`), persisted per tab
 - **Variable interpolation** — used in tab titles, auto-resume commands, notification bodies
-- **Default triggers** — Claude Code resume/session-id triggers built in, configurable
+- **Default triggers** — 6+ built-in Claude Code triggers (resume, session-id, question, plan-ready, compacting, auto-resume)
+- **Variable conditions** — expression parser supporting `&&`, `||`, `!`, `==`, `!=` operators
 
 ### Notifications
 - **Three modes** — `auto` (in-app when focused, OS when not), `in_app`, `native`, `disabled`
-- **Toast UI** — max 3 visible, 5s auto-dismiss, Tokyo Night styled
-- **Sound alerts** — optional system sound on trigger notifications
+- **Deep-linking** — clicking a toast or OS notification navigates to the source workspace and tab
+- **Toast UI** — max 3 visible, configurable auto-dismiss duration, Tokyo Night styled
+- **Sound alerts** — built-in chirp or system sounds with configurable volume
+- **Command completion** — notifies when long-running commands finish (configurable minimum duration)
 
 ### Notes
 - **Per-tab notes** — markdown or plain text notes panel per terminal/editor tab
 - **Workspace notes** — notes scoped to the whole workspace
 - **Interactive checkboxes** — rendered in preview mode
 - **Modes** — edit and preview; state persisted per tab
+
+### Themes
+- **10 built-in themes** — Tokyo Night (default), Dracula, Solarized Dark, Solarized Light, Nord, Gruvbox Dark, Monokai, Catppuccin Mocha, One Dark, macOS Pro
+- **Custom themes** — create and edit via theme editor in preferences
+- **Separate UI and terminal colors** — full control over both
 
 ### Workspace Sidebar
 - **Sort order** — default (drag and drop), alphabetical, or recent activity
@@ -123,7 +181,7 @@ All platforms require:
 # Install dependencies
 npm install
 
-# Full app dev (frontend + Rust backend)
+# Full app dev (frontend + Rust backend + MCP bridge)
 npm run tauri:dev
 
 # Frontend only (no Tauri)
@@ -173,7 +231,7 @@ src/                          # Frontend (Svelte 5 / TypeScript)
 │   └── +page.svelte          # Main terminal/editor view, portal rendering
 └── lib/
     ├── components/
-    │   ├── editor/           # EditorPane (CodeMirror 6)
+    │   ├── editor/           # EditorPane, DiffPane (CodeMirror 6)
     │   ├── terminal/         # TerminalPane, TerminalTabs
     │   ├── workspace/        # WorkspaceSidebar
     │   └── pane/             # SplitPane
@@ -183,8 +241,16 @@ src/                          # Frontend (Svelte 5 / TypeScript)
     │   ├── preferences.svelte.ts
     │   ├── triggers.svelte.ts
     │   ├── activity.svelte.ts
+    │   ├── claudeCode.svelte.ts    # Claude Code IDE tool handler
+    │   ├── editorRegistry.svelte.ts # Editor state tracking
+    │   ├── notifications.svelte.ts  # Command completion notifications
     │   ├── toasts.svelte.ts
     │   └── notificationDispatch.ts
+    ├── triggers/
+    │   ├── defaults.ts       # Built-in Claude Code triggers
+    │   └── variableCondition.ts  # Variable expression parser
+    ├── themes/
+    │   └── index.ts          # Theme definitions + application
     ├── utils/
     │   ├── editorTheme.ts    # Tokyo Night CodeMirror theme
     │   ├── filePathDetector.ts  # xterm.js link provider
@@ -192,6 +258,7 @@ src/                          # Frontend (Svelte 5 / TypeScript)
     │   ├── openFile.ts          # Orchestrates file open flow
     │   ├── shellIntegration.ts  # Remote shell hook snippets
     │   ├── promptPattern.ts     # PS1-like pattern matching
+    │   ├── platform.ts          # OS detection, modifier key helpers
     │   └── ansi.ts              # ANSI escape stripping
     └── tauri/
         ├── commands.ts       # invoke() wrappers
@@ -202,7 +269,13 @@ src-tauri/src/                # Backend (Rust)
 ├── commands/
 │   ├── workspace.rs          # State CRUD
 │   ├── editor.rs             # File read/write, SCP, editor tab creation
-│   └── terminal.rs           # PTY spawn/write/resize/kill
+│   ├── terminal.rs           # PTY spawn/write/resize/kill
+│   ├── window.rs             # Multi-window management
+│   └── claude_code.rs        # Claude Code tool response handler
+├── claude_code/              # Claude Code IDE integration
+│   ├── server.rs             # WebSocket + SSE MCP server
+│   ├── protocol.rs           # JSON-RPC protocol, tool definitions
+│   └── lockfile.rs           # Lock file + MCP server registration
 ├── state/
 │   ├── workspace.rs          # Data structures
 │   ├── app_state.rs          # Global state container
@@ -218,7 +291,7 @@ src-tauri/src/                # Backend (Rust)
 | Frontend | Svelte 5 (runes), SvelteKit, TypeScript |
 | Backend | Rust, Tauri 2 |
 | Terminal | xterm.js (FitAddon, SerializeAddon, WebLinksAddon) |
-| Editor | CodeMirror 6 |
+| Editor | CodeMirror 6 (+ MergeView for diffs) |
 | PTY | portable-pty |
 | State | parking_lot RwLock |
 
@@ -234,33 +307,38 @@ Workspace
 
 Pane
 ├── id, name
-├── tabs: Tab[]           # terminal or editor tabs
+├── tabs: Tab[]           # terminal, editor, or diff tabs
 └── active_tab_id
 
 Tab
 ├── id, name, custom_name
-├── tab_type: 'terminal' | 'editor'
+├── tab_type: 'terminal' | 'editor' | 'diff'
 ├── pty_id                # terminal tabs
 ├── editor_file           # editor tabs (path, remote info, language)
+├── diff_context          # diff tabs (request_id, file_path, old/new content)
 ├── scrollback
 ├── notes, notes_open, notes_mode
 └── trigger_variables
 
 Trigger
-├── pattern (regex), actions, variables
+├── pattern (regex), match_mode (regex/plain_text/variable)
+├── actions, variables
 ├── enabled, cooldown, workspaces scope
 └── default_id            # links to built-in template
 
 Preferences
+├── theme, custom_themes
 ├── font_size, font_family, cursor_style, cursor_blink
 ├── clone_*, notification_mode, shell_integration
+├── notification_sound, notification_volume, toast_duration
 ├── prompt_patterns, triggers
+├── claude_code_ide
 └── workspace sidebar options
 ```
 
 ## Theme
 
-Tokyo Night color scheme:
+Default: Tokyo Night. 10 built-in themes + custom theme support.
 
 ```css
 --bg-dark:   #1a1b26   /* main background */

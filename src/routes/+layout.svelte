@@ -148,7 +148,10 @@
       claudeCodeStore.setConnected(event.payload.connected);
     }).then(unlisten => { unlistenClaudeConnection = unlisten; });
 
-    // OS notification click → deep-link to workspace+tab
+    // OS notification click → deep-link to workspace+tab.
+    // NOTE: onAction only fires on mobile (iOS/Android). On desktop (macOS/Linux/Windows),
+    // tauri-plugin-notification uses notify_rust which is fire-and-forget with no click
+    // callback. The extra.tabId and this listener are prep work for future mobile support.
     let unlistenNotificationAction: { unregister: () => Promise<void> } | undefined;
     onNotificationAction((notification) => {
       const tabId = (notification.extra as Record<string, unknown>)?.tabId;
