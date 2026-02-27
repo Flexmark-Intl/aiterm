@@ -362,7 +362,8 @@
           <IconButton
             tooltip="Close workspace"
             size={20}
-            style="border-radius:3px;font-size:13px;opacity:0;flex-shrink:0"
+            class="workspace-close-btn"
+            style="border-radius:3px;font-size:13px;flex-shrink:0"
             onclick={(e) => handleDeleteWorkspace(workspace.id, e)}
           >
             &times;
@@ -549,7 +550,11 @@
     color: var(--fg-dim);
   }
 
-  .workspace-item:hover :global(.tooltip-wrapper) {
+  .workspace-item :global(.workspace-close-btn) {
+    opacity: 0;
+  }
+
+  .workspace-item:hover :global(.workspace-close-btn) {
     opacity: 1;
   }
 
