@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.3.0
+
+- Add PDF viewer for editor tabs with page navigation
+- Add markdown preview toggle for editor tabs with word wrap support
+- Add file-type icons on editor/diff tabs (code, image, PDF, markdown)
+- Add editor tab archive support with categorized dropdown (terminals, editors, diffs)
+- Add editor tab reload and dirty indicator for unsaved changes
+- Add OS notification deep-linking: clicking a notification navigates to the source tab
+- Add file link click behavior preference (click, Cmd+click, or disabled)
+- Add `COLORTERM=truecolor` to remote shell integration snippets
+- Improve editor search match and selection visibility
+- Fix editor horizontal scroll by constraining terminal-slot width
+- Fix markdown relative image paths in preview mode
+- Use `aiTermDev` as display name in dev builds for IDE integration
+
 ## v1.2.4
 
 - Migrate existing auto-resume tabs to include SSH/CWD context on load
