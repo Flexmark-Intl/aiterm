@@ -400,7 +400,7 @@ fn default_windows_shell() -> String {
 }
 
 fn default_file_link_action() -> String {
-    "click".to_string()
+    "modifier_click".to_string()
 }
 
 fn default_true() -> bool {
@@ -622,7 +622,7 @@ pub struct Preferences {
     /// Windows shell preference: "powershell", "pwsh", "cmd", "gitbash", "wsl"
     #[serde(default = "default_windows_shell")]
     pub windows_shell: String,
-    /// File link click behavior: "click", "modifier_click", "disabled"
+    /// File link click behavior: "click", "modifier_click", "alt_click", "disabled"
     #[serde(default = "default_file_link_action")]
     pub file_link_action: String,
 }

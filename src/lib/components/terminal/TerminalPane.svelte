@@ -204,6 +204,7 @@
             const mode = preferencesStore.fileLinkAction;
             if (mode === 'disabled') return;
             if (mode === 'modifier_click' && !event.metaKey && !event.ctrlKey) return;
+            if (mode === 'alt_click' && !event.altKey) return;
             const filePath = decodeURIComponent(new URL(uri).pathname);
             openFileFromTerminal(workspaceId, paneId, tabId, filePath);
           } else {
@@ -682,6 +683,7 @@
     if (mode !== 'disabled') {
       filePathLinkDisposable = createFilePathLinkProvider(terminal, (path, event) => {
         if (mode === 'modifier_click' && !event.metaKey && !event.ctrlKey) return;
+        if (mode === 'alt_click' && !event.altKey) return;
         openFileFromTerminal(workspaceId, paneId, tabId, path);
       });
     }

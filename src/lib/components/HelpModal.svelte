@@ -105,6 +105,8 @@
               <h3>Shell</h3>
               <ul class="tips">
                 <li>Right-click a terminal for "Setup Shell Integration" (session) or "Install Shell Integration" (permanent).</li>
+                <li>Type <code>l</code> instead of <code>ls</code> to list files as clickable links that open in an editor tab.</li>
+                <li>Use "Install Shell Integration" on remote SSH shells to get the <code>l</code> command and tab activity indicators there too.</li>
               </ul>
             </section>
           </div>

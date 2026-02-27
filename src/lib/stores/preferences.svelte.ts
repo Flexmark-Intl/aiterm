@@ -47,7 +47,7 @@ function createPreferencesStore() {
   let claudeTriggersPrompted = $state(false);
   let claudeCodeIde = $state(false);
   let windowsShell = $state('powershell');
-  let fileLinkAction = $state('click');
+  let fileLinkAction = $state('modifier_click');
 
   return {
     /** Resolves once the initial load() has completed. */
@@ -147,7 +147,7 @@ function createPreferencesStore() {
       claudeTriggersPrompted = prefs.claude_triggers_prompted ?? false;
       claudeCodeIde = prefs.claude_code_ide ?? false;
       windowsShell = prefs.windows_shell ?? 'powershell';
-      fileLinkAction = prefs.file_link_action ?? 'click';
+      fileLinkAction = prefs.file_link_action ?? 'modifier_click';
       _resolveReady();
     },
 
@@ -414,7 +414,7 @@ function createPreferencesStore() {
       claudeTriggersPrompted = prefs.claude_triggers_prompted ?? false;
       claudeCodeIde = prefs.claude_code_ide ?? false;
       windowsShell = prefs.windows_shell ?? 'powershell';
-      fileLinkAction = prefs.file_link_action ?? 'click';
+      fileLinkAction = prefs.file_link_action ?? 'modifier_click';
     },
 
     async save() {

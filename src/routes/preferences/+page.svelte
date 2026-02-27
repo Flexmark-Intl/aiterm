@@ -6,7 +6,7 @@
   import ResizableTextarea from '$lib/components/ResizableTextarea.svelte';
   import Tooltip from '$lib/components/Tooltip.svelte';
   import Icon from '$lib/components/Icon.svelte';
-  import { modLabel, isModKey } from '$lib/utils/platform';
+  import { modLabel, altLabel, isModKey } from '$lib/utils/platform';
   import { getAllWorkspaces, listSystemSounds, playSystemSound, detectWindowsShells } from '$lib/tauri/commands';
   import type { ShellInfo } from '$lib/tauri/types';
   import { tick, onMount } from 'svelte';
@@ -461,6 +461,7 @@
             <p class="setting-hint">
               How clicking detected file paths and <code>l</code> command links behaves.
               {preferencesStore.fileLinkAction === 'modifier_click' ? `Hold ${modLabel}+Click to open.` : ''}
+              {preferencesStore.fileLinkAction === 'alt_click' ? `Hold ${altLabel}+Click to open.` : ''}
             </p>
           </div>
           <select
@@ -470,6 +471,7 @@
           >
             <option value="click">Click opens file</option>
             <option value="modifier_click">{modLabel}+Click opens file</option>
+            <option value="alt_click">{altLabel}+Click opens file</option>
             <option value="disabled">Disabled</option>
           </select>
         </div>
