@@ -1,0 +1,49 @@
+import { defineConfig } from 'astro/config';
+import starlight from '@astrojs/starlight';
+
+export default defineConfig({
+  site: 'https://flexmark-intl.github.io',
+  base: '/aiterm',
+  integrations: [
+    starlight({
+      title: 'aiTerm',
+      logo: {
+        src: './src/assets/icon.png',
+      },
+      social: {
+        github: 'https://github.com/Flexmark-Intl/aiterm',
+      },
+      expressiveCode: {
+        themes: ['tokyo-night'],
+      },
+      head: [
+        {
+          tag: 'script',
+          content: `if (!localStorage.getItem('starlight-theme')) { document.documentElement.dataset.theme = 'dark'; }`,
+        },
+      ],
+      customCss: ['./src/styles/custom.css'],
+      sidebar: [
+        {
+          label: 'Features',
+          items: [
+            { label: 'Terminal', slug: 'features/terminal' },
+            { label: 'Workspaces & Panes', slug: 'features/workspaces' },
+            { label: 'Code Editor', slug: 'features/editor' },
+            { label: 'Claude Code Integration', slug: 'features/claude-code' },
+            { label: 'Triggers & Automation', slug: 'features/triggers' },
+            { label: 'Themes', slug: 'features/themes' },
+          ],
+        },
+        {
+          label: 'Guides',
+          items: [
+            { label: 'Getting Started', slug: 'guides/getting-started' },
+            { label: 'Keyboard Shortcuts', slug: 'guides/keyboard-shortcuts' },
+            { label: 'Building from Source', slug: 'guides/building' },
+          ],
+        },
+      ],
+    }),
+  ],
+});

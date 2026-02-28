@@ -1,0 +1,44 @@
+/* Tokyo Night inspired overrides for Starlight */
+:root {
+  --sl-color-accent-low: #1a1b26;
+  --sl-color-accent: #7aa2f7;
+  --sl-color-accent-high: #c0caf5;
+}
+
+/* Dark mode (default) overrides */
+:root[data-theme='dark'] {
+  --sl-color-bg: #1a1b26;
+  --sl-color-bg-nav: #16161e;
+  --sl-color-bg-sidebar: #1a1b26;
+}
+
+/* Platform icons */
+.platform-icons {
+  display: flex;
+  justify-content: center;
+  gap: 3rem;
+  margin: 1.5rem 0;
+}
+
+.platform {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  color: var(--sl-color-gray-3);
+}
+
+.platform svg {
+  display: block;
+}
+
+.platform span {
+  font-size: var(--sl-text-sm);
+}
+
+/* Card border-radius */
+.card {
+  border-radius: 0.4rem !important;
+  overflow: hidden;
+}
