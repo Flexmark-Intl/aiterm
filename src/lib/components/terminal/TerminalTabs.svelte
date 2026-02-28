@@ -152,7 +152,7 @@
 
   async function handleNewTab() {
     const count = pane.tabs.length + 1;
-    await workspacesStore.createTab(workspaceId, pane.id, `Terminal ${count}`);
+    await workspacesStore.createTab(workspaceId, pane.id, `Terminal ${count}`, { append: true });
   }
 
   async function handleArchiveTab(tabId: string, e: MouseEvent) {

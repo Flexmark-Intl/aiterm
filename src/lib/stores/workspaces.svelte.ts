@@ -471,9 +471,10 @@ function createWorkspacesStore() {
       });
     },
 
-    async createTab(workspaceId: string, paneId: string, name: string) {
-      const pane = workspaces.flatMap(w => w.panes).find(p => p.id === paneId);
-      const afterTabId = pane?.active_tab_id ?? undefined;
+    async createTab(workspaceId: string, paneId: string, name: string, options?: { append?: boolean }) {
+      const afterTabId = options?.append
+        ? undefined
+        : workspaces.flatMap(w => w.panes).find(p => p.id === paneId)?.active_tab_id ?? undefined;
       const tab = await commands.createTab(workspaceId, paneId, name, afterTabId);
 
       // Open new tab at the most common CWD among sibling terminal tabs
