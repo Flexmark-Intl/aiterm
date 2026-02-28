@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.3.3
+
+- Default file link click behavior to Cmd/Ctrl+Click, add Alt/Opt+Click option
+- Fix auto-resume trigger overwriting custom commands; tab button now appends instead of replacing
+- Fix invisible delete workspace button on hover
+- Pin Linux CI to Ubuntu 22.04 for broader compatibility
+
 ## v1.3.2
 
 - Fix Claude Code refusing to launch inside aiTerm ("cannot be launched inside another Claude Code session")
