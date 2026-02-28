@@ -19,7 +19,7 @@ export default defineConfig({
       head: [
         {
           tag: 'script',
-          content: `if (!localStorage.getItem('starlight-theme')) { document.documentElement.dataset.theme = 'dark'; }`,
+          content: `if (!localStorage.getItem('starlight-theme')) { localStorage.setItem('starlight-theme', 'dark'); document.documentElement.dataset.theme = 'dark'; }`,
         },
       ],
       customCss: ['./src/styles/custom.css'],
