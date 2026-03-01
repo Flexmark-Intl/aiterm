@@ -1,6 +1,6 @@
 <table><tr>
-<td><img src="src-tauri/icons/icon.png" alt="aiTerm" width="128" /></td>
-<td><h1>aiTerm</h1>A terminal built for AI workflows — not AI built into a terminal.</td>
+<td><a href="https://flexmark-intl.github.io/aiterm/"><img src="src-tauri/icons/icon.png" alt="aiTerm" width="128" /></a></td>
+<td><h1><a href="https://flexmark-intl.github.io/aiterm/">aiTerm</a></h1>A terminal built for AI workflows — not AI built into a terminal.<br><a href="https://flexmark-intl.github.io/aiterm/">Documentation & Screenshots</a></td>
 </tr></table>
 
 A terminal emulator built with Tauri 2 + Svelte 5, designed to make terminal-based AI workflows better and more organized. aiTerm is not "AI in a terminal" — there is no built-in LLM, no chat sidebar, no magic autocomplete. Instead, it's a proper terminal that understands what AI coding agents are doing and gives you the tools to manage them.
