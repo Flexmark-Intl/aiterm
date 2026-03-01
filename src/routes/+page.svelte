@@ -64,7 +64,7 @@
         class:collapsed={workspacesStore.sidebarCollapsed}
         style="width: {workspacesStore.sidebarCollapsed ? 0 : workspacesStore.sidebarWidth + 4}px"
       >
-        <WorkspaceSidebar width={workspacesStore.sidebarWidth} onversionclick={() => showChangelog = true} />
+        <WorkspaceSidebar width={workspacesStore.sidebarWidth} onversionclick={() => showChangelog = true} onhelp={() => window.dispatchEvent(new CustomEvent('toggle-help'))} />
         <Resizer direction="horizontal" onresize={handleSidebarResize} onresizeend={handleSidebarResizeEnd} />
       </div>
       {#if workspacesStore.sidebarCollapsed}

@@ -534,8 +534,12 @@
 
     window.addEventListener('keydown', handleKeydown, true);
 
+    const handleToggleHelp = () => { showHelp = !showHelp; };
+    window.addEventListener('toggle-help', handleToggleHelp);
+
     return () => {
       window.removeEventListener('keydown', handleKeydown, true);
+      window.removeEventListener('toggle-help', handleToggleHelp);
       unlistenClose?.();
       unlistenQuit?.();
       unlistenReloadTab?.();

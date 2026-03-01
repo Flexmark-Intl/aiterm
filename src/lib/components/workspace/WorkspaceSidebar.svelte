@@ -8,8 +8,10 @@
   import * as commands from '$lib/tauri/commands';
   import { modSymbol } from '$lib/utils/platform';
   import { claudeCodeStore } from '$lib/stores/claudeCode.svelte';
+  import { openPreferencesWindow } from '$lib/tauri/commands';
   import StatusDot from '$lib/components/ui/StatusDot.svelte';
   import IconButton from '$lib/components/ui/IconButton.svelte';
+  import Icon from '$lib/components/Icon.svelte';
 
   function workspaceHasActivity(workspaceId: string): boolean {
     if (workspaceId === workspacesStore.activeWorkspaceId) return false;
@@ -32,9 +34,10 @@
   interface Props {
     width: number;
     onversionclick?: () => void;
+    onhelp?: () => void;
   }
 
-  let { width, onversionclick }: Props = $props();
+  let { width, onversionclick, onhelp }: Props = $props();
 
   let editingId = $state<string | null>(null);
   let editingName = $state('');
@@ -373,6 +376,10 @@
     {/each}
   </div>
 
+  <div class="sidebar-footer">
+    <IconButton tooltip="Preferences ({modSymbol},)" size={24} style="border-radius:4px" onclick={openPreferencesWindow}><Icon name="settings" size={14} /></IconButton>
+    <IconButton tooltip="Help ({modSymbol}/)" size={24} style="border-radius:4px" onclick={onhelp}><Icon name="help" size={14} /></IconButton>
+  </div>
 </aside>
 
 <style>
@@ -561,6 +568,14 @@
   .edit-input {
     flex: 1;
     background: var(--bg-dark);
+  }
+
+  .sidebar-footer {
+    border-top: 1px solid var(--bg-light);
+    padding: 6px 8px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 4px;
   }
 
 </style>
