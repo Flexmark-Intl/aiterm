@@ -536,10 +536,13 @@
 
     const handleToggleHelp = () => { showHelp = !showHelp; };
     window.addEventListener('toggle-help', handleToggleHelp);
+    let unlistenHelp: (() => void) | undefined;
+    listen('toggle-help', () => { showHelp = !showHelp; }).then(u => { unlistenHelp = u; });
 
     return () => {
       window.removeEventListener('keydown', handleKeydown, true);
       window.removeEventListener('toggle-help', handleToggleHelp);
+      unlistenHelp?.();
       unlistenClose?.();
       unlistenQuit?.();
       unlistenReloadTab?.();

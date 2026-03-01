@@ -9,6 +9,7 @@
   import { modSymbol } from '$lib/utils/platform';
   import { claudeCodeStore } from '$lib/stores/claudeCode.svelte';
   import { openPreferencesWindow } from '$lib/tauri/commands';
+  import { open as shellOpen } from '@tauri-apps/plugin-shell';
   import StatusDot from '$lib/components/ui/StatusDot.svelte';
   import IconButton from '$lib/components/ui/IconButton.svelte';
   import Icon from '$lib/components/Icon.svelte';
@@ -377,6 +378,9 @@
   </div>
 
   <div class="sidebar-footer">
+    <IconButton tooltip="Report Bug" size={24} style="border-radius:4px" onclick={() => shellOpen('https://github.com/Flexmark-Intl/aiterm/issues/new?labels=bug&type=bug')}><Icon name="bug" size={14} /></IconButton>
+    <IconButton tooltip="Feature Request" size={24} style="border-radius:4px" onclick={() => shellOpen('https://github.com/Flexmark-Intl/aiterm/issues/new?type=feature')}><Icon name="lightbulb" size={14} /></IconButton>
+    <span style="flex:1"></span>
     <IconButton tooltip="Preferences ({modSymbol},)" size={24} style="border-radius:4px" onclick={openPreferencesWindow}><Icon name="settings" size={14} /></IconButton>
     <IconButton tooltip="Help ({modSymbol}/)" size={24} style="border-radius:4px" onclick={onhelp}><Icon name="help" size={14} /></IconButton>
   </div>

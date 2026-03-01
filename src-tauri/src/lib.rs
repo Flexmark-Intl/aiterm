@@ -140,6 +140,9 @@ pub fn run() {
             let duplicate_window_item = MenuItem::with_id(app, "duplicate_window", "Duplicate Window", true, Some("CmdOrCtrl+Shift+N"))?;
             let reload_tab_item = MenuItem::with_id(app, "reload_tab", "Reload Current Tab", true, Some("CmdOrCtrl+Shift+R"))?;
             let reload_window_item = MenuItem::with_id(app, "reload_window", "Reload Current Window", true, None::<&str>)?;
+            let help_item = MenuItem::with_id(app, "help", "Help", true, Some("CmdOrCtrl+/"))?;
+            let report_bug_item = MenuItem::with_id(app, "report_bug", "Report Bug…", true, None::<&str>)?;
+            let feature_request_item = MenuItem::with_id(app, "feature_request", "Submit Feature Request…", true, None::<&str>)?;
 
             let app_menu = SubmenuBuilder::new(app, "aiTerm")
                 .about(None)
@@ -180,8 +183,15 @@ pub fn run() {
                 .item(&reload_window_item)
                 .build()?;
 
+            let help_menu = SubmenuBuilder::new(app, "Help")
+                .item(&help_item)
+                .separator()
+                .item(&report_bug_item)
+                .item(&feature_request_item)
+                .build()?;
+
             let menu = MenuBuilder::new(app)
-                .items(&[&app_menu, &file_menu, &edit_menu, &window_menu])
+                .items(&[&app_menu, &file_menu, &edit_menu, &window_menu, &help_menu])
                 .build()?;
 
             app.set_menu(menu)?;
@@ -235,6 +245,19 @@ pub fn run() {
                         // These are handled by frontend keyboard shortcuts.
                         // The menu accelerators trigger the keydown event which
                         // the frontend handles.
+                    }
+                    "help" => {
+                        let _ = app_handle.emit("toggle-help", ());
+                    }
+                    "report_bug" => {
+                        #[allow(deprecated)]
+                        let _ = tauri_plugin_shell::ShellExt::shell(app_handle)
+                            .open("https://github.com/Flexmark-Intl/aiterm/issues/new?labels=bug&type=bug", None);
+                    }
+                    "feature_request" => {
+                        #[allow(deprecated)]
+                        let _ = tauri_plugin_shell::ShellExt::shell(app_handle)
+                            .open("https://github.com/Flexmark-Intl/aiterm/issues/new?type=feature", None);
                     }
                     _ => {}
                 }
