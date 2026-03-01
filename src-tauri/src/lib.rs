@@ -10,7 +10,7 @@ use state::{load_state, AppState, WindowData, Workspace};
 use state::persistence::migrate_app_data;
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
-use tauri::menu::{MenuBuilder, MenuItem, SubmenuBuilder};
+use tauri::menu::{AboutMetadata, MenuBuilder, MenuItem, SubmenuBuilder};
 use tauri::webview::WebviewWindowBuilder;
 use tauri_plugin_log::{Target, TargetKind, RotationStrategy, TimezoneStrategy};
 use log::LevelFilter;
@@ -144,8 +144,16 @@ pub fn run() {
             let report_bug_item = MenuItem::with_id(app, "report_bug", "Report Bug…", true, None::<&str>)?;
             let feature_request_item = MenuItem::with_id(app, "feature_request", "Submit Feature Request…", true, None::<&str>)?;
 
+            let about = AboutMetadata {
+                name: Some("aiTerm".into()),
+                version: Some(APP_VERSION.into()),
+                copyright: Some("© 2025 Flexmark International".into()),
+                credits: Some("A modern terminal emulator with workspace organization, split panes, and Claude Code integration.\n\nhttps://flexmark-intl.github.io/aiterm/".into()),
+                ..Default::default()
+            };
+
             let app_menu = SubmenuBuilder::new(app, "aiTerm")
-                .about(None)
+                .about(Some(about))
                 .separator()
                 .item(&preferences_item)
                 .separator()
