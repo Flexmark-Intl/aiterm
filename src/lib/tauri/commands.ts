@@ -286,6 +286,10 @@ export async function openPreferencesWindow(): Promise<void> {
   return invoke('open_preferences_window');
 }
 
+export async function openHelpWindow(): Promise<void> {
+  return invoke('open_help_window');
+}
+
 // Editor commands
 export interface ReadFileResult {
   content: string;

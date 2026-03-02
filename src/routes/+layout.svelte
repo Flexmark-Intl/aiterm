@@ -6,7 +6,6 @@
   import { listen } from '@tauri-apps/api/event';
   import { workspacesStore, navigateToTab } from '$lib/stores/workspaces.svelte';
   import { terminalsStore } from '$lib/stores/terminals.svelte';
-  import HelpModal from '$lib/components/HelpModal.svelte';
   import ClaudeIntegrationModal from '$lib/components/ClaudeIntegrationModal.svelte';
   import Toast from '$lib/components/Toast.svelte';
   import { seedDefaultTriggers } from '$lib/triggers/defaults';
@@ -32,7 +31,6 @@
   }
 
   let { children }: Props = $props();
-  let showHelp = $state(false);
   let showClaudeIntegration = $state(false);
 
   function dismissClaudeIntegration() {
@@ -105,7 +103,7 @@
     const appWindow = getCurrentWindow();
 
     // Non-terminal windows (e.g. preferences) skip terminal lifecycle and shortcuts
-    if (appWindow.label === 'preferences') {
+    if (appWindow.label === 'preferences' || appWindow.label === 'help') {
       return () => {
         unlistenPrefs?.();
         detachConsole?.();
@@ -209,12 +207,6 @@
           e.preventDefault();
           e.stopPropagation();
           askLaterClaudeIntegration();
-          return;
-        }
-        if (showHelp) {
-          e.preventDefault();
-          e.stopPropagation();
-          showHelp = false;
           return;
         }
       }
@@ -500,7 +492,7 @@
       if (isMeta && (e.key === '/' || e.key === '?' || e.code === 'Slash')) {
         e.preventDefault();
         e.stopPropagation();
-        showHelp = !showHelp;
+        commands.openHelpWindow();
         return;
       }
 
@@ -534,15 +526,8 @@
 
     window.addEventListener('keydown', handleKeydown, true);
 
-    const handleToggleHelp = () => { showHelp = !showHelp; };
-    window.addEventListener('toggle-help', handleToggleHelp);
-    let unlistenHelp: (() => void) | undefined;
-    listen('toggle-help', () => { showHelp = !showHelp; }).then(u => { unlistenHelp = u; });
-
     return () => {
       window.removeEventListener('keydown', handleKeydown, true);
-      window.removeEventListener('toggle-help', handleToggleHelp);
-      unlistenHelp?.();
       unlistenClose?.();
       unlistenQuit?.();
       unlistenReloadTab?.();
@@ -557,6 +542,5 @@
 
 {@render children()}
 
-<HelpModal open={showHelp} onclose={() => showHelp = false} />
 <ClaudeIntegrationModal open={showClaudeIntegration} onclose={dismissClaudeIntegration} onenable={enableClaudeIntegration} onlater={askLaterClaudeIntegration} />
 <Toast />

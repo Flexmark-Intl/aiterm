@@ -137,7 +137,7 @@ pub fn reset_window(window: tauri::Window, state: State<'_, Arc<AppState>>) -> R
 #[tauri::command]
 pub fn get_window_count(app: tauri::AppHandle) -> usize {
     app.webview_windows().iter()
-        .filter(|(label, _)| label.as_str() != "preferences")
+        .filter(|(label, _)| label.as_str() != "preferences" && label.as_str() != "help")
         .count()
 }
 
@@ -186,6 +186,55 @@ pub fn open_preferences_window(window: tauri::WebviewWindow, app: tauri::AppHand
 
     builder.build()
         .map_err(|e| format!("Failed to create preferences window: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn open_help_window(window: tauri::WebviewWindow, app: tauri::AppHandle) -> Result<(), String> {
+    // If already open, focus it
+    if let Some(win) = app.get_webview_window("help") {
+        let _ = win.set_focus();
+        return Ok(());
+    }
+
+    let url = if cfg!(debug_assertions) {
+        tauri::WebviewUrl::External("http://localhost:1420/help".parse().unwrap())
+    } else {
+        tauri::WebviewUrl::App("help".into())
+    };
+
+    let title = if cfg!(debug_assertions) { "Help (Dev)" } else { "Help" };
+
+    let help_w: f64 = 680.0;
+    let help_h: f64 = 600.0;
+
+    let mut builder = WebviewWindowBuilder::new(&app, "help", url)
+        .title(title)
+        .inner_size(help_w, help_h)
+        .min_inner_size(500.0, 400.0)
+        .resizable(true)
+        .fullscreen(false);
+
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder.hidden_title(true);
+    }
+
+    // Center on the calling window
+    if let (Ok(pos), Ok(size)) = (window.outer_position(), window.outer_size()) {
+        let scale = window.scale_factor().unwrap_or(1.0);
+        let win_x = pos.x as f64 / scale;
+        let win_y = pos.y as f64 / scale;
+        let win_w = size.width as f64 / scale;
+        let win_h = size.height as f64 / scale;
+        let x = win_x + (win_w - help_w) / 2.0;
+        let y = win_y + (win_h - help_h) / 2.0;
+        builder = builder.position(x, y);
+    }
+
+    builder.build()
+        .map_err(|e| format!("Failed to create help window: {}", e))?;
 
     Ok(())
 }

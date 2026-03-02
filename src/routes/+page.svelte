@@ -11,6 +11,7 @@
   import { getVersion } from '@tauri-apps/api/app';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { modLabel, modSymbol, altLabel } from '$lib/utils/platform';
+  import * as commands from '$lib/tauri/commands';
 
   let loading = $state(true);
   let showChangelog = $state(false);
@@ -64,7 +65,7 @@
         class:collapsed={workspacesStore.sidebarCollapsed}
         style="width: {workspacesStore.sidebarCollapsed ? 0 : workspacesStore.sidebarWidth + 4}px"
       >
-        <WorkspaceSidebar width={workspacesStore.sidebarWidth} onversionclick={() => showChangelog = true} onhelp={() => window.dispatchEvent(new CustomEvent('toggle-help'))} />
+        <WorkspaceSidebar width={workspacesStore.sidebarWidth} onversionclick={() => showChangelog = true} onhelp={() => commands.openHelpWindow()} />
         <Resizer direction="horizontal" onresize={handleSidebarResize} onresizeend={handleSidebarResizeEnd} />
       </div>
       {#if workspacesStore.sidebarCollapsed}
