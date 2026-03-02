@@ -403,6 +403,7 @@
       }
       dirty = false;
       originalContent = content;
+      setEditorDirty(tabId, false);
       dispatch('File saved', editorFile.file_path.split('/').pop() ?? 'file', 'info');
     } catch (e) {
       dispatch('Save failed', String(e), 'error');
