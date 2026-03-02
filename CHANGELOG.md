@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.3.4
+
+- Convert Help from modal to standalone window with sidebar navigation
+- Add About aiTerm dialog with credits and copyright
+- Add Help menu with Report Bug and Feature Request links
+- Add Preferences and Help buttons to sidebar footer
+
 ## v1.3.3
 
 - Default file link click behavior to Cmd/Ctrl+Click, add Alt/Opt+Click option
