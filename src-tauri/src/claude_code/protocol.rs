@@ -316,6 +316,11 @@ pub fn tool_list_response() -> Value {
                     },
                     "required": []
                 }
+            },
+            {
+                "name": "findNotes",
+                "description": "Search across all workspaces and tabs for notes content. Returns every tab and workspace note that exists, with content previews and tab display names. Use this to quickly find notes without having to list workspaces and check each tab individually.",
+                "inputSchema": { "type": "object", "properties": {}, "required": [] }
             }
         ]
     })

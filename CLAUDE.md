@@ -295,6 +295,7 @@ Claude Code CLI ←→ WebSocket/SSE ←→ axum server (Rust) ←→ Tauri even
 | getTriggerVariables | Read all trigger variables for a tab |
 | setAutoResume | Enable/disable auto-resume with optional command/cwd/ssh overrides |
 | getAutoResume | Get current auto-resume configuration for a tab |
+| findNotes | Search all tabs and workspaces for notes, returns previews |
 
 ### Editor Registry
 

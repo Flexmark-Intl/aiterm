@@ -128,6 +128,9 @@ function createClaudeCodeStore() {
         case 'getAutoResume':
           result = handleGetAutoResume(args as { tabId?: string });
           break;
+        case 'findNotes':
+          result = handleFindNotes();
+          break;
         default:
           result = { error: `Unknown tool: ${tool}` };
       }
@@ -813,6 +816,40 @@ function createClaudeCodeStore() {
       sshCommand: tab.auto_resume_ssh_command ?? null,
       remoteCwd: tab.auto_resume_remote_cwd ?? null,
     };
+  }
+
+  function handleFindNotes() {
+    const tabNotes: { tabId: string; displayName: string; workspace: string; notes: string; notesMode: string }[] = [];
+    const workspaceNotes: { workspaceId: string; workspace: string; noteId: string; preview: string; mode: string | null }[] = [];
+
+    for (const ws of workspacesStore.workspaces) {
+      // Collect workspace-level notes
+      for (const note of ws.workspace_notes) {
+        workspaceNotes.push({
+          workspaceId: ws.id,
+          workspace: ws.name,
+          noteId: note.id,
+          preview: note.content.slice(0, 200),
+          mode: note.mode ?? null,
+        });
+      }
+      // Collect tab-level notes
+      for (const pane of ws.panes) {
+        for (const tab of pane.tabs) {
+          if (tab.notes) {
+            tabNotes.push({
+              tabId: tab.id,
+              displayName: tabDisplayName(tab),
+              workspace: ws.name,
+              notes: tab.notes.slice(0, 200),
+              notesMode: tab.notes_mode ?? 'source',
+            });
+          }
+        }
+      }
+    }
+
+    return { tabNotes, workspaceNotes };
   }
 
   /** Resolve a tab by ID or fall back to the active tab. Returns { workspace, pane, tab } or { error }. */
