@@ -15,6 +15,8 @@ The MCP server starts automatically when aiTerm launches (configurable in prefer
 
 ## Available Tools
 
+### Editor Tools
+
 | Tool | Description |
 |------|-------------|
 | `getOpenEditors` | List open editor tabs (path, language, dirty state) |
@@ -27,6 +29,32 @@ The MCP server starts automatically when aiTerm launches (configurable in prefer
 | `openFile` | Open file in editor tab (with optional line/text selection) |
 | `openDiff` | Show side-by-side diff for review (blocking) |
 | `closeAllDiffTabs` | Close all pending diff tabs |
+
+### Workspace & Tab Navigation
+
+| Tool | Description |
+|------|-------------|
+| `listWorkspaces` | List all workspaces with panes, tabs (IDs, display names, types, active state, notes) |
+| `switchTab` | Navigate to a tab by ID (auto-resolves workspace and pane) |
+| `getTabContext` | Get recent terminal output or editor content for tab discovery |
+
+### Notes Management
+
+| Tool | Description |
+|------|-------------|
+| `getTabNotes` | Read notes for a tab (defaults to active tab) |
+| `setTabNotes` | Write or clear notes for a tab |
+| `listWorkspaceNotes` | List workspace-level notes (IDs, previews, timestamps) |
+| `readWorkspaceNote` | Read full content of a workspace note |
+| `writeWorkspaceNote` | Create or update a workspace note |
+| `deleteWorkspaceNote` | Delete a workspace note |
+| `moveNote` | Move notes between tab and workspace (with conflict detection) |
+| `openNotesPanel` | Open, close, or toggle the notes panel |
+| `setNotesScope` | Switch notes panel between tab and workspace views |
+
+### Tab Context Discovery
+
+The `getTabContext` tool lets Claude Code peek at what's happening in your tabs — recent terminal output or editor file content. If you have fewer than 10 tabs, it automatically returns context for all of them, making it easy for Claude to find the right tab without you having to specify. For larger workspaces, you can pass specific tab IDs.
 
 ## Claude Code Triggers
 

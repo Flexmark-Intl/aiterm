@@ -24,5 +24,8 @@ Thumbs.db
 .idea/
 .vscode/
 
+# Notes (not for repo)
+TAURI_MCP_NOTES.md
+
 # Debug
 *.log
