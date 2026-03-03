@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.4.0
+
+- Add workspace, tab, and notes MCP tools with tab context discovery for Claude Code integration
+- Add Cmd+/ passthrough to CodeMirror for toggle comment in editor tabs
+- UI polish: tab button modes, workspace badges, IconButton fixes, delete confirmation
+- Fix editor tab dirty indicator not clearing after save
+
 ## v1.3.4
 
 - Convert Help from modal to standalone window with sidebar navigation
