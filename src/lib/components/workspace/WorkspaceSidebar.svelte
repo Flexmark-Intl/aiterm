@@ -73,8 +73,15 @@
     await workspacesStore.createWorkspace(`Workspace ${count}`);
   }
 
-  async function handleDeleteWorkspace(id: string, e: MouseEvent) {
+  let confirmingDeleteId = $state<string | null>(null);
+
+  function handleDeleteWorkspace(id: string, e: MouseEvent) {
     e.stopPropagation();
+    confirmingDeleteId = id;
+  }
+
+  async function doDeleteWorkspace(id: string) {
+    confirmingDeleteId = null;
     if (workspacesStore.workspaces.length > 1) {
       await workspacesStore.deleteWorkspace(id);
     } else {
@@ -103,7 +110,7 @@
 
   function handlePointerDown(e: PointerEvent, workspaceId: string) {
     if (e.button !== 0 || editingId === workspaceId) return;
-    if ((e.target as HTMLElement).closest('.tooltip-wrapper')) return;
+    if ((e.target as HTMLElement).closest('.tooltip-wrapper, .confirm-delete, .confirm-cancel')) return;
     pendingDragWorkspaceId = workspaceId;
     dragStartX = e.clientX;
     dragStartY = e.clientY;
@@ -331,8 +338,8 @@
         class:drop-after={dropTargetIndex === index && dropSide === 'after' && dragWorkspaceId !== workspace.id}
         data-workspace-id={workspace.id}
         onclick={() => handleItemClick(workspace.id)}
-        ondblclick={() => startEditing(workspace.id, workspace.name)}
-        onpointerdown={(e) => handlePointerDown(e, workspace.id)}
+        ondblclick={() => { if (!confirmingDeleteId) startEditing(workspace.id, workspace.name); }}
+        onpointerdown={(e) => { if (!confirmingDeleteId) handlePointerDown(e, workspace.id); }}
         onpointermove={handlePointerMove}
         onpointerup={handlePointerUp}
         role="button"
@@ -351,27 +358,35 @@
             autofocus
           />
         {:else}
-          <span class="workspace-indicator">
-            {#if workspaceTabState(workspace.id) === 'alert'}
-              <span class="state-emoji">&#x2757;</span>
-            {:else if workspaceTabState(workspace.id) === 'question'}
-              <span class="state-emoji">&#x2753;</span>
-            {:else if workspace.id === workspacesStore.activeWorkspaceId}
-              >
-            {:else if workspaceHasActivity(workspace.id)}
-              <StatusDot color="green" />
-            {/if}
-          </span>
-          <span class="workspace-name">{workspace.name}{#if preferencesStore.showWorkspaceTabCount}<span class="tab-count"> ({workspace.panes.reduce((sum, p) => sum + p.tabs.length, 0)})</span>{/if}</span>
-          <IconButton
-            tooltip="Close workspace"
-            size={20}
-            class="workspace-close-btn"
-            style="border-radius:3px;font-size:13px;flex-shrink:0"
-            onclick={(e) => handleDeleteWorkspace(workspace.id, e)}
-          >
-            &times;
-          </IconButton>
+          {#if preferencesStore.showWorkspaceTabCount}
+            <span class="tab-count-badge" class:active={workspace.id === workspacesStore.activeWorkspaceId}>{workspace.panes.reduce((sum, p) => sum + p.tabs.length, 0)}</span>
+          {:else}
+            <span class="workspace-indicator">
+              {#if workspaceTabState(workspace.id) === 'alert'}
+                <span class="state-emoji">&#x2757;</span>
+              {:else if workspaceTabState(workspace.id) === 'question'}
+                <span class="state-emoji">&#x2753;</span>
+              {:else if workspace.id === workspacesStore.activeWorkspaceId}
+                >
+              {:else if workspaceHasActivity(workspace.id)}
+                <StatusDot color="green" />
+              {/if}
+            </span>
+          {/if}
+          {#if confirmingDeleteId === workspace.id}
+            <button class="confirm-delete" onclick={(e) => { e.stopPropagation(); doDeleteWorkspace(workspace.id); }}>Delete?</button>
+            <button class="confirm-cancel" onclick={(e) => { e.stopPropagation(); confirmingDeleteId = null; }}>Cancel</button>
+          {:else}
+            <span class="workspace-name">{workspace.name}</span>
+            <IconButton
+              tooltip="Close workspace"
+              class="workspace-close-btn"
+              style="--icon-btn-hover: var(--bg-dark)"
+              onclick={(e) => handleDeleteWorkspace(workspace.id, e)}
+            >
+              &times;
+            </IconButton>
+          {/if}
         {/if}
       </div>
     {/each}
@@ -557,15 +572,60 @@
     white-space: nowrap;
   }
 
-  .tab-count {
-    color: var(--fg-dim);
+  .tab-count-badge {
+    flex-shrink: 0;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1;
+    min-width: 16px;
+    padding: 2px 5px;
+    border-radius: 3px;
+    background: var(--bg-light);
+    color: var(--fg);
+    text-align: center;
+    letter-spacing: 0.3px;
+  }
+
+  .tab-count-badge.active {
+    background: var(--accent);
+    color: var(--bg-dark);
+  }
+
+  .confirm-delete, .confirm-cancel {
+    font-size: 11px;
+    padding: 2px 8px;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background 0.1s;
+    -webkit-app-region: no-drag;
+  }
+
+  .confirm-delete {
+    color: #f7768e;
+    background: color-mix(in srgb, #f7768e 15%, transparent);
+  }
+
+  .confirm-delete:hover {
+    background: color-mix(in srgb, #f7768e 30%, transparent);
+  }
+
+  .confirm-cancel {
+    color: var(--fg);
+    background: var(--bg-dark);
+  }
+
+  .confirm-cancel:hover {
+    background: var(--bg-medium);
   }
 
   .workspace-item :global(.workspace-close-btn) {
     opacity: 0;
+    flex-shrink: 0;
   }
 
-  .workspace-item:hover :global(.workspace-close-btn) {
+  .workspace-item:hover :global(.workspace-close-btn),
+  .workspace-item.active :global(.workspace-close-btn) {
     opacity: 1;
   }
 

@@ -11,15 +11,19 @@
     children: Snippet;
   }
 
-  let { tooltip, size, active = false, danger = false, children, ...rest }: Props = $props();
+  let { tooltip, size, active = false, danger = false, children, style, class: extraClass, ...rest }: Props = $props();
+
+  const mergedStyle = $derived(
+    [size ? `--icon-btn-size:${size}px` : '', style ?? ''].filter(Boolean).join(';') || undefined
+  );
 </script>
 
 <Tooltip text={tooltip}>
   <button
-    class="icon-btn"
+    class="icon-btn {extraClass ?? ''}"
     class:active
     class:danger
-    style={size ? `--icon-btn-size:${size}px` : undefined}
+    style={mergedStyle}
     {...rest}
   >
     {@render children()}
@@ -31,9 +35,10 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: var(--icon-btn-size, 22px);
-    height: var(--icon-btn-size, 22px);
-    padding: 0;
+    box-sizing: border-box;
+    min-width: var(--icon-btn-size, 22px);
+    min-height: var(--icon-btn-size, 22px);
+    padding: 4px;
     color: var(--fg-dim);
     background: none;
     border: none;
@@ -45,7 +50,7 @@
   }
 
   .icon-btn:hover {
-    background: var(--bg-light);
+    background: var(--icon-btn-hover, var(--bg-light));
     color: var(--fg);
   }
 

@@ -403,6 +403,10 @@ fn default_file_link_action() -> String {
     "modifier_click".to_string()
 }
 
+fn default_tab_button_style() -> String {
+    "hover".to_string()
+}
+
 fn default_true() -> bool {
     true
 }
@@ -608,6 +612,8 @@ pub struct Preferences {
     pub workspace_sort_order: String,
     #[serde(default)]
     pub show_workspace_tab_count: bool,
+    #[serde(default = "default_tab_button_style")]
+    pub tab_button_style: String,
     #[serde(default)]
     pub triggers: Vec<Trigger>,
     /// Default trigger IDs the user has intentionally deleted (prevents re-seeding).
@@ -666,6 +672,7 @@ impl Default for Preferences {
             show_recent_workspaces: true,
             workspace_sort_order: String::new(),
             show_workspace_tab_count: false,
+            tab_button_style: default_tab_button_style(),
             triggers: Vec::new(),
             hidden_default_triggers: Vec::new(),
             claude_triggers_prompted: false,

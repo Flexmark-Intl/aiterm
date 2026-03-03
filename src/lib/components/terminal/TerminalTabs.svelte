@@ -5,7 +5,7 @@
   import { activityStore } from '$lib/stores/activity.svelte';
   import { terminalsStore } from '$lib/stores/terminals.svelte';
   import type { OscState } from '$lib/stores/terminals.svelte';
-  import { modLabel } from '$lib/utils/platform';
+  import { modLabel, isModKey } from '$lib/utils/platform';
   import { preferencesStore } from '$lib/stores/preferences.svelte';
   import { getCompiledTitlePatterns, extractDirFromTitle } from '$lib/utils/promptPattern';
   import { onVariablesChange, interpolateVariables } from '$lib/stores/triggers.svelte';
@@ -58,6 +58,22 @@
     }
   });
   onDestroy(unsubOsc);
+
+  // Track modifier key for "modifier" tab button style
+  let modHeld = $state(false);
+  function onKeyDown(e: KeyboardEvent) { if (isModKey(e)) modHeld = true; }
+  function onKeyUp(e: KeyboardEvent) { if (!e.metaKey && !e.ctrlKey) modHeld = false; }
+  function onBlur() { modHeld = false; }
+  $effect(() => {
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
+    };
+  });
 
   // Track trigger variable changes for reactive tab title updates
   let varVersion = $state(0);
@@ -582,6 +598,10 @@
       class:tab-alert={tabState === 'alert'}
       class:tab-question={tabState === 'question'}
       class:dragging={dragTabId === tab.id}
+      class:buttons-always={preferencesStore.tabButtonStyle === 'always'}
+      class:buttons-never={preferencesStore.tabButtonStyle === 'never'}
+      class:buttons-modifier={preferencesStore.tabButtonStyle === 'modifier'}
+      class:mod-held={preferencesStore.tabButtonStyle === 'modifier' && modHeld}
       class:drop-before={dropTargetIndex === index && dropSide === 'before' && dragTabId !== tab.id}
       class:drop-after={dropTargetIndex === index && dropSide === 'after' && dragTabId !== tab.id}
       data-tab-id={tab.id}
@@ -639,7 +659,7 @@
           }>&#x21BB;</span>
         {/if}
         <span class="tab-name">{displayName(tab)}</span>
-        <div class="tab-actions" class:single-action={false} class:double-action={isEditor || isDiff} class:triple-action={!isEditor && !isDiff}>
+        <div class="tab-actions" class:always-visible={preferencesStore.tabButtonStyle === 'always'} class:modifier-only={preferencesStore.tabButtonStyle === 'modifier'} class:modifier-active={preferencesStore.tabButtonStyle === 'modifier' && modHeld} class:never-visible={preferencesStore.tabButtonStyle === 'never'} class:single-action={false} class:double-action={isEditor || isDiff} class:triple-action={!isEditor && !isDiff}>
           <IconButton
             tooltip="Archive tab"
             style="width:22px;height:18px;border-radius:3px"
@@ -718,12 +738,32 @@
     flex-shrink: 0;
   }
 
+  .tab.buttons-always {
+    padding-right: 2px;
+    transition: background 0.1s, border-color 0.1s;
+  }
+
+  .tab.buttons-never {
+    transition: background 0.1s, border-color 0.1s;
+  }
+
+  .tab.buttons-modifier {
+    transition: background 0.1s, border-color 0.1s;
+  }
+
+  .tab.buttons-modifier.mod-held {
+    padding-right: 2px;
+  }
+
   .tab.unclamped {
     max-width: 50%;
   }
 
   .tab:hover {
     background: var(--bg-light);
+  }
+
+  .tab:not(.buttons-always):not(.buttons-never):not(.buttons-modifier):hover {
     padding-right: 2px;
   }
 
@@ -885,6 +925,40 @@
     width: 44px;
   }
 
+  .tab-actions.always-visible {
+    opacity: 1;
+    width: 44px;
+    margin-left: 6px;
+    transition: none;
+  }
+
+  .tab-actions.always-visible.triple-action {
+    width: 66px;
+  }
+
+  /* modifier mode: suppress normal hover reveal */
+  .tab:hover .tab-actions.modifier-only {
+    opacity: 0;
+    width: 0;
+    margin-left: 0;
+  }
+
+  /* modifier mode + key held: show on hover like normal */
+  .tab:hover .tab-actions.modifier-active {
+    opacity: 1;
+    width: 44px;
+    margin-left: 6px;
+  }
+
+  .tab:hover .tab-actions.modifier-active.triple-action {
+    width: 66px;
+  }
+
+  .tab:hover .tab-actions.never-visible {
+    opacity: 0;
+    width: 0;
+    margin-left: 0;
+  }
 
   .edit-wrapper {
     display: grid;

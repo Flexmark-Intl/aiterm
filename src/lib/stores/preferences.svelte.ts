@@ -42,6 +42,7 @@ function createPreferencesStore() {
   let showRecentWorkspaces = $state(true);
   let workspaceSortOrder = $state('default');
   let showWorkspaceTabCount = $state(false);
+  let tabButtonStyle = $state('hover');
   let triggers = $state<Trigger[]>([]);
   let hiddenDefaultTriggers = $state<string[]>([]);
   let claudeTriggersPrompted = $state(false);
@@ -87,6 +88,7 @@ function createPreferencesStore() {
     get showRecentWorkspaces() { return showRecentWorkspaces; },
     get workspaceSortOrder() { return workspaceSortOrder; },
     get showWorkspaceTabCount() { return showWorkspaceTabCount; },
+    get tabButtonStyle() { return tabButtonStyle; },
     get triggers() { return triggers; },
     get hiddenDefaultTriggers() { return hiddenDefaultTriggers; },
     get claudeTriggersPrompted() { return claudeTriggersPrompted; },
@@ -142,6 +144,7 @@ function createPreferencesStore() {
       showRecentWorkspaces = prefs.show_recent_workspaces ?? true;
       workspaceSortOrder = prefs.workspace_sort_order || 'default';
       showWorkspaceTabCount = prefs.show_workspace_tab_count ?? false;
+      tabButtonStyle = prefs.tab_button_style || 'hover';
       triggers = prefs.triggers ?? [];
       hiddenDefaultTriggers = prefs.hidden_default_triggers ?? [];
       claudeTriggersPrompted = prefs.claude_triggers_prompted ?? false;
@@ -321,6 +324,11 @@ function createPreferencesStore() {
       await this.save();
     },
 
+    async setTabButtonStyle(value: string) {
+      tabButtonStyle = value;
+      await this.save();
+    },
+
     async setTriggers(value: Trigger[]) {
       triggers = value;
       await this.save();
@@ -409,6 +417,7 @@ function createPreferencesStore() {
       showRecentWorkspaces = prefs.show_recent_workspaces ?? true;
       workspaceSortOrder = prefs.workspace_sort_order || 'default';
       showWorkspaceTabCount = prefs.show_workspace_tab_count ?? false;
+      tabButtonStyle = prefs.tab_button_style || 'hover';
       triggers = prefs.triggers ?? [];
       hiddenDefaultTriggers = prefs.hidden_default_triggers ?? [];
       claudeTriggersPrompted = prefs.claude_triggers_prompted ?? false;
@@ -455,6 +464,7 @@ function createPreferencesStore() {
         show_recent_workspaces: showRecentWorkspaces,
         workspace_sort_order: workspaceSortOrder === 'default' ? '' : workspaceSortOrder,
         show_workspace_tab_count: showWorkspaceTabCount,
+        tab_button_style: tabButtonStyle === 'hover' ? '' : tabButtonStyle,
         triggers,
         hidden_default_triggers: hiddenDefaultTriggers,
         claude_triggers_prompted: claudeTriggersPrompted,

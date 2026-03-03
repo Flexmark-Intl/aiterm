@@ -684,6 +684,23 @@
           </button>
         </div>
 
+        <div class="setting">
+          <div>
+            <label for="tab-button-style">Tab Buttons</label>
+            <p class="setting-hint">When to show close, archive, and duplicate buttons on tabs.</p>
+          </div>
+          <select
+            id="tab-button-style"
+            value={preferencesStore.tabButtonStyle}
+            onchange={(e) => preferencesStore.setTabButtonStyle(e.currentTarget.value)}
+          >
+            <option value="hover">On Hover</option>
+            <option value="always">Always</option>
+            <option value="modifier">While Holding {modLabel}</option>
+            <option value="never">Never</option>
+          </select>
+        </div>
+
         <h3 class="section-heading">Sort Order</h3>
         <p class="section-desc">How workspaces are ordered in the sidebar.</p>
 
