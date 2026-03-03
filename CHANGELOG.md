@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.4.3
+
+- Add findNotes MCP tool to search all tabs and workspaces for notes in one call
+- Add auto-resume and trigger variable MCP tools (setTriggerVariable, getTriggerVariables, setAutoResume, getAutoResume)
+- New tabs inherit the most common CWD/SSH setup from sibling tabs in the pane
+- Add number-duplicated-tabs preference to control numeric prefix on duplicated tab names
+- New workspaces insert after the active workspace instead of appending to end
+- Fix TUI redraw dedup timestamp refresh to prevent false trigger re-fires
+
 ## v1.4.2
 
 - Manage WebGL contexts per-terminal visibility lifecycle to stay within browser context limits
