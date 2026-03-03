@@ -565,6 +565,8 @@ pub struct Preferences {
     pub clone_auto_resume: bool,
     #[serde(default = "default_true")]
     pub clone_variables: bool,
+    #[serde(default = "default_true")]
+    pub number_duplicated_tabs: bool,
     #[serde(default = "default_theme")]
     pub theme: String,
     #[serde(default)]
@@ -650,6 +652,7 @@ impl Default for Preferences {
             clone_notes: true,
             clone_auto_resume: true,
             clone_variables: true,
+            number_duplicated_tabs: true,
             theme: default_theme(),
             shell_title_integration: false,
             shell_integration: false,

@@ -21,6 +21,7 @@ function createPreferencesStore() {
   let cloneNotes = $state(true);
   let cloneAutoResume = $state(true);
   let cloneVariables = $state(true);
+  let numberDuplicatedTabs = $state(true);
   let theme = $state('tokyo-night');
   let shellTitleIntegration = $state(false);
   let shellIntegration = $state(false);
@@ -67,6 +68,7 @@ function createPreferencesStore() {
     get cloneNotes() { return cloneNotes; },
     get cloneAutoResume() { return cloneAutoResume; },
     get cloneVariables() { return cloneVariables; },
+    get numberDuplicatedTabs() { return numberDuplicatedTabs; },
     get theme() { return theme; },
     get shellTitleIntegration() { return shellTitleIntegration; },
     get shellIntegration() { return shellIntegration; },
@@ -118,6 +120,7 @@ function createPreferencesStore() {
       cloneNotes = prefs.clone_notes ?? true;
       cloneAutoResume = prefs.clone_auto_resume ?? true;
       cloneVariables = prefs.clone_variables ?? true;
+      numberDuplicatedTabs = prefs.number_duplicated_tabs ?? true;
       theme = prefs.theme;
       shellTitleIntegration = prefs.shell_title_integration;
       shellIntegration = prefs.shell_integration ?? false;
@@ -221,6 +224,11 @@ function createPreferencesStore() {
 
     async setCloneVariables(value: boolean) {
       cloneVariables = value;
+      await this.save();
+    },
+
+    async setNumberDuplicatedTabs(value: boolean) {
+      numberDuplicatedTabs = value;
       await this.save();
     },
 
@@ -392,6 +400,7 @@ function createPreferencesStore() {
       cloneNotes = prefs.clone_notes ?? true;
       cloneAutoResume = prefs.clone_auto_resume ?? true;
       cloneVariables = prefs.clone_variables ?? true;
+      numberDuplicatedTabs = prefs.number_duplicated_tabs ?? true;
       theme = prefs.theme;
       shellTitleIntegration = prefs.shell_title_integration;
       shellIntegration = prefs.shell_integration ?? false;
@@ -442,6 +451,7 @@ function createPreferencesStore() {
         clone_notes: cloneNotes,
         clone_auto_resume: cloneAutoResume,
         clone_variables: cloneVariables,
+        number_duplicated_tabs: numberDuplicatedTabs,
         theme,
         shell_title_integration: shellTitleIntegration,
         shell_integration: shellIntegration,

@@ -239,8 +239,13 @@ function createWorkspacesStore() {
 
     async createWorkspace(name: string) {
       const workspace = await commands.createWorkspace(name);
-      workspaces = [...workspaces, workspace];
+      // Insert after the currently active workspace, or append if none active
+      const activeIdx = workspaces.findIndex(w => w.id === activeWorkspaceId);
+      const newList = [...workspaces];
+      newList.splice(activeIdx + 1, 0, workspace);
+      workspaces = newList;
       activeWorkspaceId = workspace.id;
+      await commands.reorderWorkspaces(workspaces.map(w => w.id));
       return workspace;
     },
 
@@ -356,7 +361,7 @@ function createWorkspacesStore() {
 
       const newTabId = newPane.tabs[0]?.id;
       if (sourceTab && newTabId) {
-        const tabName = sourceTab.custom_name && ws_current
+        const tabName = sourceTab.custom_name && ws_current && preferencesStore.numberDuplicatedTabs
           ? nextDuplicateName(sourceTab.name, allTabNames(ws_current))
           : sourceTab.name;
         await commands.renameTab(workspaceId, newPane.id, newTabId, tabName, sourceTab.custom_name);
@@ -477,23 +482,85 @@ function createWorkspacesStore() {
         : workspaces.flatMap(w => w.panes).find(p => p.id === paneId)?.active_tab_id ?? undefined;
       const tab = await commands.createTab(workspaceId, paneId, name, afterTabId);
 
-      // Open new tab at the most common CWD among sibling terminal tabs
+      // Open new tab at the most common CWD (and SSH setup) among sibling
+      // terminal tabs. On ties, the active tab's setup wins.
       const ws = workspaces.find(w => w.id === workspaceId);
       if (ws) {
-        const cwdCounts = new Map<string, number>();
-        for (const p of ws.panes) {
-          for (const t of p.tabs) {
-            if (t.tab_type !== 'terminal' || !t.last_cwd) continue;
-            cwdCounts.set(t.last_cwd, (cwdCounts.get(t.last_cwd) ?? 0) + 1);
+        const activePane = ws.panes.find(p => p.id === paneId);
+        const activeTabId = activePane?.active_tab_id;
+
+        // Query live PTY info for the active terminal — persisted fields
+        // (restore_ssh_command etc.) may not reflect the current state yet
+        // if auto-save hasn't fired.
+        let liveSsh: string | null = null;
+        let liveCwd: string | null = null;
+        if (activeTabId) {
+          const instance = terminalsStore.instances.get(activeTabId);
+          if (instance) {
+            try {
+              const info = await commands.getPtyInfo(instance.ptyId);
+              liveSsh = info.foreground_command;
+              liveCwd = info.cwd;
+            } catch { /* ignore */ }
           }
         }
-        let bestCwd: string | null = null;
-        let bestCount = 0;
-        for (const [cwd, count] of cwdCounts) {
-          if (count > bestCount) { bestCwd = cwd; bestCount = count; }
+
+        // Build a composite key: "ssh\0command\0remoteCwd" for SSH tabs, or "local\0cwd" for local tabs
+        const setupCounts = new Map<string, { count: number; cwd: string | null; sshCommand: string | null; remoteCwd: string | null }>();
+        for (const p of ws.panes) {
+          for (const t of p.tabs) {
+            if (t.tab_type !== 'terminal') continue;
+            // Use live PTY info for the active tab, persisted fields for others
+            let ssh: string | null;
+            let remoteCwd: string | null;
+            let localCwd: string | null;
+            if (t.id === activeTabId && liveSsh) {
+              ssh = liveSsh;
+              // Get remote cwd from OSC state (promptCwd) since live PTY only gives local cwd
+              const oscState = terminalsStore.getOsc(t.id);
+              remoteCwd = oscState?.promptCwd ?? t.auto_resume_remote_cwd ?? t.restore_remote_cwd ?? null;
+              localCwd = liveCwd;
+            } else {
+              ssh = t.auto_resume_ssh_command || t.restore_ssh_command || null;
+              remoteCwd = t.auto_resume_remote_cwd || t.restore_remote_cwd || null;
+              localCwd = t.last_cwd;
+            }
+            if (!ssh && !localCwd) continue;
+            const key = ssh ? `ssh\0${ssh}\0${remoteCwd ?? ''}` : `local\0${localCwd}`;
+            const existing = setupCounts.get(key);
+            if (existing) {
+              existing.count++;
+            } else {
+              setupCounts.set(key, { count: 1, cwd: localCwd, sshCommand: ssh, remoteCwd });
+            }
+          }
         }
-        if (bestCwd) {
-          terminalsStore.setSplitContext(tab.id, { cwd: bestCwd, sshCommand: null, remoteCwd: null });
+        // Find the active tab's setup key to use as tiebreaker
+        const activeTab = activePane?.tabs.find(t => t.id === activeTabId);
+        let activeKey: string | null = null;
+        if (activeTab?.tab_type === 'terminal') {
+          if (liveSsh) {
+            const oscState = terminalsStore.getOsc(activeTab.id);
+            const remoteCwd = oscState?.promptCwd ?? activeTab.auto_resume_remote_cwd ?? activeTab.restore_remote_cwd ?? null;
+            activeKey = `ssh\0${liveSsh}\0${remoteCwd ?? ''}`;
+          } else {
+            const localCwd = activeTab.last_cwd ?? liveCwd;
+            if (localCwd) activeKey = `local\0${localCwd}`;
+          }
+        }
+        let best: { cwd: string | null; sshCommand: string | null; remoteCwd: string | null } | null = null;
+        let bestCount = 0;
+        for (const [key, entry] of setupCounts) {
+          if (entry.count > bestCount || (entry.count === bestCount && key === activeKey)) {
+            best = entry; bestCount = entry.count;
+          }
+        }
+        // Fall back to live PTY info if no tab had any data
+        if (!best && (liveCwd || liveSsh)) {
+          best = { cwd: liveCwd, sshCommand: liveSsh, remoteCwd: null };
+        }
+        if (best) {
+          terminalsStore.setSplitContext(tab.id, { cwd: best.cwd, sshCommand: best.sshCommand, remoteCwd: best.remoteCwd });
         }
       }
 
@@ -927,7 +994,7 @@ function createWorkspacesStore() {
       const targetPane = targetWs.panes[0];
       const previousActiveTabId = targetPane.active_tab_id;
 
-      const tabName = sourceTab.custom_name
+      const tabName = sourceTab.custom_name && preferencesStore.numberDuplicatedTabs
         ? nextDuplicateName(sourceTab.name, allTabNames(targetWs))
         : sourceTab.name;
       const newTab = await commands.createTab(targetWsId, targetPane.id, tabName);
@@ -1104,7 +1171,7 @@ function createWorkspacesStore() {
       const { instance, scrollback, cwd, sshCommand } = await this._gatherTabContext(tabId);
 
       // 2. Compute duplicate name with incrementing index for custom names
-      const dupName = sourceTab.custom_name
+      const dupName = sourceTab.custom_name && preferencesStore.numberDuplicatedTabs
         ? nextDuplicateName(sourceTab.name, allTabNames(ws!))
         : sourceTab.name;
 

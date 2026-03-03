@@ -260,6 +260,11 @@ pub fn tool_list_response() -> Value {
                     },
                     "required": ["scope"]
                 }
+            },
+            {
+                "name": "getActiveTab",
+                "description": "Get the currently active workspace, pane, and tab. Returns IDs, names, tab type, display name, and notes status. Use this as a lightweight alternative to listWorkspaces when you just need to know the current context.",
+                "inputSchema": { "type": "object", "properties": {}, "required": [] }
             }
         ]
     })

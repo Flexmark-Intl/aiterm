@@ -289,6 +289,7 @@ Claude Code CLI ←→ WebSocket/SSE ←→ axum server (Rust) ←→ Tauri even
 | getTabContext | Get recent terminal output/editor content for tab discovery |
 | openNotesPanel | Open/close/toggle the notes panel for the active tab |
 | setNotesScope | Switch notes panel between 'tab' and 'workspace' views |
+| getActiveTab | Get the currently active workspace, pane, and tab info |
 
 ### Editor Registry
 

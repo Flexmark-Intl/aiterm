@@ -647,6 +647,23 @@
           </button>
         </div>
 
+        <div class="setting" style="align-items: flex-start;">
+          <div>
+            <label for="number-duplicated-tabs">Number Duplicated Tabs</label>
+            <p class="setting-hint">Prepend a numeric index to duplicated tab names (e.g. "2 My Tab").</p>
+          </div>
+          <button
+            id="number-duplicated-tabs"
+            class="toggle"
+            class:active={preferencesStore.numberDuplicatedTabs}
+            onclick={() => preferencesStore.setNumberDuplicatedTabs(!preferencesStore.numberDuplicatedTabs)}
+            aria-pressed={preferencesStore.numberDuplicatedTabs}
+            aria-label="Toggle number duplicated tabs"
+          >
+            <span class="toggle-knob"></span>
+          </button>
+        </div>
+
       {:else if activeSection === 'workspace'}
         <h3 class="section-heading">Sidebar</h3>
 

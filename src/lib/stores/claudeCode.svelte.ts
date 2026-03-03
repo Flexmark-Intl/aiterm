@@ -112,6 +112,9 @@ function createClaudeCodeStore() {
         case 'setNotesScope':
           result = await handleSetNotesScope(args as { scope: string });
           break;
+        case 'getActiveTab':
+          result = handleGetActiveTab();
+          break;
         default:
           result = { error: `Unknown tool: ${tool}` };
       }
@@ -714,6 +717,26 @@ function createClaudeCodeStore() {
     }
     await preferencesStore.setNotesScope(args.scope);
     return { success: true, scope: args.scope };
+  }
+
+  function handleGetActiveTab() {
+    const ws = workspacesStore.workspaces.find(w => w.id === workspacesStore.activeWorkspaceId);
+    if (!ws) return { error: 'No active workspace' };
+    const pane = ws.panes.find(p => p.id === ws.active_pane_id);
+    if (!pane) return { error: 'No active pane' };
+    const tab = pane.tabs.find(t => t.id === pane.active_tab_id);
+    if (!tab) return { error: 'No active tab' };
+    return {
+      workspace: { id: ws.id, name: ws.name },
+      pane: { id: pane.id },
+      tab: {
+        id: tab.id,
+        displayName: tabDisplayName(tab),
+        tabType: tab.tab_type ?? 'terminal',
+        hasNotes: !!tab.notes,
+        notesOpen: !!tab.notes_open,
+      },
+    };
   }
 
   function updateSelection(info: SelectionInfo) {
