@@ -48,7 +48,7 @@ export interface SplitContext {
 function createTerminalsStore() {
   let instances = $state<Map<string, TerminalInstance>>(new Map());
   let searchVisibleFor = $state<string | null>(null);
-  let webglActive = $state(false);
+  let webglTabs = $state(new Set<string>());
   let _shuttingDown = false;
   const splitContexts = new Map<string, SplitContext>();
   // Listeners notified when any terminal's OSC state changes
@@ -62,8 +62,9 @@ function createTerminalsStore() {
     get instances() { return instances; },
     get shuttingDown() { return _shuttingDown; },
     get searchVisibleFor() { return searchVisibleFor; },
-    get webglActive() { return webglActive; },
-    setWebglActive(active: boolean) { webglActive = active; },
+    isWebgl(tabId: string) { return webglTabs.has(tabId); },
+    webglLoaded(tabId: string) { webglTabs = new Set(webglTabs).add(tabId); },
+    webglUnloaded(tabId: string) { const s = new Set(webglTabs); s.delete(tabId); webglTabs = s; },
 
     setSplitContext(tabId: string, ctx: SplitContext) {
       splitContexts.set(tabId, ctx);

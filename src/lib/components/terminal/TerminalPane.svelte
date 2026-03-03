@@ -63,6 +63,7 @@
   let resizeObserver: ResizeObserver;
   let filePathLinkDisposable: { dispose: () => void } | null = null;
   let initialized = $state(false);
+  let webglAddon: WebglAddon | null = null;
   let trackActivity = false;
   let visibilityGraceUntil = 0; // timestamp — suppress activity until this time
   let isAutoResume = $state(false);
@@ -228,20 +229,6 @@
     }));
 
     terminal.open(containerRef);
-
-    // Use WebGL renderer for GPU-accelerated rendering (much faster than DOM renderer).
-    // Falls back to default DOM renderer if WebGL is unavailable.
-    try {
-      const webglAddon = new WebglAddon();
-      webglAddon.onContextLoss(() => {
-        webglAddon.dispose();
-        terminalsStore.setWebglActive(false);
-      });
-      terminal.loadAddon(webglAddon);
-      terminalsStore.setWebglActive(true);
-    } catch {
-      // WebGL not available — DOM renderer will be used
-    }
 
     // File path link provider: managed reactively based on preference
     // (initial registration handled by $effect below)
@@ -660,6 +647,34 @@
         activityStore.clearShellState(tabId);
         activityStore.clearTabState(tabId);
       });
+    }
+  });
+
+  // WebGL renderer: load when visible, dispose when hidden to stay within
+  // the browser's WebGL context limit (~8-16 per page).
+  $effect(() => {
+    if (!initialized || !terminal) return;
+    if (visible) {
+      if (!webglAddon) {
+        try {
+          webglAddon = new WebglAddon();
+          webglAddon.onContextLoss(() => {
+            webglAddon?.dispose();
+            webglAddon = null;
+            terminalsStore.webglUnloaded(tabId);
+          });
+          terminal.loadAddon(webglAddon);
+          terminalsStore.webglLoaded(tabId);
+        } catch {
+          webglAddon = null;
+        }
+      }
+    } else {
+      if (webglAddon) {
+        webglAddon.dispose();
+        webglAddon = null;
+        terminalsStore.webglUnloaded(tabId);
+      }
     }
   });
 
