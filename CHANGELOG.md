@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.4.1
+
+- Add WebGL renderer for GPU-accelerated terminal rendering
+
 ## v1.4.0
 
 - Add workspace, tab, and notes MCP tools with tab context discovery for Claude Code integration
