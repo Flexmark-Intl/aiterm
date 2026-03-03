@@ -115,6 +115,151 @@ pub fn tool_list_response() -> Value {
                 "name": "closeAllDiffTabs",
                 "description": "Close all open diff review tabs in the aiTerm IDE, rejecting any pending changes.",
                 "inputSchema": { "type": "object", "properties": {}, "required": [] }
+            },
+            {
+                "name": "listWorkspaces",
+                "description": "List all workspaces with their panes and tabs. Returns workspace IDs, names, pane structure, tab IDs, interpolated display names, tab types, active states, and notes indicators. Use this to discover tabs for switchTab or notes operations.",
+                "inputSchema": { "type": "object", "properties": {}, "required": [] }
+            },
+            {
+                "name": "switchTab",
+                "description": "Navigate to a specific tab by its ID. Automatically switches to the correct workspace and pane. Use listWorkspaces first to discover tab IDs.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "tabId": { "type": "string", "description": "The tab ID to navigate to" }
+                    },
+                    "required": ["tabId"]
+                }
+            },
+            {
+                "name": "getTabNotes",
+                "description": "Read the notes content for a terminal or editor tab. Returns the notes text and display mode.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "tabId": { "type": "string", "description": "Tab ID to read notes from. If omitted, uses the currently active tab." }
+                    },
+                    "required": []
+                }
+            },
+            {
+                "name": "setTabNotes",
+                "description": "Write or clear notes for a terminal or editor tab. Set notes to null or empty string to clear.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "tabId": { "type": "string", "description": "Tab ID to write notes to. If omitted, uses the currently active tab." },
+                        "notes": { "type": ["string", "null"], "description": "The notes content (markdown supported). Set to null or empty to clear." },
+                        "mode": { "type": "string", "description": "Display mode: 'source' (edit) or 'render' (preview). Optional." }
+                    },
+                    "required": ["notes"]
+                }
+            },
+            {
+                "name": "listWorkspaceNotes",
+                "description": "List all notes attached to a workspace (not tab-level notes). Returns note IDs, content previews, modes, and timestamps.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "workspaceId": { "type": "string", "description": "Workspace ID. If omitted, uses the active workspace." }
+                    },
+                    "required": []
+                }
+            },
+            {
+                "name": "readWorkspaceNote",
+                "description": "Read the full content of a workspace-level note by its ID.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "workspaceId": { "type": "string", "description": "Workspace ID. If omitted, uses the active workspace." },
+                        "noteId": { "type": "string", "description": "The note ID to read" }
+                    },
+                    "required": ["noteId"]
+                }
+            },
+            {
+                "name": "writeWorkspaceNote",
+                "description": "Create a new workspace-level note or update an existing one. Omit noteId to create, include noteId to update.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "workspaceId": { "type": "string", "description": "Workspace ID. If omitted, uses the active workspace." },
+                        "noteId": { "type": "string", "description": "Note ID to update. Omit to create a new note." },
+                        "content": { "type": "string", "description": "The note content (markdown supported)" },
+                        "mode": { "type": ["string", "null"], "description": "Display mode: 'source' or 'render'. Optional." }
+                    },
+                    "required": ["content"]
+                }
+            },
+            {
+                "name": "deleteWorkspaceNote",
+                "description": "Delete a workspace-level note by its ID.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "workspaceId": { "type": "string", "description": "Workspace ID. If omitted, uses the active workspace." },
+                        "noteId": { "type": "string", "description": "The note ID to delete" }
+                    },
+                    "required": ["noteId"]
+                }
+            },
+            {
+                "name": "moveNote",
+                "description": "Move a note between tab and workspace levels. 'tab_to_workspace' copies tab notes into a new workspace note and clears the tab. 'workspace_to_tab' moves a workspace note into a tab's notes and deletes the workspace note. Fails if the destination already has content — use force: true to overwrite, or read both notes first to merge manually.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "direction": { "type": "string", "description": "'tab_to_workspace' or 'workspace_to_tab'" },
+                        "tabId": { "type": "string", "description": "Tab ID. If omitted, uses the active tab." },
+                        "workspaceId": { "type": "string", "description": "Workspace ID. If omitted, uses the active workspace." },
+                        "noteId": { "type": "string", "description": "Workspace note ID. Required for 'workspace_to_tab' direction." },
+                        "force": { "type": "boolean", "description": "If true, overwrite destination content instead of failing on conflict. Default: false." }
+                    },
+                    "required": ["direction"]
+                }
+            },
+            {
+                "name": "getTabContext",
+                "description": "Get recent terminal output or editor content from tabs to understand what the user was working on. If fewer than 10 total tabs exist, returns context for all tabs automatically. Otherwise, pass specific tab IDs. Each result includes the interpolated tab display name (highest-weight match signal), workspace name, tab type, and the last N lines of content. Use this to find the right tab when the user says things like 'switch to the tab where I was working on X'.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "tabIds": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Specific tab IDs to get context from. If omitted and total tabs < 10, returns all tabs."
+                        },
+                        "lines": {
+                            "type": "number",
+                            "description": "Number of recent lines to return per tab. Default: 50."
+                        }
+                    },
+                    "required": []
+                }
+            },
+            {
+                "name": "openNotesPanel",
+                "description": "Open or close the notes panel for the current active tab. The panel shows either tab-level or workspace-level notes depending on the current scope.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "open": { "type": "boolean", "description": "True to open, false to close. If omitted, toggles the current state." }
+                    },
+                    "required": []
+                }
+            },
+            {
+                "name": "setNotesScope",
+                "description": "Switch the notes panel view between tab-level notes and workspace-level notes. The scope persists across tabs.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "scope": { "type": "string", "description": "Either 'tab' for per-tab notes or 'workspace' for workspace-level notes" }
+                    },
+                    "required": ["scope"]
+                }
             }
         ]
     })

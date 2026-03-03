@@ -277,6 +277,18 @@ Claude Code CLI ←→ WebSocket/SSE ←→ axum server (Rust) ←→ Tauri even
 | openFile | Open file in editor tab (with optional line/text selection) |
 | openDiff | Show side-by-side diff for review (blocking) |
 | closeAllDiffTabs | Close all pending diff tabs |
+| listWorkspaces | List all workspaces with panes, tabs (IDs, display names, types, active state, notes) |
+| switchTab | Navigate to a tab by ID (auto-resolves workspace/pane) |
+| getTabNotes | Read notes for a tab (optional tabId, defaults to active) |
+| setTabNotes | Write/clear notes for a tab |
+| listWorkspaceNotes | List workspace-level notes (IDs, previews, timestamps) |
+| readWorkspaceNote | Read full content of a workspace note |
+| writeWorkspaceNote | Create or update a workspace note |
+| deleteWorkspaceNote | Delete a workspace note |
+| moveNote | Move note between tab and workspace (with conflict detection) |
+| getTabContext | Get recent terminal output/editor content for tab discovery |
+| openNotesPanel | Open/close/toggle the notes panel for the active tab |
+| setNotesScope | Switch notes panel between 'tab' and 'workspace' views |
 
 ### Editor Registry
 

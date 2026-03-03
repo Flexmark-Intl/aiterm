@@ -22,6 +22,16 @@
   function toggleAccordion(id: string) {
     openAccordions = { ...openAccordions, [id]: !openAccordions[id] };
   }
+
+  let copied = $state(false);
+  let copyTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function copyTipCommand() {
+    navigator.clipboard.writeText('remember at user level: always use subagent haiku for MCP tool calls (aiterm tools like notes, tabs, workspaces, editor)');
+    copied = true;
+    if (copyTimer) clearTimeout(copyTimer);
+    copyTimer = setTimeout(() => { copied = false; }, 2000);
+  }
 </script>
 
 <div class="window">
@@ -188,6 +198,52 @@
           </div>
         {/if}
 
+        <button class="accordion" class:open={openAccordions['c-notes']} onclick={() => toggleAccordion('c-notes')}>
+          <span class="chevron">&#x203A;</span> Notes & Tabs
+        </button>
+        {#if openAccordions['c-notes']}
+          <div class="accordion-body" transition:slide={{ duration: 150 }}>
+            <p class="description">
+              Claude Code can manage your notes and navigate between workspaces and tabs directly. Just ask in natural language &mdash; Claude uses the MCP tools automatically.
+            </p>
+            <div class="tip-box">
+              <strong>Tip:</strong> These tools are simple operations that don't need a large model. Paste this into Claude Code once to permanently use the faster, cheaper Haiku model for all MCP tool calls:
+              <div class="tip-command-wrap">
+                <code class="tip-command">remember at user level: always use subagent haiku for MCP tool calls (aiterm tools like notes, tabs, workspaces, editor)</code>
+                <button class="copy-btn" onclick={copyTipCommand} title="Copy to clipboard">
+                  {copied ? 'Copied!' : 'Copy'}
+                </button>
+              </div>
+            </div>
+            <h4>Things you can say</h4>
+            <ul class="example-list">
+              <li><em>"Create a tab note with our next steps"</em></li>
+              <li><em>"Save this plan as a workspace note"</em></li>
+              <li><em>"Move my tab notes to a workspace note"</em></li>
+              <li><em>"What notes do I have in this workspace?"</em></li>
+              <li><em>"Switch to the tab where I was working on the auth refactor"</em></li>
+              <li><em>"Switch to the tab called dev-server"</em></li>
+              <li><em>"List all my workspaces and their tabs"</em></li>
+              <li><em>"Open the notes panel and show workspace notes"</em></li>
+            </ul>
+            <h4>Available tools</h4>
+            <div class="tool-list">
+              <div class="tool"><code>listWorkspaces</code> <span>Browse all workspaces, panes, and tabs with IDs and names</span></div>
+              <div class="tool"><code>switchTab</code> <span>Navigate to any tab by ID</span></div>
+              <div class="tool"><code>getTabNotes</code> <span>Read notes from a tab</span></div>
+              <div class="tool"><code>setTabNotes</code> <span>Write or clear tab notes</span></div>
+              <div class="tool"><code>listWorkspaceNotes</code> <span>List workspace-level notes with previews</span></div>
+              <div class="tool"><code>readWorkspaceNote</code> <span>Read full content of a workspace note</span></div>
+              <div class="tool"><code>writeWorkspaceNote</code> <span>Create or update a workspace note</span></div>
+              <div class="tool"><code>deleteWorkspaceNote</code> <span>Delete a workspace note</span></div>
+              <div class="tool"><code>moveNote</code> <span>Move notes between tab and workspace levels</span></div>
+              <div class="tool"><code>getTabContext</code> <span>Get recent terminal output to find tabs by what you were doing</span></div>
+              <div class="tool"><code>openNotesPanel</code> <span>Open, close, or toggle the notes panel</span></div>
+              <div class="tool"><code>setNotesScope</code> <span>Switch between tab and workspace note views</span></div>
+            </div>
+          </div>
+        {/if}
+
       {:else if activeSection === 'tips'}
         <button class="accordion" class:open={openAccordions['t-tabs']} onclick={() => toggleAccordion('t-tabs')}>
           <span class="chevron">&#x203A;</span> Tabs
@@ -322,6 +378,8 @@
     flex: 1;
     padding: 20px;
     overflow-y: auto;
+    -webkit-user-select: text;
+    user-select: text;
   }
 
   /* Accordion */
@@ -469,6 +527,83 @@
 
   .tool span {
     color: var(--fg-dim);
+  }
+
+  .tip-box {
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+    border-radius: 6px;
+    padding: 10px 14px;
+    font-size: 13px;
+    color: var(--fg-dim);
+    line-height: 1.6;
+    margin-bottom: 16px;
+  }
+
+  .tip-box strong {
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  .tip-command-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+    background: var(--bg-dark);
+    border: 1px solid var(--bg-light);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .tip-command {
+    flex: 1;
+    padding: 6px 10px;
+    font-size: 12px;
+    color: var(--fg);
+    background: none;
+    border: none;
+    user-select: all;
+  }
+
+  .copy-btn {
+    padding: 4px 10px;
+    margin-right: 4px;
+    font-size: 11px;
+    color: var(--accent);
+    background: var(--bg-medium);
+    border: 1px solid var(--bg-light);
+    border-radius: 3px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.1s;
+  }
+
+  .copy-btn:hover {
+    background: var(--bg-light);
+  }
+
+  .example-list {
+    margin: 0 0 12px 0;
+    padding-left: 18px;
+    list-style: none;
+  }
+
+  .example-list li {
+    font-size: 13px;
+    color: var(--fg-dim);
+    line-height: 1.8;
+  }
+
+  .example-list li::before {
+    content: '\203A';
+    color: var(--accent);
+    margin-right: 8px;
+  }
+
+  .example-list em {
+    color: var(--fg);
+    font-style: normal;
   }
 
   .trigger-list {

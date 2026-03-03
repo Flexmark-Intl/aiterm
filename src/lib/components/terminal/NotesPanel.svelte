@@ -59,6 +59,24 @@
     return marked.parse(src) as string;
   });
 
+  // Sync external changes to notes mode (e.g. from MCP tools)
+  $effect(() => {
+    const propMode = (notesMode ?? 'source') as 'source' | 'render';
+    if (propMode !== mode) {
+      mode = propMode;
+    }
+  });
+
+  // Sync external changes to tab notes (e.g. from MCP tools) to local state.
+  // When the user types, the debounced save updates the prop to match `value`, so the
+  // equality check prevents loops. Only truly external changes (prop !== value) trigger a sync.
+  $effect(() => {
+    const propValue = notes ?? '';
+    if (propValue !== value) {
+      value = propValue;
+    }
+  });
+
   // Focus at end of content when entering source mode
   $effect(() => {
     if (scope === 'tab' && mode === 'source' && textareaEl) {
