@@ -105,9 +105,9 @@
     </div>
   {/if}
 
-  {#if pane.tabs.length > 0}
-    <TerminalTabs {workspaceId} {pane} />
+  <TerminalTabs {workspaceId} {pane} />
 
+  {#if pane.tabs.length > 0}
     <div class="terminal-with-notes">
       <div class="terminal-area">
         {#if pane.active_tab_id}
