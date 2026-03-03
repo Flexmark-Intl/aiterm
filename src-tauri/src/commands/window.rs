@@ -191,17 +191,28 @@ pub fn open_preferences_window(window: tauri::WebviewWindow, app: tauri::AppHand
 }
 
 #[tauri::command]
-pub fn open_help_window(window: tauri::WebviewWindow, app: tauri::AppHandle) -> Result<(), String> {
-    // If already open, focus it
+pub fn open_help_window(window: tauri::WebviewWindow, app: tauri::AppHandle, section: Option<String>) -> Result<(), String> {
+    // If already open, navigate to section via JS and focus
     if let Some(win) = app.get_webview_window("help") {
+        if let Some(ref s) = section {
+            let _ = win.eval(&format!(
+                "localStorage.setItem('help-section','{}');window.dispatchEvent(new CustomEvent('help-section',{{detail:'{}'}}));",
+                s, s
+            ));
+        }
         let _ = win.set_focus();
         return Ok(());
     }
 
+    let path = match &section {
+        Some(s) => format!("help?section={}", s),
+        None => "help".to_string(),
+    };
+
     let url = if cfg!(debug_assertions) {
-        tauri::WebviewUrl::External("http://localhost:1420/help".parse().unwrap())
+        tauri::WebviewUrl::External(format!("http://localhost:1420/{}", path).parse().unwrap())
     } else {
-        tauri::WebviewUrl::App("help".into())
+        tauri::WebviewUrl::App(path.into())
     };
 
     let title = if cfg!(debug_assertions) { "Help (Dev)" } else { "Help" };

@@ -65,7 +65,7 @@
         class:collapsed={workspacesStore.sidebarCollapsed}
         style="width: {workspacesStore.sidebarCollapsed ? 0 : workspacesStore.sidebarWidth + 4}px"
       >
-        <WorkspaceSidebar width={workspacesStore.sidebarWidth} onversionclick={() => showChangelog = true} onhelp={() => commands.openHelpWindow()} />
+        <WorkspaceSidebar width={workspacesStore.sidebarWidth} onversionclick={() => showChangelog = true} onhelp={() => commands.openHelpWindow(workspacesStore.activeTab?.tab_type === 'editor' ? 'editor' : undefined)} />
         <Resizer direction="horizontal" onresize={handleSidebarResize} onresizeend={handleSidebarResizeEnd} />
       </div>
       {#if workspacesStore.sidebarCollapsed}

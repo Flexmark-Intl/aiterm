@@ -256,7 +256,7 @@ pub fn run() {
                     }
                     "help" => {
                         if let Some(win) = app_handle.get_webview_window("main") {
-                            let _ = commands::window::open_help_window(win, app_handle.clone());
+                            let _ = commands::window::open_help_window(win, app_handle.clone(), None);
                         }
                     }
                     "report_bug" => {

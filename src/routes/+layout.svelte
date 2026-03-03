@@ -213,6 +213,44 @@
 
       const isMeta = isModKey(e);
       const activeTabIsEditor = workspacesStore.activeTab?.tab_type === 'editor';
+      const activeTabIsDiff = workspacesStore.activeTab?.tab_type === 'diff';
+
+      // When the active tab is an editor or diff tab, let CodeMirror handle all
+      // keyboard shortcuts EXCEPT app-level ones that don't conflict with editing.
+      // App-level shortcuts that always apply: tab management (Cmd+T/W/1-9/Shift+[/]),
+      // workspace/window management (Cmd+N/Shift+N), zoom (Cmd+=/-/0), preferences (Cmd+,),
+      // open file (Cmd+O), sidebar (Cmd+B), notes (Cmd+E).
+      // Everything else passes through to the editor.
+      if (activeTabIsEditor || activeTabIsDiff) {
+        if (isMeta) {
+          const key = e.key.toLowerCase();
+          const isAppShortcut =
+            // Tab management
+            (!e.shiftKey && !e.altKey && key === 't') ||             // Cmd+T new tab
+            (e.shiftKey && key === 't') ||                           // Cmd+Shift+T duplicate tab
+            (key === 'w') ||                                         // Cmd+W close tab
+            (!e.shiftKey && e.key >= '1' && e.key <= '9') ||         // Cmd+1-9 switch tab
+            (e.shiftKey && (e.key === '[' || e.code === 'BracketLeft')) ||  // Cmd+Shift+[ prev tab
+            (e.shiftKey && (e.key === ']' || e.code === 'BracketRight')) || // Cmd+Shift+] next tab
+            // Window/workspace management
+            (!e.shiftKey && !e.altKey && key === 'n') ||             // Cmd+N new window
+            (e.shiftKey && !e.altKey && key === 'n') ||              // Cmd+Shift+N duplicate window
+            (e.altKey && e.code === 'KeyN') ||                       // Cmd+Opt+N new workspace
+            // Zoom
+            (e.key === '=' || e.key === '+') ||                      // Cmd+= zoom in
+            (e.key === '-') ||                                       // Cmd+- zoom out
+            (e.key === '0') ||                                       // Cmd+0 reset zoom
+            // Other app-level
+            (e.key === ',') ||                                       // Cmd+, preferences
+            (!e.shiftKey && key === 'o') ||                          // Cmd+O open file
+            (!e.shiftKey && key === 'b') ||                          // Cmd+B toggle sidebar
+            (!e.shiftKey && key === 'e');                             // Cmd+E toggle notes
+          if (!isAppShortcut) return; // Let CodeMirror handle it
+        } else if (e.altKey) {
+          // Alt+Arrow keys etc — let editor handle
+          return;
+        }
+      }
 
       // Cmd+Shift+R - Reload tab
       if (isMeta && e.shiftKey && e.key.toLowerCase() === 'r') {
@@ -254,9 +292,7 @@
       }
 
       // Cmd+D - Split pane right (horizontal), cloning context
-      // (Skip for editor tabs — CodeMirror uses Cmd+D for select next occurrence)
       if (isMeta && !e.shiftKey && e.key.toLowerCase() === 'd') {
-        if (activeTabIsEditor) return;
         e.preventDefault();
         e.stopPropagation();
         const ws = workspacesStore.activeWorkspace;
@@ -366,12 +402,8 @@
         return;
       }
 
-      // Cmd+S - Save active editor tab or prevent browser save dialog
+      // Cmd+S - Prevent browser save dialog (editor tabs already passed through above)
       if (isMeta && !e.shiftKey && e.key.toLowerCase() === 's') {
-        if (activeTabIsEditor) {
-          // Let CodeMirror's Mod-s keymap handle it (EditorPane registers its own handler)
-          return;
-        }
         e.preventDefault();
         return;
       }
@@ -440,9 +472,7 @@
       }
 
       // Cmd+K - Clear terminal and scrollback
-      // Cmd+K - Clear terminal (skip for editor tabs)
       if (isMeta && !e.shiftKey && e.key.toLowerCase() === 'k') {
-        if (activeTabIsEditor) return; // Let CodeMirror handle it
         e.preventDefault();
         e.stopPropagation();
         const tab = workspacesStore.activeTab;
@@ -452,9 +482,8 @@
         return;
       }
 
-      // Cmd+F - Find in terminal (skip for editor tabs — CodeMirror has its own find/replace)
+      // Cmd+F - Find in terminal
       if (isMeta && !e.shiftKey && e.key.toLowerCase() === 'f') {
-        if (activeTabIsEditor) return; // Let CodeMirror handle it
         e.preventDefault();
         e.stopPropagation();
         const tab = workspacesStore.activeTab;
@@ -489,9 +518,7 @@
       }
 
       // Cmd+/ or Cmd+? - Show help
-      // (Skip for editor tabs — CodeMirror uses Cmd+/ for toggle line comment)
       if (isMeta && (e.key === '/' || e.key === '?' || e.code === 'Slash')) {
-        if (activeTabIsEditor) return;
         e.preventDefault();
         e.stopPropagation();
         commands.openHelpWindow();

@@ -2,16 +2,40 @@
   import { modLabel, altLabel } from '$lib/utils/platform';
   import { slide } from 'svelte/transition';
 
-  const sectionIds = ['shortcuts', 'claude', 'tips'] as const;
+  import { onMount } from 'svelte';
+
+  const sectionIds = ['shortcuts', 'editor', 'claude', 'tips'] as const;
   type SectionId = typeof sectionIds[number];
-  const saved = localStorage.getItem('help-section');
-  let activeSection = $state<SectionId>(
-    saved && sectionIds.includes(saved as SectionId) ? saved as SectionId : 'shortcuts'
-  );
+
+  function getInitialSection(): SectionId {
+    // Query param takes priority (set when opening window with a specific section)
+    const params = new URLSearchParams(window.location.search);
+    const fromParam = params.get('section');
+    if (fromParam && sectionIds.includes(fromParam as SectionId)) return fromParam as SectionId;
+    // Fall back to localStorage
+    const saved = localStorage.getItem('help-section');
+    if (saved && sectionIds.includes(saved as SectionId)) return saved as SectionId;
+    return 'shortcuts';
+  }
+
+  let activeSection = $state<SectionId>(getInitialSection());
   $effect(() => { localStorage.setItem('help-section', activeSection); });
+
+  // Listen for section changes when window is already open (dispatched from Rust eval)
+  onMount(() => {
+    function onSectionChange(e: Event) {
+      const detail = (e as CustomEvent<string>).detail;
+      if (detail && sectionIds.includes(detail as SectionId)) {
+        activeSection = detail as SectionId;
+      }
+    }
+    window.addEventListener('help-section', onSectionChange);
+    return () => window.removeEventListener('help-section', onSectionChange);
+  });
 
   const sections = [
     { id: 'shortcuts' as const, label: 'Shortcuts' },
+    { id: 'editor' as const, label: 'Editor' },
     { id: 'claude' as const, label: 'Claude Code' },
     { id: 'tips' as const, label: 'Tips' },
   ];
@@ -54,68 +78,97 @@
 
     <div class="section-content">
       {#if activeSection === 'shortcuts'}
-        <button class="accordion" class:open={openAccordions['s-tabs']} onclick={() => toggleAccordion('s-tabs')}>
-          <span class="chevron">&#x203A;</span> Tabs
-        </button>
-        {#if openAccordions['s-tabs']}
-          <div class="accordion-body" transition:slide={{ duration: 150 }}>
-            <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>T</kbd> <span>New tab</span></div>
-            <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>T</kbd> <span>Duplicate tab</span></div>
-            <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>R</kbd> <span>Reload tab</span></div>
-            <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>W</kbd> <span>Close tab</span></div>
-            <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>1-9</kbd> <span>Switch to tab</span></div>
-            <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>[</kbd> <span>Previous tab</span></div>
-            <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>]</kbd> <span>Next tab</span></div>
-            <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>R</kbd> <span>Toggle auto-resume</span></div>
-          </div>
-        {/if}
+        <h3 class="section-heading">Tabs</h3>
+        <div class="shortcut-group">
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>T</kbd> <span>New tab</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>T</kbd> <span>Duplicate tab</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>R</kbd> <span>Reload tab</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>W</kbd> <span>Close tab</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>1-9</kbd> <span>Switch to tab</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>[</kbd> <span>Previous tab</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>]</kbd> <span>Next tab</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>R</kbd> <span>Toggle auto-resume</span></div>
+        </div>
 
-        <button class="accordion" class:open={openAccordions['s-panes']} onclick={() => toggleAccordion('s-panes')}>
-          <span class="chevron">&#x203A;</span> Panes
-        </button>
-        {#if openAccordions['s-panes']}
-          <div class="accordion-body" transition:slide={{ duration: 150 }}>
-            <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>D</kbd> <span>Split right</span></div>
-            <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>D</kbd> <span>Split down</span></div>
-          </div>
-        {/if}
+        <h3 class="section-heading">Panes</h3>
+        <div class="shortcut-group">
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>D</kbd> <span>Split right</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>D</kbd> <span>Split down</span></div>
+        </div>
 
-        <button class="accordion" class:open={openAccordions['s-windows']} onclick={() => toggleAccordion('s-windows')}>
-          <span class="chevron">&#x203A;</span> Windows
-        </button>
-        {#if openAccordions['s-windows']}
-          <div class="accordion-body" transition:slide={{ duration: 150 }}>
-            <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>N</kbd> <span>New window</span></div>
-            <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>N</kbd> <span>Duplicate window</span></div>
-          </div>
-        {/if}
+        <h3 class="section-heading">Windows</h3>
+        <div class="shortcut-group">
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>N</kbd> <span>New window</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>N</kbd> <span>Duplicate window</span></div>
+        </div>
 
-        <button class="accordion" class:open={openAccordions['s-workspaces']} onclick={() => toggleAccordion('s-workspaces')}>
-          <span class="chevron">&#x203A;</span> Workspaces
-        </button>
-        {#if openAccordions['s-workspaces']}
-          <div class="accordion-body" transition:slide={{ duration: 150 }}>
-            <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>{altLabel}</kbd> + <kbd>N</kbd> <span>New workspace</span></div>
-            <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>{altLabel}</kbd> + <kbd>Shift</kbd> + <kbd>N</kbd> <span>Duplicate workspace</span></div>
-          </div>
-        {/if}
+        <h3 class="section-heading">Workspaces</h3>
+        <div class="shortcut-group">
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>{altLabel}</kbd> + <kbd>N</kbd> <span>New workspace</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>{altLabel}</kbd> + <kbd>Shift</kbd> + <kbd>N</kbd> <span>Duplicate workspace</span></div>
+        </div>
 
-        <button class="accordion" class:open={openAccordions['s-general']} onclick={() => toggleAccordion('s-general')}>
-          <span class="chevron">&#x203A;</span> General
-        </button>
-        {#if openAccordions['s-general']}
-          <div class="accordion-body" transition:slide={{ duration: 150 }}>
-            <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>E</kbd> <span>Toggle notes panel</span></div>
-            <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>F</kbd> <span>Find in terminal</span></div>
-            <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>K</kbd> <span>Clear terminal + scrollback</span></div>
-            <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>+</kbd> <span>Zoom in</span></div>
-            <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>-</kbd> <span>Zoom out</span></div>
-            <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>0</kbd> <span>Reset zoom</span></div>
-            <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>,</kbd> <span>Preferences</span></div>
-            <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>/</kbd> <span>Show this help</span></div>
-            <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Q</kbd> <span>Quit</span></div>
-          </div>
-        {/if}
+        <h3 class="section-heading">General</h3>
+        <div class="shortcut-group">
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>O</kbd> <span>Open file</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>E</kbd> <span>Toggle notes panel</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>B</kbd> <span>Toggle sidebar</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>F</kbd> <span>Find in terminal</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>K</kbd> <span>Clear terminal + scrollback</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>+</kbd> <span>Zoom in</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>-</kbd> <span>Zoom out</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>0</kbd> <span>Reset zoom</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>,</kbd> <span>Preferences</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>/</kbd> <span>Show this help</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Q</kbd> <span>Quit</span></div>
+        </div>
+
+      {:else if activeSection === 'editor'}
+        <p class="description">
+          When an editor tab is active, these shortcuts override terminal shortcuts.
+        </p>
+
+        <h3 class="section-heading">Selection</h3>
+        <div class="shortcut-group">
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>D</kbd> <span>Select next occurrence</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>L</kbd> <span>Select all occurrences</span></div>
+        </div>
+
+        <h3 class="section-heading">Lines</h3>
+        <div class="shortcut-group">
+          <div class="shortcut"><kbd>{altLabel}</kbd> + <kbd>&#x2191;</kbd> <span>Move line up</span></div>
+          <div class="shortcut"><kbd>{altLabel}</kbd> + <kbd>&#x2193;</kbd> <span>Move line down</span></div>
+          <div class="shortcut"><kbd>Shift</kbd> + <kbd>{altLabel}</kbd> + <kbd>&#x2191;</kbd> <span>Copy line up</span></div>
+          <div class="shortcut"><kbd>Shift</kbd> + <kbd>{altLabel}</kbd> + <kbd>&#x2193;</kbd> <span>Copy line down</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>K</kbd> <span>Delete line</span></div>
+        </div>
+
+        <h3 class="section-heading">Multi-Cursor</h3>
+        <div class="shortcut-group">
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>{altLabel}</kbd> + <kbd>&#x2191;</kbd> <span>Add cursor above</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>{altLabel}</kbd> + <kbd>&#x2193;</kbd> <span>Add cursor below</span></div>
+        </div>
+
+        <h3 class="section-heading">Editing</h3>
+        <div class="shortcut-group">
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>/</kbd> <span>Toggle line comment</span></div>
+          <div class="shortcut"><kbd>Tab</kbd> <span>Indent</span></div>
+          <div class="shortcut"><kbd>Shift</kbd> + <kbd>Tab</kbd> <span>Outdent</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Z</kbd> <span>Undo</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd> <span>Redo</span></div>
+        </div>
+
+        <h3 class="section-heading">Search</h3>
+        <div class="shortcut-group">
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>F</kbd> <span>Find / replace</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>G</kbd> <span>Find next</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>G</kbd> <span>Find previous</span></div>
+        </div>
+
+        <h3 class="section-heading">File</h3>
+        <div class="shortcut-group">
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>S</kbd> <span>Save</span></div>
+        </div>
 
       {:else if activeSection === 'claude'}
         <button class="accordion" class:open={openAccordions['c-auto-resume']} onclick={() => toggleAccordion('c-auto-resume')}>
@@ -417,6 +470,27 @@
 
   .accordion-body {
     padding: 12px 8px 16px 22px;
+  }
+
+  /* Section headings (flat, no accordion) */
+
+  .section-heading {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--fg-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin: 0;
+    padding: 10px 8px 6px;
+    border-bottom: 1px solid var(--bg-light);
+  }
+
+  .section-heading:first-child {
+    padding-top: 0;
+  }
+
+  .shortcut-group {
+    padding: 8px 8px 12px 22px;
   }
 
   /* Shortcuts */
