@@ -448,10 +448,13 @@ export function processOutput(tabId: string, data: Uint8Array) {
       // and we're still within the dedup window, don't fire again. This
       // prevents TUI apps (like Claude Code) from re-triggering on redrawn
       // content. The dedup expires after DEDUP_WINDOW_MS so genuinely new
-      // identical matches (e.g. a second question) can still fire.
+      // identical matches (e.g. a second compaction) can still fire.
+      // On redraws, refresh the dedup timestamp so the window stays open —
+      // repeated repaints keep pushing the expiry forward without firing.
       const now = Date.now();
       const prev = lastMatches.get(trigger.id)?.get(tabId);
       if (prev && prev.text === matchedText && (now - prev.ts) < DEDUP_WINDOW_MS) {
+        if (isRedraw) prev.ts = now;
         continue;
       }
 
