@@ -6,7 +6,7 @@ A Tauri-based terminal emulator with workspace organization, built with Svelte 5
 
 - **Frontend**: Svelte 5 (runes), SvelteKit, TypeScript, Vite
 - **Backend**: Rust, Tauri 2
-- **Terminal**: xterm.js with fit, serialize, and web-links addons
+- **Terminal**: xterm.js with fit, serialize, web-links, and webgl addons
 - **Editor**: CodeMirror 6 (+ MergeView for diffs)
 - **PTY**: portable-pty for cross-platform pseudo-terminal support
 - **State**: parking_lot RwLock for thread-safe Rust state
@@ -192,6 +192,7 @@ Preferences
 ├── workspace_sort_order (default, alphabetical, recent)
 ├── show_workspace_tab_count, show_recent_workspaces
 ├── claude_code_ide (bool — enable Claude Code integration)
+├── number_duplicated_tabs (bool — prefix duplicated tab names with numbers, default true)
 ├── notes_font_size, notes_font_family, notes_width
 ├── triggers: Trigger[]
 └── hidden_default_triggers (IDs of deleted app-provided defaults)
@@ -290,6 +291,10 @@ Claude Code CLI ←→ WebSocket/SSE ←→ axum server (Rust) ←→ Tauri even
 | openNotesPanel | Open/close/toggle the notes panel for the active tab |
 | setNotesScope | Switch notes panel between 'tab' and 'workspace' views |
 | getActiveTab | Get the currently active workspace, pane, and tab info |
+| setTriggerVariable | Set/clear a trigger variable (e.g. claudeSessionId) for a tab |
+| getTriggerVariables | Read all trigger variables for a tab |
+| setAutoResume | Enable/disable auto-resume with optional command/cwd/ssh overrides |
+| getAutoResume | Get current auto-resume configuration for a tab |
 
 ### Editor Registry
 
@@ -399,6 +404,18 @@ Controlled by `cfg!(debug_assertions)` in `state/persistence.rs` → `app_data_s
 
 **Do not** hardcode `com.aiterm.app` anywhere — always use `app_data_slug()` in Rust. State files, backups, and temp files all derive their paths from this slug.
 
+## New Tab Context Inheritance
+
+When creating a new tab (Cmd+T / + button), the workspace's dominant CWD or SSH setup is inherited:
+
+1. Queries live PTY info (`getPtyInfo`) for all terminal tabs in the active pane
+2. Builds composite keys: `ssh\0command\0remoteCwd` for SSH tabs, `local\0cwd` for local tabs
+3. Counts occurrences — the most common setup wins
+4. On ties, the active tab's setup is preferred (considered the "most recent" context)
+5. SSH setups inherit both the SSH command and remote CWD; local setups inherit just the CWD
+
+**New workspace insert order**: New workspaces insert after the currently active workspace (not appended to end), persisted via `reorderWorkspaces`.
+
 ## Important Conventions
 
 - **Keyboard shortcuts**: Defined in `+layout.svelte` handleKeydown
@@ -415,7 +432,8 @@ Triggers watch terminal output for regex patterns and fire actions. Configured i
 - **Match modes**: `regex` (default), `plain_text`, `variable` (evaluates variable-condition expressions)
 - **Variable conditions** (`src/lib/triggers/variableCondition.ts`): Expression parser supporting `a || b && c`, `!x`, `x == "value"`, `x != "value"`. Cached AST.
 - **Redraw detection**: Raw PTY data is tested for cursor-repositioning sequences (`\e[A`, `\e[H`, `\e[J`) before ANSI stripping. If detected, the buffer is **replaced** (not appended) with the current chunk's stripped text, since TUI redraws overwrite existing content.
-- **Dedup**: Tracks last matched text + timestamp per trigger per tab. If the exact same text matches again within 10s (`DEDUP_WINDOW_MS`), the match is consumed from the buffer but the trigger doesn't fire. Prevents TUI apps (Claude Code / Ink) from re-triggering on redrawn content.
+- **Dedup**: Tracks last matched text + timestamp per trigger per tab. If the exact same text matches again within 10s (`DEDUP_WINDOW_MS`), the match is consumed from the buffer but the trigger doesn't fire. Prevents TUI apps (Claude Code / Ink) from re-triggering on redrawn content. On TUI redraws, the dedup timestamp is refreshed (`prev.ts = now`) so the window stays alive while redraws continue, but eventually expires for genuinely new matches.
+- **Auto-resume suppression**: Tabs with auto-resume commands use a 15s suppression window (vs 2s for normal tabs) before triggers start firing. This prevents false notifications from SSH + Claude auto-resume startup sequences.
 - **Buffer consumption**: Matched text is always consumed from the buffer, even when blocked by cooldown or dedup. This prevents stale matches from accumulating and re-firing after cooldown expires.
 - **Actions**: `notify` (dispatches via notification system), `send_command` (writes to PTY), `enable_auto_resume`, `set_tab_state`
 - **Variables**: Capture groups extracted into named variables (`%varName`), persisted per-tab via `trigger_variables`
@@ -473,7 +491,8 @@ Architecture: `notificationDispatch.ts` routes `dispatch(title, body, type, sour
 ## xterm.js Notes
 
 - Terminal created with `new Terminal(options)` in TerminalPane
-- Required addons: FitAddon (resize), SerializeAddon (scrollback), WebLinksAddon (clickable links)
+- Required addons: FitAddon (resize), SerializeAddon (scrollback), WebLinksAddon (clickable links), WebglAddon (GPU rendering)
+- **WebGL renderer**: `@xterm/addon-webgl` provides GPU-accelerated rendering. Managed per-terminal visibility — loaded when tab becomes visible, disposed when hidden. Browsers cap WebGL contexts at ~8-16 per page, so only visible terminals hold contexts. `terminals.svelte.ts` tracks active WebGL tabs via a Set; sidebar footer shows a status dot (green=WebGL, yellow=DOM fallback) for the active tab. On context loss, the addon auto-disposes and falls back to DOM renderer.
 - Call `fitAddon.fit()` after container resize or font changes
 - Options can be updated at runtime via `terminal.options.propertyName`
 - Serialize scrollback with `serializeAddon.serialize()` for persistence
@@ -584,3 +603,4 @@ Check `~/Library/Application Support/com.aiterm.dev/aiterm-state.json` (dev) or 
 - **Tauri notification `onAction` is mobile-only**: `tauri-plugin-notification` v2 uses `notify_rust` on desktop, which is fire-and-forget — no click callback, `extra` data discarded. `onAction`/`onNotificationReceived` events only fire on iOS/Android. The `extra.tabId` and `onAction` listener in `+layout.svelte` are prep for future mobile support.
 - **Serde round-trip pitfall**: Rust `skip_serializing_if = "Option::is_none"` omits null fields → loaded JS objects have `undefined` instead of `null`. Use field-by-field comparison with `?? null` normalization, NOT `JSON.stringify`.
 - **SSH ControlMaster on restore**: Users with `ControlMaster auto` get "socket already exists" warnings. `buildSshCommand()` injects `-o ControlMaster=no`, and `cleanSshCommand()` strips it (+ `-t`) before rebuilding to prevent flag accumulation across restore cycles.
+- **WebGL context limits**: Browsers cap WebGL contexts at ~8-16 per page. If all terminals load WebGL at once, older contexts are evicted and fall back to DOM renderer. Solution: only load WebGL addon on visible terminals, dispose when hidden. Track per-tab WebGL state via Set in `terminals.svelte.ts`.

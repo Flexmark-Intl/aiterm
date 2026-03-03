@@ -301,7 +301,7 @@ async function fireTrigger(
 }
 
 /** Handle enable_auto_resume action: gather PTY info and set auto-resume context. */
-async function handleEnableAutoResume(tabId: string, commandTemplate: string) {
+export async function handleEnableAutoResume(tabId: string, commandTemplate: string) {
   const instance = terminalsStore.get(tabId);
   if (!instance) return;
   try {
@@ -548,6 +548,35 @@ export function getVariable(tabId: string, name: string): string | undefined {
 /** Get all variables for a tab. */
 export function getVariables(tabId: string): Map<string, string> | undefined {
   return variableMap.get(tabId);
+}
+
+/** Set or clear a single trigger variable for a tab (runtime + persisted).
+ *  Fires variable-mode trigger evaluation after the change. */
+export async function setVariable(tabId: string, name: string, value: string | null) {
+  let vars = variableMap.get(tabId);
+  if (!vars) {
+    vars = new Map();
+    variableMap.set(tabId, vars);
+  }
+
+  if (value === null) {
+    vars.delete(name);
+  } else {
+    vars.set(name, value);
+  }
+
+  notifyVarChange(tabId);
+
+  // Persist to backend
+  const instance = terminalsStore.get(tabId);
+  if (instance) {
+    const plain: Record<string, string> = {};
+    for (const [k, v] of vars) plain[k] = v;
+    await setTabTriggerVariables(instance.workspaceId, instance.paneId, tabId, plain);
+  }
+
+  // Evaluate variable-mode triggers (may fire claude-auto-resume etc.)
+  evaluateVariableTriggers(tabId);
 }
 
 /** Clear all trigger variables for a tab (runtime + persisted). */

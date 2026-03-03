@@ -3,7 +3,8 @@ import * as commands from '$lib/tauri/commands';
 import { workspacesStore, navigateToTab } from '$lib/stores/workspaces.svelte';
 import { terminalsStore } from '$lib/stores/terminals.svelte';
 import { getEditorByFilePath, getEditorByTabId } from '$lib/stores/editorRegistry.svelte';
-import { interpolateVariables } from '$lib/stores/triggers.svelte';
+import { interpolateVariables, getVariables, setVariable, handleEnableAutoResume } from '$lib/stores/triggers.svelte';
+import { CLAUDE_RESUME_COMMAND } from '$lib/triggers/defaults';
 import { preferencesStore } from '$lib/stores/preferences.svelte';
 import { stripAnsi } from '$lib/utils/ansi';
 import { error as logError, info as logInfo } from '@tauri-apps/plugin-log';
@@ -114,6 +115,18 @@ function createClaudeCodeStore() {
           break;
         case 'getActiveTab':
           result = handleGetActiveTab();
+          break;
+        case 'setTriggerVariable':
+          result = await handleSetTriggerVariable(args as { tabId?: string; name: string; value: string | null });
+          break;
+        case 'getTriggerVariables':
+          result = handleGetTriggerVariables(args as { tabId?: string });
+          break;
+        case 'setAutoResume':
+          result = await handleSetAutoResume(args as { tabId?: string; enabled: boolean; command?: string; cwd?: string; sshCommand?: string; remoteCwd?: string });
+          break;
+        case 'getAutoResume':
+          result = handleGetAutoResume(args as { tabId?: string });
           break;
         default:
           result = { error: `Unknown tool: ${tool}` };
@@ -737,6 +750,85 @@ function createClaudeCodeStore() {
         notesOpen: !!tab.notes_open,
       },
     };
+  }
+
+  // --- Trigger variable tools ---
+
+  async function handleSetTriggerVariable(args: { tabId?: string; name: string; value: string | null }) {
+    const tab = resolveActiveTab(args.tabId);
+    if ('error' in tab) return tab;
+    await setVariable(tab.tab.id, args.name, args.value);
+    return { success: true, tabId: tab.tab.id, name: args.name, value: args.value };
+  }
+
+  function handleGetTriggerVariables(args: { tabId?: string }) {
+    const tab = resolveActiveTab(args.tabId);
+    if ('error' in tab) return tab;
+    const vars = getVariables(tab.tab.id);
+    const result: Record<string, string> = {};
+    if (vars) {
+      for (const [k, v] of vars) result[k] = v;
+    }
+    return { tabId: tab.tab.id, variables: result };
+  }
+
+  // --- Auto-resume tools ---
+
+  async function handleSetAutoResume(args: { tabId?: string; enabled: boolean; command?: string; cwd?: string; sshCommand?: string; remoteCwd?: string }) {
+    const resolved = resolveActiveTab(args.tabId);
+    if ('error' in resolved) return resolved;
+    const { workspace, pane, tab } = resolved;
+
+    if (!args.enabled) {
+      await workspacesStore.setTabAutoResumeContext(workspace.id, pane.id, tab.id, null, null, null, null);
+      return { success: true, tabId: tab.id, enabled: false };
+    }
+
+    // If all context fields are provided, set directly
+    if (args.cwd !== undefined || args.sshCommand !== undefined || args.remoteCwd !== undefined) {
+      const cmd = args.command ?? CLAUDE_RESUME_COMMAND;
+      await workspacesStore.setTabAutoResumeContext(
+        workspace.id, pane.id, tab.id,
+        args.cwd ?? null, args.sshCommand ?? null, args.remoteCwd ?? null, cmd,
+      );
+      return { success: true, tabId: tab.id, enabled: true, command: cmd };
+    }
+
+    // Auto-detect PTY context (same as trigger-based enable)
+    const cmd = args.command ?? CLAUDE_RESUME_COMMAND;
+    await handleEnableAutoResume(tab.id, cmd);
+    return { success: true, tabId: tab.id, enabled: true, command: cmd };
+  }
+
+  function handleGetAutoResume(args: { tabId?: string }) {
+    const resolved = resolveActiveTab(args.tabId);
+    if ('error' in resolved) return resolved;
+    const { tab } = resolved;
+    const enabled = !!(tab.auto_resume_command || tab.auto_resume_cwd || tab.auto_resume_ssh_command);
+    return {
+      tabId: tab.id,
+      enabled,
+      command: tab.auto_resume_command ?? null,
+      cwd: tab.auto_resume_cwd ?? null,
+      sshCommand: tab.auto_resume_ssh_command ?? null,
+      remoteCwd: tab.auto_resume_remote_cwd ?? null,
+    };
+  }
+
+  /** Resolve a tab by ID or fall back to the active tab. Returns { workspace, pane, tab } or { error }. */
+  function resolveActiveTab(tabId?: string): { workspace: Workspace; pane: Pane; tab: Tab } | { error: string } {
+    if (tabId) {
+      const loc = findTabLocation(tabId);
+      if (!loc) return { error: `Tab not found: ${tabId}` };
+      return loc;
+    }
+    const ws = workspacesStore.workspaces.find(w => w.id === workspacesStore.activeWorkspaceId);
+    if (!ws) return { error: 'No active workspace' };
+    const pane = ws.panes.find(p => p.id === ws.active_pane_id);
+    if (!pane) return { error: 'No active pane' };
+    const tab = pane.tabs.find(t => t.id === pane.active_tab_id);
+    if (!tab) return { error: 'No active tab' };
+    return { workspace: ws, pane, tab };
   }
 
   function updateSelection(info: SelectionInfo) {

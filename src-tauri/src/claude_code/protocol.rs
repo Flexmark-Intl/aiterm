@@ -265,6 +265,57 @@ pub fn tool_list_response() -> Value {
                 "name": "getActiveTab",
                 "description": "Get the currently active workspace, pane, and tab. Returns IDs, names, tab type, display name, and notes status. Use this as a lightweight alternative to listWorkspaces when you just need to know the current context.",
                 "inputSchema": { "type": "object", "properties": {}, "required": [] }
+            },
+            {
+                "name": "setTriggerVariable",
+                "description": "Set or clear a trigger variable for a terminal tab. Trigger variables like %claudeSessionId are used in auto-resume commands and tab title interpolation. Setting 'claudeSessionId' will automatically enable auto-resume if the default Claude triggers are active — this is the recommended way to set up auto-resume for a Claude Code session. Set value to null to clear a variable.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "tabId": { "type": "string", "description": "Tab ID. If omitted, uses the currently active tab." },
+                        "name": { "type": "string", "description": "Variable name (e.g. 'claudeSessionId'). Referenced as %name in commands and titles." },
+                        "value": { "type": ["string", "null"], "description": "Value to set. Pass null to clear the variable." }
+                    },
+                    "required": ["name", "value"]
+                }
+            },
+            {
+                "name": "getTriggerVariables",
+                "description": "Get all trigger variables for a terminal tab. Returns variable names and values used in auto-resume commands, tab titles, and trigger conditions.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "tabId": { "type": "string", "description": "Tab ID. If omitted, uses the currently active tab." }
+                    },
+                    "required": []
+                }
+            },
+            {
+                "name": "setAutoResume",
+                "description": "Enable or disable auto-resume for a terminal tab. When enabled, the tab will automatically replay the configured command on session restore. For Claude Code sessions, prefer using setTriggerVariable to set 'claudeSessionId' instead — this triggers auto-resume setup automatically with correct PTY context detection. Use this tool for explicit control over auto-resume configuration or custom commands.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "tabId": { "type": "string", "description": "Tab ID. If omitted, uses the currently active tab." },
+                        "enabled": { "type": "boolean", "description": "True to enable, false to disable and clear all auto-resume fields." },
+                        "command": { "type": "string", "description": "Command to execute on resume. If omitted when enabling, uses the default Claude resume command template." },
+                        "cwd": { "type": "string", "description": "Local working directory. If omitted, auto-detected from PTY." },
+                        "sshCommand": { "type": "string", "description": "SSH command to replay (e.g. 'ssh user@host'). If omitted, auto-detected from PTY." },
+                        "remoteCwd": { "type": "string", "description": "Remote working directory for SSH sessions. If omitted, auto-detected." }
+                    },
+                    "required": ["enabled"]
+                }
+            },
+            {
+                "name": "getAutoResume",
+                "description": "Get the current auto-resume configuration for a terminal tab. Returns whether auto-resume is enabled and the configured command, CWD, SSH command, and remote CWD.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "tabId": { "type": "string", "description": "Tab ID. If omitted, uses the currently active tab." }
+                    },
+                    "required": []
+                }
             }
         ]
     })
