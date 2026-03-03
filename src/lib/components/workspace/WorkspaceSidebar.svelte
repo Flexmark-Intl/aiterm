@@ -396,6 +396,8 @@
     <IconButton tooltip="Report Bug" size={24} style="border-radius:4px" onclick={() => shellOpen('https://github.com/Flexmark-Intl/aiterm/issues/new?labels=bug&type=bug')}><Icon name="bug" size={14} /></IconButton>
     <IconButton tooltip="Feature Request" size={24} style="border-radius:4px" onclick={() => shellOpen('https://github.com/Flexmark-Intl/aiterm/issues/new?type=feature')}><Icon name="lightbulb" size={14} /></IconButton>
     <span style="flex:1"></span>
+    <StatusDot color={terminalsStore.webglActive ? 'green' : 'yellow'} tooltip={terminalsStore.webglActive ? 'Rendering: WebGL' : 'Rendering: DOM'} />
+    <span style="flex:1"></span>
     <IconButton tooltip="Preferences ({modSymbol},)" size={24} style="border-radius:4px" onclick={openPreferencesWindow}><Icon name="settings" size={14} /></IconButton>
     <IconButton tooltip="Help ({modSymbol}/)" size={24} style="border-radius:4px" onclick={onhelp}><Icon name="help" size={14} /></IconButton>
   </div>

@@ -7,6 +7,7 @@
   import { WebLinksAddon } from '@xterm/addon-web-links';
   import { SerializeAddon } from '@xterm/addon-serialize';
   import { SearchAddon } from '@xterm/addon-search';
+  import { WebglAddon } from '@xterm/addon-webgl';
   import '@xterm/xterm/css/xterm.css';
   import { spawnTerminal, writeTerminal, resizeTerminal, killTerminal, setTabScrollback, getPtyInfo, setTabRestoreContext, cleanSshCommand, readClipboardFilePaths } from '$lib/tauri/commands';
   import { readText as clipboardReadText, writeText as clipboardWriteText } from '@tauri-apps/plugin-clipboard-manager';
@@ -227,6 +228,20 @@
     }));
 
     terminal.open(containerRef);
+
+    // Use WebGL renderer for GPU-accelerated rendering (much faster than DOM renderer).
+    // Falls back to default DOM renderer if WebGL is unavailable.
+    try {
+      const webglAddon = new WebglAddon();
+      webglAddon.onContextLoss(() => {
+        webglAddon.dispose();
+        terminalsStore.setWebglActive(false);
+      });
+      terminal.loadAddon(webglAddon);
+      terminalsStore.setWebglActive(true);
+    } catch {
+      // WebGL not available — DOM renderer will be used
+    }
 
     // File path link provider: managed reactively based on preference
     // (initial registration handled by $effect below)
