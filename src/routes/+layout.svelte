@@ -489,7 +489,9 @@
       }
 
       // Cmd+/ or Cmd+? - Show help
+      // (Skip for editor tabs — CodeMirror uses Cmd+/ for toggle line comment)
       if (isMeta && (e.key === '/' || e.key === '?' || e.code === 'Slash')) {
+        if (activeTabIsEditor) return;
         e.preventDefault();
         e.stopPropagation();
         commands.openHelpWindow();
