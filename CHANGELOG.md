@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.4.2
+
+- Manage WebGL contexts per-terminal visibility lifecycle to stay within browser context limits
+- Fix modifier tab buttons resizing without hover
+- Extend auto-resume trigger suppression to 15s for SSH + Claude startup
+
 ## v1.4.1
 
 - Add WebGL renderer for GPU-accelerated terminal rendering
