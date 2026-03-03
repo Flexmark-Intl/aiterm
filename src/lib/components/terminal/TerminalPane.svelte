@@ -598,7 +598,10 @@
     terminal.focus();
     // Delay activity tracking and trigger actions so initial shell prompt
     // and restored/auto-resumed output don't fire indicators or triggers.
-    setTimeout(() => { trackActivity = true; unsuppressTab(tabId); }, 2000);
+    // Auto-resume (especially SSH + Claude) can take much longer to produce
+    // output, so use a longer suppression window.
+    const suppressMs = autoResumeCommand ? 15000 : 2000;
+    setTimeout(() => { trackActivity = true; unsuppressTab(tabId); }, suppressMs);
   });
 
   onDestroy(() => {

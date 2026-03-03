@@ -59,12 +59,17 @@
   });
   onDestroy(unsubOsc);
 
-  // Track modifier key for "modifier" tab button style
+  // Track modifier key for "modifier" tab button style.
+  // Only register listeners when the preference is active.
   let modHeld = $state(false);
-  function onKeyDown(e: KeyboardEvent) { if (isModKey(e)) modHeld = true; }
-  function onKeyUp(e: KeyboardEvent) { if (!e.metaKey && !e.ctrlKey) modHeld = false; }
-  function onBlur() { modHeld = false; }
   $effect(() => {
+    if (preferencesStore.tabButtonStyle !== 'modifier') {
+      modHeld = false;
+      return;
+    }
+    function onKeyDown(e: KeyboardEvent) { if (isModKey(e)) modHeld = true; }
+    function onKeyUp(e: KeyboardEvent) { if (!e.metaKey && !e.ctrlKey) modHeld = false; }
+    function onBlur() { modHeld = false; }
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('blur', onBlur);
@@ -751,7 +756,7 @@
     transition: background 0.1s, border-color 0.1s;
   }
 
-  .tab.buttons-modifier.mod-held {
+  .tab.buttons-modifier.mod-held:hover {
     padding-right: 2px;
   }
 
