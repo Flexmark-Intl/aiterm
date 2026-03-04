@@ -110,6 +110,7 @@ pub async fn scp_read_file_base64(
     remote_path: String,
 ) -> Result<ReadFileBase64Result, String> {
     let user_host = extract_user_host(&ssh_command)?;
+    let remote_path = expand_remote_tilde(&user_host, &remote_path);
 
     // Download via SCP
     let temp_dir = std::env::temp_dir();
@@ -152,6 +153,7 @@ pub async fn scp_read_file(
     remote_path: String,
 ) -> Result<ReadFileResult, String> {
     let user_host = extract_user_host(&ssh_command)?;
+    let remote_path = expand_remote_tilde(&user_host, &remote_path);
 
     // Pre-check via SSH: file type, size, and binary detection in one command
     // stat -c on Linux, stat -f on macOS — use a portable approach
@@ -230,6 +232,7 @@ pub async fn scp_write_file(
     content: String,
 ) -> Result<(), String> {
     let user_host = extract_user_host(&ssh_command)?;
+    let remote_path = expand_remote_tilde(&user_host, &remote_path);
 
     // Write content to temp file
     let temp_dir = std::env::temp_dir();
@@ -308,6 +311,36 @@ pub async fn create_editor_tab(
 /// Shell-quote a string for safe use in remote commands.
 fn shell_quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+/// Expand `~` and `~username` prefixes on a remote host via SSH.
+/// SCP in SFTP mode doesn't support `~user` paths, so we resolve them first.
+fn expand_remote_tilde(user_host: &str, path: &str) -> String {
+    if !path.starts_with('~') {
+        return path.to_string();
+    }
+    // Run `echo ~` or `echo ~username` on the remote to get the real path
+    // Extract the tilde prefix (~ or ~username) before any /
+    let (tilde_prefix, rest) = match path.find('/') {
+        Some(i) => (&path[..i], &path[i..]),
+        None => (path, ""),
+    };
+    let cmd = format!("echo {}", tilde_prefix);
+    if let Ok(output) = std::process::Command::new("ssh")
+        .arg("-o").arg("BatchMode=yes")
+        .arg("-o").arg("ConnectTimeout=10")
+        .arg(user_host)
+        .arg(&cmd)
+        .output()
+    {
+        if output.status.success() {
+            let expanded = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !expanded.is_empty() && expanded.starts_with('/') {
+                return format!("{}{}", expanded, rest);
+            }
+        }
+    }
+    path.to_string()
 }
 
 /// Extract user@host from an SSH command string.

@@ -643,6 +643,11 @@
       // Delay fit to ensure container is visible
       requestAnimationFrame(() => {
         fitWithPadding();
+        // Always sync PTY dimensions when becoming visible — the PTY may have been
+        // writing at a different size while the terminal was in the background
+        // (e.g. auto-resume reconnecting to Claude Code at default 80x24).
+        const { cols, rows } = terminal;
+        resizeTerminal(ptyId, cols, rows).catch(e => logError(String(e)));
         if (!autoResumePrompt) terminal.focus();
       });
       untrack(() => {

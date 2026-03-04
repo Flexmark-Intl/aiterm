@@ -649,7 +649,7 @@
 
         <div class="setting" style="align-items: flex-start;">
           <div>
-            <label for="number-duplicated-tabs">Number Duplicated Tabs</label>
+            <label for="number-duplicated-tabs">Autonumber Duplicated Tabs</label>
             <p class="setting-hint">Prepend a numeric index to duplicated tab names (e.g. "2 My Tab").</p>
           </div>
           <button
