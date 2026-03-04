@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.4.4
+
+- Let CodeMirror handle all keyboard shortcuts when editor/diff tabs are active
+- Add Editor section to help window with VS Code-style shortcuts
+- Flatten help panel sections to use headings instead of accordions
+- Keep tab bar visible when all tabs are closed
+
 ## v1.4.3
 
 - Add findNotes MCP tool to search all tabs and workspaces for notes in one call
