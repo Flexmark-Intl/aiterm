@@ -789,7 +789,7 @@ function createClaudeCodeStore() {
     const { workspace, pane, tab } = resolved;
 
     if (!args.enabled) {
-      await workspacesStore.setTabAutoResumeContext(workspace.id, pane.id, tab.id, null, null, null, null);
+      await workspacesStore.disableAutoResume(workspace.id, pane.id, tab.id);
       return { success: true, tabId: tab.id, enabled: false };
     }
 
@@ -813,10 +813,12 @@ function createClaudeCodeStore() {
     const resolved = resolveActiveTab(args.tabId);
     if ('error' in resolved) return resolved;
     const { tab } = resolved;
-    const enabled = !!(tab.auto_resume_command || tab.auto_resume_cwd || tab.auto_resume_ssh_command);
+    const hasConfig = !!(tab.auto_resume_command || tab.auto_resume_cwd || tab.auto_resume_ssh_command);
     return {
       tabId: tab.id,
-      enabled,
+      enabled: tab.auto_resume_enabled && hasConfig,
+      configured: hasConfig,
+      pinned: tab.auto_resume_pinned,
       command: tab.auto_resume_command ?? null,
       cwd: tab.auto_resume_cwd ?? null,
       sshCommand: tab.auto_resume_ssh_command ?? null,

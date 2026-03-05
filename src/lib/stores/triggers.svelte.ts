@@ -2,7 +2,7 @@ import { preferencesStore } from '$lib/stores/preferences.svelte';
 import { terminalsStore } from '$lib/stores/terminals.svelte';
 import { workspacesStore } from '$lib/stores/workspaces.svelte';
 import { activityStore } from '$lib/stores/activity.svelte';
-import { writeTerminal, setTabTriggerVariables, getPtyInfo, cleanSshCommand } from '$lib/tauri/commands';
+import { writeTerminal, setTabTriggerVariables, getPtyInfo, cleanSshCommand, buildSshCommand, shellEscapePath } from '$lib/tauri/commands';
 import { stripAnsi } from '$lib/utils/ansi';
 import { getCompiledTitlePatterns, getCompiledPatterns, extractDirFromTitle } from '$lib/utils/promptPattern';
 import { dispatch } from './notificationDispatch';
@@ -357,12 +357,33 @@ export async function replayAutoResume(tabId: string) {
   const ws = workspacesStore.workspaces.find(w => w.id === instance.workspaceId);
   const pane = ws?.panes.find(p => p.id === instance.paneId);
   const tab = pane?.tabs.find(t => t.id === tabId);
-  const cmd = tab?.auto_resume_command;
-  if (!cmd) return;
+  if (!tab) return;
+
+  const sshCmd = tab.auto_resume_ssh_command ?? null;
+  const remoteCwd = tab.auto_resume_remote_cwd ?? null;
+  const localCwd = tab.auto_resume_cwd ?? null;
+  const cmd = tab.auto_resume_command ?? null;
+
   try {
-    const interpolated = interpolateVariables(tabId, cmd, true);
-    const bytes = Array.from(new TextEncoder().encode(interpolated + '\n'));
-    await writeTerminal(instance.ptyId, bytes);
+    if (sshCmd) {
+      // SSH replay: build full ssh command, then append auto-resume command if any
+      const ssh = buildSshCommand(sshCmd, remoteCwd);
+      let payload = ssh + '\n';
+      if (cmd) {
+        payload += interpolateVariables(tabId, cmd, true) + '\n';
+      }
+      const bytes = Array.from(new TextEncoder().encode(payload));
+      await writeTerminal(instance.ptyId, bytes);
+    } else if (cmd) {
+      // Local replay: cd to CWD if configured, then run command
+      let payload = '';
+      if (localCwd) {
+        payload += `cd ${shellEscapePath(localCwd)}\n`;
+      }
+      payload += interpolateVariables(tabId, cmd, true) + '\n';
+      const bytes = Array.from(new TextEncoder().encode(payload));
+      await writeTerminal(instance.ptyId, bytes);
+    }
   } catch (e) {
     logError(`replay_auto_resume failed for tab ${tabId}: ${e}`);
   }

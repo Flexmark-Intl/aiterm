@@ -12,9 +12,10 @@ export interface PtyInfo {
 }
 
 /**
- * Strip previously-injected "-t" flag and "cd ... && exec $SHELL -l" remote
- * command from an SSH command retrieved from the process tree, so it doesn't
- * accumulate on each split/restore cycle.
+ * Strip previously-injected flags and remote commands from an SSH command
+ * retrieved from the process tree, then normalize to just the user@host
+ * portion (with any non-standard flags). Strips `ssh` prefix, `-t`,
+ * `-o ControlMaster=...`, and `cd ... && exec $SHELL -l` suffixes.
  */
 export function cleanSshCommand(cmd: string): string {
   if (!cmd.match(/^ssh\s/)) return cmd;
@@ -22,11 +23,13 @@ export function cleanSshCommand(cmd: string): string {
   let cleaned = cmd.replace(/\s+cd\s+.*?&&\s+exec\s+\$?SHELL\s+-l\s*$/, '');
   // Also handle the single-quoted form
   cleaned = cleaned.replace(/\s+'cd\s+.*?&&\s+exec\s+\$?SHELL\s+-l'\s*$/, '');
-  // Remove flags that buildSshCommand re-injects
+  // Remove only flags that buildSshCommand re-injects
   cleaned = cleaned.replace(/\s+-t(?=\s|$)/g, '');
   cleaned = cleaned.replace(/\s+-o\s+ControlMaster=\S+/g, '');
   // Remove any bare ControlMaster=... leftover (malformed from previous cycles)
   cleaned = cleaned.replace(/\s+ControlMaster=\S+/g, '');
+  // Strip the `ssh` prefix — we store just user@host with any remaining flags
+  cleaned = cleaned.replace(/^ssh\s+/, '');
   // Deduplicate single-letter flags (e.g. -x -C -x -C → -x -C)
   const parts = cleaned.split(/\s+/);
   const seen = new Set<string>();
@@ -39,6 +42,47 @@ export function cleanSshCommand(cmd: string): string {
     deduped.push(part);
   }
   return deduped.join(' ');
+}
+
+/**
+ * Normalize SSH input from the user: accept either "ssh user@host ..."
+ * or just "user@host ...", strip standard flags we re-inject (-t, -o ControlMaster),
+ * and return just the user@host portion with any non-standard flags.
+ */
+export function shellEscapePath(path: string): string {
+  if (path === '~') return '~';
+  if (path.startsWith('~/')) {
+    const rest = path.slice(2).replace(/'/g, "'\\''");
+    return `~/'${rest}'`;
+  }
+  const escaped = path.replace(/'/g, "'\\''");
+  return `'${escaped}'`;
+}
+
+/**
+ * Build the SSH command for split cloning / auto-resume.
+ * Stored SSH values are bare "user@host" (possibly with flags).
+ * Reconstructs full "ssh -t -o ControlMaster=no user@host" and
+ * appends 'cd <path> && exec $SHELL -l' if remoteCwd is given.
+ */
+export function buildSshCommand(sshCmd: string | null, remoteCwd: string | null): string {
+  if (!sshCmd) return '';
+  const fullCmd = sshCmd.match(/^ssh\s/) ? sshCmd : `ssh ${sshCmd}`;
+  if (!remoteCwd) {
+    return fullCmd.replace(/^ssh\s+/, 'ssh -o ControlMaster=no ');
+  }
+  const cdPath = shellEscapePath(remoteCwd);
+  const rest = fullCmd.replace(/^ssh\s+/, '');
+  return `ssh -t -o ControlMaster=no ${rest} 'cd ${cdPath} && exec $SHELL -l'`;
+}
+
+export function normalizeSshInput(input: string): string {
+  const trimmed = input.trim();
+  if (!trimmed) return '';
+  // If it starts with "ssh ", run through cleanSshCommand which handles full commands
+  if (trimmed.match(/^ssh\s/)) return cleanSshCommand(trimmed);
+  // Already bare user@host (possibly with flags) — just return as-is
+  return trimmed;
 }
 
 export async function getPtyInfo(ptyId: string): Promise<PtyInfo> {
@@ -227,8 +271,18 @@ export async function setTabAutoResumeContext(
   sshCommand: string | null,
   remoteCwd: string | null,
   command: string | null,
+  pinned?: boolean,
 ): Promise<void> {
-  return invoke('set_tab_auto_resume_context', { workspaceId, paneId, tabId, cwd, sshCommand, remoteCwd, command });
+  return invoke('set_tab_auto_resume_context', { workspaceId, paneId, tabId, cwd, sshCommand, remoteCwd, command, pinned: pinned ?? null });
+}
+
+export async function setTabAutoResumeEnabled(
+  workspaceId: string,
+  paneId: string,
+  tabId: string,
+  enabled: boolean,
+): Promise<void> {
+  return invoke('set_tab_auto_resume_enabled', { workspaceId, paneId, tabId, enabled });
 }
 
 // Workspace note commands

@@ -597,6 +597,7 @@ pub fn set_tab_auto_resume_context(
     ssh_command: Option<String>,
     remote_cwd: Option<String>,
     command: Option<String>,
+    pinned: Option<bool>,
 ) -> Result<(), String> {
     let label = window.label().to_string();
     let mut app_data = state.app_data.write();
@@ -611,6 +612,33 @@ pub fn set_tab_auto_resume_context(
                     tab.auto_resume_remembered_command = command.clone();
                 }
                 tab.auto_resume_command = command;
+                tab.auto_resume_enabled = true;
+                if let Some(p) = pinned {
+                    tab.auto_resume_pinned = p;
+                }
+            }
+        }
+    }
+    save_state(&app_data)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_tab_auto_resume_enabled(
+    window: tauri::Window,
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+    pane_id: String,
+    tab_id: String,
+    enabled: bool,
+) -> Result<(), String> {
+    let label = window.label().to_string();
+    let mut app_data = state.app_data.write();
+    let win = app_data.window_mut(&label).ok_or("Window not found")?;
+    if let Some(workspace) = win.workspaces.iter_mut().find(|w| w.id == workspace_id) {
+        if let Some(pane) = workspace.panes.iter_mut().find(|p| p.id == pane_id) {
+            if let Some(tab) = pane.tabs.iter_mut().find(|t| t.id == tab_id) {
+                tab.auto_resume_enabled = enabled;
             }
         }
     }

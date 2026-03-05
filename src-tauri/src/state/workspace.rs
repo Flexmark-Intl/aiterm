@@ -220,6 +220,12 @@ pub struct Tab {
     /// Only updated when user submits a command, never cleared on disable.
     #[serde(default)]
     pub auto_resume_remembered_command: Option<String>,
+    /// Auto-resume: when true, prompt pre-fills from stored values, not live PTY.
+    #[serde(default)]
+    pub auto_resume_pinned: bool,
+    /// Auto-resume: when false, stored settings are preserved but won't fire on restart.
+    #[serde(default = "default_true")]
+    pub auto_resume_enabled: bool,
     /// User-editable notes scratchpad for this tab.
     #[serde(default)]
     pub notes: Option<String>,
@@ -706,6 +712,8 @@ impl Tab {
             auto_resume_remote_cwd: None,
             auto_resume_command: None,
             auto_resume_remembered_command: None,
+            auto_resume_pinned: false,
+            auto_resume_enabled: true,
             notes: None,
             notes_mode: None,
             notes_open: false,
@@ -734,6 +742,8 @@ impl Tab {
             auto_resume_remote_cwd: None,
             auto_resume_command: None,
             auto_resume_remembered_command: None,
+            auto_resume_pinned: false,
+            auto_resume_enabled: true,
             notes: None,
             notes_mode: None,
             notes_open: false,
@@ -762,6 +772,8 @@ impl Tab {
             auto_resume_remote_cwd: None,
             auto_resume_command: None,
             auto_resume_remembered_command: None,
+            auto_resume_pinned: false,
+            auto_resume_enabled: true,
             notes: None,
             notes_mode: None,
             notes_open: false,

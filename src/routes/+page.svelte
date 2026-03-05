@@ -131,6 +131,8 @@
                     autoResumeRemoteCwd={tab.auto_resume_remote_cwd}
                     autoResumeCommand={tab.auto_resume_command}
                     autoResumeRememberedCommand={tab.auto_resume_remembered_command}
+                    autoResumePinned={tab.auto_resume_pinned}
+                    autoResumeEnabled={tab.auto_resume_enabled}
                     triggerVariables={tab.trigger_variables}
                   />
                 {/if}

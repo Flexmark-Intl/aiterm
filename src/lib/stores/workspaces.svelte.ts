@@ -394,6 +394,7 @@ function createWorkspacesStore() {
             sourceTab.auto_resume_ssh_command,
             sourceTab.auto_resume_remote_cwd,
             sourceTab.auto_resume_command,
+            sourceTab.auto_resume_pinned,
           );
         }
       }
@@ -882,8 +883,8 @@ function createWorkspacesStore() {
       });
     },
 
-    async setTabAutoResumeContext(workspaceId: string, paneId: string, tabId: string, cwd: string | null, sshCommand: string | null, remoteCwd: string | null, command: string | null = null) {
-      await commands.setTabAutoResumeContext(workspaceId, paneId, tabId, cwd, sshCommand, remoteCwd, command);
+    async setTabAutoResumeContext(workspaceId: string, paneId: string, tabId: string, cwd: string | null, sshCommand: string | null, remoteCwd: string | null, command: string | null = null, pinned?: boolean) {
+      await commands.setTabAutoResumeContext(workspaceId, paneId, tabId, cwd, sshCommand, remoteCwd, command, pinned);
       workspaces = workspaces.map(w => {
         if (w.id === workspaceId) {
           return {
@@ -893,7 +894,30 @@ function createWorkspacesStore() {
                 return {
                   ...p,
                   tabs: p.tabs.map(t =>
-                    t.id === tabId ? { ...t, auto_resume_cwd: cwd, auto_resume_ssh_command: sshCommand, auto_resume_remote_cwd: remoteCwd, auto_resume_command: command, ...(command != null ? { auto_resume_remembered_command: command } : {}) } : t
+                    t.id === tabId ? { ...t, auto_resume_cwd: cwd, auto_resume_ssh_command: sshCommand, auto_resume_remote_cwd: remoteCwd, auto_resume_command: command, auto_resume_enabled: true, ...(command != null ? { auto_resume_remembered_command: command } : {}), ...(pinned != null ? { auto_resume_pinned: pinned } : {}) } : t
+                  )
+                };
+              }
+              return p;
+            })
+          };
+        }
+        return w;
+      });
+    },
+
+    async disableAutoResume(workspaceId: string, paneId: string, tabId: string) {
+      await commands.setTabAutoResumeEnabled(workspaceId, paneId, tabId, false);
+      workspaces = workspaces.map(w => {
+        if (w.id === workspaceId) {
+          return {
+            ...w,
+            panes: w.panes.map(p => {
+              if (p.id === paneId) {
+                return {
+                  ...p,
+                  tabs: p.tabs.map(t =>
+                    t.id === tabId ? { ...t, auto_resume_enabled: false } : t
                   )
                 };
               }

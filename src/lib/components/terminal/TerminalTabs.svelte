@@ -656,7 +656,7 @@
         {:else if hasActivity}
           <span class="indicator"><StatusDot color="accent" /></span>
         {/if}
-        {#if !isEditor && (tab.auto_resume_ssh_command || tab.auto_resume_cwd)}
+        {#if !isEditor && tab.auto_resume_enabled && (tab.auto_resume_ssh_command || tab.auto_resume_cwd || tab.auto_resume_command)}
           <span class="auto-resume-indicator" title={
             tab.auto_resume_ssh_command
               ? `Auto-resume: ${tab.auto_resume_ssh_command}${tab.auto_resume_remote_cwd ? ` (${tab.auto_resume_remote_cwd})` : ''}`

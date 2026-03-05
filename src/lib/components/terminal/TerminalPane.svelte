@@ -9,7 +9,7 @@
   import { SearchAddon } from '@xterm/addon-search';
   import { WebglAddon } from '@xterm/addon-webgl';
   import '@xterm/xterm/css/xterm.css';
-  import { spawnTerminal, writeTerminal, resizeTerminal, killTerminal, setTabScrollback, getPtyInfo, setTabRestoreContext, cleanSshCommand, readClipboardFilePaths } from '$lib/tauri/commands';
+  import { spawnTerminal, writeTerminal, resizeTerminal, killTerminal, setTabScrollback, getPtyInfo, setTabRestoreContext, cleanSshCommand, normalizeSshInput, buildSshCommand, shellEscapePath, readClipboardFilePaths } from '$lib/tauri/commands';
   import { readText as clipboardReadText, writeText as clipboardWriteText } from '@tauri-apps/plugin-clipboard-manager';
   import { terminalsStore } from '$lib/stores/terminals.svelte';
   import { workspacesStore } from '$lib/stores/workspaces.svelte';
@@ -44,10 +44,12 @@
     autoResumeRemoteCwd?: string | null;
     autoResumeCommand?: string | null;
     autoResumeRememberedCommand?: string | null;
+    autoResumePinned?: boolean;
+    autoResumeEnabled?: boolean;
     triggerVariables?: Record<string, string>;
   }
 
-  let { workspaceId, paneId, tabId, visible, initialScrollback, restoreCwd, restoreSshCommand, restoreRemoteCwd, autoResumeCwd, autoResumeSshCommand, autoResumeRemoteCwd, autoResumeCommand, autoResumeRememberedCommand, triggerVariables }: Props = $props();
+  let { workspaceId, paneId, tabId, visible, initialScrollback, restoreCwd, restoreSshCommand, restoreRemoteCwd, autoResumeCwd, autoResumeSshCommand, autoResumeRemoteCwd, autoResumeCommand, autoResumeRememberedCommand, autoResumePinned, autoResumeEnabled, triggerVariables }: Props = $props();
 
   let containerRef: HTMLDivElement;
   let terminal: Terminal;
@@ -69,11 +71,11 @@
   let isAutoResume = $state(false);
   // Sync from props so external changes (e.g. triggers) update the local flag
   $effect(() => {
-    isAutoResume = !!(autoResumeSshCommand || autoResumeCwd);
+    isAutoResume = (autoResumeEnabled ?? true) && !!(autoResumeSshCommand || autoResumeCwd || autoResumeCommand);
   });
   let resizePtyTimeout: ReturnType<typeof setTimeout> | undefined;
   // Inline prompt for auto-resume command
-  let autoResumePrompt = $state<{ cwd: string | null; sshCmd: string | null; remoteCwd: string | null } | null>(null);
+  let autoResumePrompt = $state<{ cwd: string | null; sshCmd: string | null; remoteCwd: string | null; pinned: boolean } | null>(null);
   let autoResumePromptValue = $state('');
   let claudeSetupModal = $state(false);
   let autoResumeTextarea = $state<{ focus: () => void } | undefined>();
@@ -131,39 +133,6 @@
 
   // Escape a path for use inside single quotes.
   // Handles ~ by leaving it unquoted so the shell expands it.
-  function shellEscapePath(path: string): string {
-    if (path === '~') return '~';
-    if (path.startsWith('~/')) {
-      const rest = path.slice(2).replace(/'/g, "'\\''");
-      return `~/'${rest}'`;
-    }
-    const escaped = path.replace(/'/g, "'\\''");
-    return `'${escaped}'`;
-  }
-
-  // Build the SSH command for split cloning.
-  // For ssh: inject -t and append 'cd <path> && exec "$SHELL" -l'
-  // so the remote shell starts in the right directory atomically.
-  function buildSshCommand(sshCmd: string | null, remoteCwd: string | null): string {
-    if (!sshCmd) return '';
-    if (!remoteCwd) {
-      // Inject ControlMaster=no to avoid multiplexing conflict on restore
-      return sshCmd.replace(/^ssh\s+/, 'ssh -o ControlMaster=no ');
-    }
-
-    const cdPath = shellEscapePath(remoteCwd);
-
-    // If it's a plain ssh command, inject -t and append remote command
-    const sshMatch = sshCmd.match(/^(ssh\s+)/);
-    if (sshMatch) {
-      const rest = sshCmd.slice(sshMatch[1].length);
-      return `ssh -t -o ControlMaster=no ${rest} 'cd ${cdPath} && exec $SHELL -l'`;
-    }
-
-    // Fallback for aliases/mosh/autossh: send ssh command then cd on next line
-    return sshCmd + '\n' + `cd ${cdPath}`;
-  }
-
   // Portal: attach containerRef to its slot in the split tree
   function attachToSlot() {
     const slot = document.querySelector(`[data-terminal-slot="${tabId}"]`) as HTMLElement;
@@ -451,8 +420,8 @@
     // Fall back to auto-resume context, then persisted restore context from last session.
     // Auto-resume context always wins over restore context (survives SSH disconnects).
     const splitCtx = terminalsStore.consumeSplitContext(tabId);
-    const autoResumeCtx = (autoResumeSshCommand || autoResumeCwd)
-      ? { cwd: autoResumeCwd ?? restoreCwd ?? null, sshCommand: autoResumeSshCommand ? cleanSshCommand(autoResumeSshCommand) : null, remoteCwd: autoResumeRemoteCwd ?? null }
+    const autoResumeCtx = ((autoResumeEnabled ?? true) && (autoResumeSshCommand || autoResumeCwd))
+      ? { cwd: autoResumeCwd ?? restoreCwd ?? null, sshCommand: autoResumeSshCommand ?? null, remoteCwd: autoResumeRemoteCwd ?? null }
       : null;
     const restoreCtx = (restoreCwd || restoreSshCommand)
       ? { cwd: restoreCwd ?? null, sshCommand: restoreSshCommand ? cleanSshCommand(restoreSshCommand) : null, remoteCwd: restoreRemoteCwd ?? null }
@@ -485,7 +454,7 @@
           logError(`Failed to replay SSH command: ${e}`);
         }
       }, 500);
-    } else if (autoResumeCommand && (!splitCtx || splitCtx.fireAutoResume)) {
+    } else if ((autoResumeEnabled ?? true) && autoResumeCommand && (!splitCtx || splitCtx.fireAutoResume)) {
       // Local auto-resume: send command after shell starts (also fires on reload)
       setTimeout(async () => {
         try {
@@ -524,10 +493,18 @@
         return false;
       }
 
-      if (isModKey(e) && e.key === 'r') {
+      if (isModKey(e) && e.altKey && e.key === 'r') {
         e.preventDefault();
         if (isAutoResume) {
-          workspacesStore.setTabAutoResumeContext(workspaceId, paneId, tabId, null, null, null, null);
+          replayAutoResume(tabId);
+        }
+        return false;
+      }
+
+      if (isModKey(e) && !e.altKey && e.key === 'r') {
+        e.preventDefault();
+        if (isAutoResume) {
+          workspacesStore.disableAutoResume(workspaceId, paneId, tabId);
         } else {
           gatherAutoResumeContext().then(ctx => {
             autoResumePromptValue = autoResumeRememberedCommand ?? '';
@@ -804,7 +781,24 @@
     };
   });
 
-  async function gatherAutoResumeContext(): Promise<{ cwd: string | null; sshCmd: string | null; remoteCwd: string | null }> {
+  function getCurrentTab(): import('$lib/tauri/types').Tab | undefined {
+    const ws = workspacesStore.workspaces.find(w => w.id === workspaceId);
+    const pane = ws?.panes.find(p => p.id === paneId);
+    return pane?.tabs.find(t => t.id === tabId);
+  }
+
+  async function gatherAutoResumeContext(): Promise<{ cwd: string | null; sshCmd: string | null; remoteCwd: string | null; pinned: boolean }> {
+    // If pinned, use stored values from the live store (not stale props)
+    const tab = getCurrentTab();
+    if (tab?.auto_resume_pinned) {
+      return {
+        cwd: tab.auto_resume_cwd ?? null,
+        sshCmd: tab.auto_resume_ssh_command ?? null,
+        remoteCwd: tab.auto_resume_remote_cwd ?? null,
+        pinned: true,
+      };
+    }
+
     const info = await getPtyInfo(ptyId);
     const sshCmd = info.foreground_command ? cleanSshCommand(info.foreground_command) : null;
     const localCwd = info.cwd ?? null;
@@ -833,16 +827,18 @@
         }
       }
     }
-    return { cwd: localCwd, sshCmd, remoteCwd };
+    return { cwd: localCwd, sshCmd, remoteCwd, pinned: false };
   }
 
   async function submitAutoResumePrompt() {
     if (!autoResumePrompt) return;
     const cmd = autoResumePromptValue.trim() || null;
-    const sshCmd = autoResumePrompt.sshCmd?.trim() || null;
+    // Normalize SSH input: strip "ssh" prefix and standard flags, store just user@host
+    const sshCmd = autoResumePrompt.sshCmd?.trim() ? normalizeSshInput(autoResumePrompt.sshCmd.trim()) : null;
     const remoteCwd = sshCmd ? (autoResumePrompt.remoteCwd?.trim() || null) : null;
     const cwd = autoResumePrompt.cwd?.trim() || null;
-    await workspacesStore.setTabAutoResumeContext(workspaceId, paneId, tabId, cwd, sshCmd, remoteCwd, cmd);
+    const pinned = autoResumePrompt.pinned;
+    await workspacesStore.setTabAutoResumeContext(workspaceId, paneId, tabId, cwd, sshCmd, remoteCwd, cmd, pinned);
     isAutoResume = true;
     autoResumePrompt = null;
     autoResumePromptValue = '';
@@ -931,27 +927,27 @@
           action: () => replayAutoResume(tabId),
         },
         {
+          label: 'Edit Auto-resume\u2026',
+          action: async () => {
+            try {
+              const ctx = await gatherAutoResumeContext();
+              autoResumePromptValue = autoResumeRememberedCommand ?? '';
+              autoResumePrompt = ctx;
+            } catch (e) {
+              logError(`Edit auto-resume failed: ${e}`);
+            }
+          },
+        },
+        {
           label: 'Disable Auto-resume',
           action: async () => {
-            await workspacesStore.setTabAutoResumeContext(workspaceId, paneId, tabId, null, null, null, null);
+            await workspacesStore.disableAutoResume(workspaceId, paneId, tabId);
             isAutoResume = false;
           },
         },
       ] : [
         {
-          label: 'Auto-resume',
-          action: async () => {
-            try {
-              const ctx = await gatherAutoResumeContext();
-              await workspacesStore.setTabAutoResumeContext(workspaceId, paneId, tabId, ctx.cwd, ctx.sshCmd, ctx.remoteCwd, null);
-              isAutoResume = true;
-            } catch (e) {
-              logError(`Auto-resume failed: ${e}`);
-            }
-          },
-        },
-        {
-          label: 'Auto-resume + Command\u2026',
+          label: 'Auto-resume\u2026',
           action: async () => {
             try {
               const ctx = await gatherAutoResumeContext();
@@ -1019,27 +1015,32 @@
     <div class="auto-resume-prompt-backdrop">
     <div class="auto-resume-prompt">
       <div class="auto-resume-context-info">
-        {#if autoResumePrompt.sshCmd != null}
-          <div class="auto-resume-context-row">
-            <span class="auto-resume-context-label">SSH</span>
-            <input class="auto-resume-context-input" type="text" bind:value={autoResumePrompt.sshCmd}
-              onkeydown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submitAutoResumePrompt(); if (e.key === 'Escape') cancelAutoResumePrompt(); }}
-              placeholder="ssh user@host" />
-          </div>
-          <div class="auto-resume-context-row">
-            <span class="auto-resume-context-label">Remote CWD</span>
-            <input class="auto-resume-context-input" type="text" bind:value={autoResumePrompt.remoteCwd}
-              onkeydown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submitAutoResumePrompt(); if (e.key === 'Escape') cancelAutoResumePrompt(); }}
-              placeholder="~/path" />
-          </div>
-        {:else}
-          <div class="auto-resume-context-row">
-            <span class="auto-resume-context-label">CWD</span>
-            <input class="auto-resume-context-input" type="text" bind:value={autoResumePrompt.cwd}
-              onkeydown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submitAutoResumePrompt(); if (e.key === 'Escape') cancelAutoResumePrompt(); }}
-              placeholder="/path/to/dir" />
-          </div>
-        {/if}
+        <div class="auto-resume-context-row">
+          <span class="auto-resume-context-label">SSH</span>
+          <input class="auto-resume-context-input" type="text" bind:value={autoResumePrompt.sshCmd}
+            oninput={() => { if (autoResumePrompt) autoResumePrompt.pinned = true; }}
+            onkeydown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submitAutoResumePrompt(); if (e.key === 'Escape') cancelAutoResumePrompt(); }}
+            placeholder="user@host or ssh user@host" />
+        </div>
+        <div class="auto-resume-context-row">
+          <span class="auto-resume-context-label">Remote CWD</span>
+          <input class="auto-resume-context-input" type="text" bind:value={autoResumePrompt.remoteCwd}
+            oninput={() => { if (autoResumePrompt) autoResumePrompt.pinned = true; }}
+            onkeydown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submitAutoResumePrompt(); if (e.key === 'Escape') cancelAutoResumePrompt(); }}
+            placeholder="~/path" />
+        </div>
+        <div class="auto-resume-context-row">
+          <span class="auto-resume-context-label">CWD</span>
+          <input class="auto-resume-context-input" type="text" bind:value={autoResumePrompt.cwd}
+            oninput={() => { if (autoResumePrompt) autoResumePrompt.pinned = true; }}
+            onkeydown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submitAutoResumePrompt(); if (e.key === 'Escape') cancelAutoResumePrompt(); }}
+            placeholder="/path/to/dir" />
+        </div>
+        <!-- svelte-ignore a11y_label_has_associated_control -- checkbox is nested inside label -->
+        <label class="auto-resume-pin-label">
+          <input type="checkbox" checked={autoResumePrompt.pinned} onchange={() => { if (autoResumePrompt) autoResumePrompt.pinned = !autoResumePrompt.pinned; }} />
+          Pin these settings <span class="auto-resume-pin-hint">(skip auto-detection when editing)</span>
+        </label>
       </div>
       <!-- svelte-ignore a11y_label_has_associated_control -- label is visual context for custom ResizableTextarea component -->
       <label class="auto-resume-prompt-label">Command to run after {autoResumePrompt.sshCmd ? 'connect' : 'start'}</label>
@@ -1102,7 +1103,8 @@
                 ));
               }
               const ctx = await gatherAutoResumeContext();
-              await workspacesStore.setTabAutoResumeContext(workspaceId, paneId, tabId, ctx.cwd, ctx.sshCmd, ctx.remoteCwd, CLAUDE_RESUME_COMMAND);
+              const sshCmd = ctx.sshCmd ? normalizeSshInput(ctx.sshCmd) : null;
+              await workspacesStore.setTabAutoResumeContext(workspaceId, paneId, tabId, ctx.cwd, sshCmd, ctx.remoteCwd, CLAUDE_RESUME_COMMAND);
               isAutoResume = true;
             } catch (e) {
               logError(`Auto-resume + Claude setup failed: ${e}`);
@@ -1219,8 +1221,29 @@
   .auto-resume-context-label {
     color: var(--fg-dim);
     font-size: 11px;
-    min-width: 70px;
+    min-width: 85px;
     flex-shrink: 0;
+  }
+
+  .auto-resume-pin-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--fg-dim);
+    cursor: pointer;
+    margin-top: 2px;
+    margin-bottom: 6px;
+  }
+
+  .auto-resume-pin-label input[type="checkbox"] {
+    margin: 0;
+    accent-color: var(--accent);
+  }
+
+  .auto-resume-pin-hint {
+    color: var(--fg-dim);
+    opacity: 0.7;
   }
 
   .auto-resume-context-input,

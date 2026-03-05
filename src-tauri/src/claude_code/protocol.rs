@@ -292,15 +292,15 @@ pub fn tool_list_response() -> Value {
             },
             {
                 "name": "setAutoResume",
-                "description": "Enable or disable auto-resume for a terminal tab. When enabled, the tab will automatically replay the configured command on session restore. For Claude Code sessions, prefer using setTriggerVariable to set 'claudeSessionId' instead — this triggers auto-resume setup automatically with correct PTY context detection. Use this tool for explicit control over auto-resume configuration or custom commands.",
+                "description": "Enable or disable auto-resume for a terminal tab. When enabled, the tab will automatically replay the configured command on session restore. Disabling preserves all stored settings (SSH, CWD, command) — it only stops the auto-resume from firing. For Claude Code sessions, prefer using setTriggerVariable to set 'claudeSessionId' instead — this triggers auto-resume setup automatically with correct PTY context detection.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "tabId": { "type": "string", "description": "Tab ID. If omitted, uses the currently active tab." },
-                        "enabled": { "type": "boolean", "description": "True to enable, false to disable and clear all auto-resume fields." },
+                        "enabled": { "type": "boolean", "description": "True to enable, false to disable. Disabling preserves all stored settings." },
                         "command": { "type": "string", "description": "Command to execute on resume. If omitted when enabling, uses the default Claude resume command template." },
                         "cwd": { "type": "string", "description": "Local working directory. If omitted, auto-detected from PTY." },
-                        "sshCommand": { "type": "string", "description": "SSH command to replay (e.g. 'ssh user@host'). If omitted, auto-detected from PTY." },
+                        "sshCommand": { "type": "string", "description": "SSH connection target (e.g. 'user@host' or '-p 2222 user@host'). If omitted, auto-detected from PTY." },
                         "remoteCwd": { "type": "string", "description": "Remote working directory for SSH sessions. If omitted, auto-detected." }
                     },
                     "required": ["enabled"]
@@ -308,7 +308,7 @@ pub fn tool_list_response() -> Value {
             },
             {
                 "name": "getAutoResume",
-                "description": "Get the current auto-resume configuration for a terminal tab. Returns whether auto-resume is enabled and the configured command, CWD, SSH command, and remote CWD.",
+                "description": "Get the current auto-resume configuration for a terminal tab. Returns enabled state, pinned state, configured flag, and the stored command, CWD, SSH command, and remote CWD.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {

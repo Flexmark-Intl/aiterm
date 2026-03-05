@@ -30,6 +30,8 @@ export interface Tab {
   auto_resume_remote_cwd: string | null;
   auto_resume_command: string | null;
   auto_resume_remembered_command: string | null;
+  auto_resume_pinned: boolean;
+  auto_resume_enabled: boolean;
   notes: string | null;
   notes_mode: string | null;
   notes_open: boolean;

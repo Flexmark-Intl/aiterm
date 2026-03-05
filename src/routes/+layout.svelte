@@ -354,6 +354,7 @@
         return;
       }
 
+      // Cmd+Opt+R - Replay auto-resume (handled in TerminalPane, prevent browser reload)
       // Cmd+R - Auto-resume toggle (handled in TerminalPane, prevent browser reload)
       if (isMeta && !e.shiftKey && e.key.toLowerCase() === 'r') {
         e.preventDefault();
