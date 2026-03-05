@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.5.0
+
+- Add tab-level scoping to triggers for per-tab pattern matching
+- Expose preferences via MCP tools, rename Panels to Tabs in preferences UI
+- Fall back to persisted auto-resume SSH when live PTY has no SSH on reload
+- Clear trigger buffer when suppression window ends to prevent stale matches
+- Sync PTY size on tab visibility, expand remote tilde paths
+
 ## v1.4.4
 
 - Let CodeMirror handle all keyboard shortcuts when editor/diff tabs are active
