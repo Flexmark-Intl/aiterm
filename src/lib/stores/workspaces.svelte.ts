@@ -1281,10 +1281,16 @@ function createWorkspacesStore() {
       const newTab = freshPane.tabs[sourceIndex + 1];
       if (!newTab) return;
 
-      // Mark split context so auto-resume command fires on mount (reload = full restore)
+      // Mark split context so auto-resume command fires on mount (reload = full restore).
+      // If the live PTY had no SSH (e.g. connection died), fall back to persisted auto-resume SSH settings.
       const splitCtx = terminalsStore.consumeSplitContext(newTab.id);
       if (splitCtx) {
-        terminalsStore.setSplitContext(newTab.id, { ...splitCtx, fireAutoResume: true });
+        const ctx = { ...splitCtx, fireAutoResume: true };
+        if (!ctx.sshCommand && sourceTab.auto_resume_ssh_command) {
+          ctx.sshCommand = sourceTab.auto_resume_ssh_command;
+          ctx.remoteCwd = sourceTab.auto_resume_remote_cwd ?? ctx.remoteCwd;
+        }
+        terminalsStore.setSplitContext(newTab.id, ctx);
       }
 
       // Restore exact name (duplicateTab may have appended " (2)" for custom names)
