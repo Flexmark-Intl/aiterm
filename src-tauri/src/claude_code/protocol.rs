@@ -321,6 +321,29 @@ pub fn tool_list_response() -> Value {
                 "name": "findNotes",
                 "description": "Search across all workspaces and tabs for notes content. Returns every tab and workspace note that exists, with content previews and tab display names. Use this to quickly find notes without having to list workspaces and check each tab individually.",
                 "inputSchema": { "type": "object", "properties": {}, "required": [] }
+            },
+            {
+                "name": "getPreferences",
+                "description": "Get aiTerm preferences (settings). Returns current values with metadata (description, type, valid values). Optionally filter by query string to find relevant settings.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "query": { "type": "string", "description": "Optional search query. Filters preferences whose key or description contains this string (case-insensitive). Omit to return all preferences." }
+                    },
+                    "required": []
+                }
+            },
+            {
+                "name": "setPreference",
+                "description": "Update a single aiTerm preference by key. Use getPreferences first to discover available keys, their types, and valid values.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "key": { "type": "string", "description": "The preference key in snake_case (e.g. 'font_size', 'theme', 'cursor_style')" },
+                        "value": { "description": "The new value. Type must match the preference (number, string, boolean)." }
+                    },
+                    "required": ["key", "value"]
+                }
             }
         ]
     })

@@ -131,6 +131,12 @@ function createClaudeCodeStore() {
         case 'findNotes':
           result = handleFindNotes();
           break;
+        case 'getPreferences':
+          result = handleGetPreferences(args as { query?: string });
+          break;
+        case 'setPreference':
+          result = await handleSetPreference(args as { key: string; value: unknown });
+          break;
         default:
           result = { error: `Unknown tool: ${tool}` };
       }
@@ -850,6 +856,230 @@ function createClaudeCodeStore() {
     }
 
     return { tabNotes, workspaceNotes };
+  }
+
+  // --- Preferences tools ---
+
+  interface PrefMeta {
+    description: string;
+    type: string;
+    category: string;
+    default: unknown;
+    options?: string[];
+    range?: [number, number];
+    readOnly?: boolean;
+  }
+
+  const PREFERENCE_META: Record<string, PrefMeta> = {
+    font_size: { description: 'Terminal font size in pixels', type: 'number', category: 'Terminal', default: 13, range: [10, 24] },
+    font_family: { description: 'Terminal font family', type: 'string', category: 'Terminal', default: 'Menlo' },
+    cursor_style: { description: 'Terminal cursor shape', type: 'string', category: 'Terminal', default: 'block', options: ['block', 'underline', 'bar'] },
+    cursor_blink: { description: 'Whether the cursor blinks', type: 'boolean', category: 'Terminal', default: true },
+    scrollback_limit: { description: 'Maximum scrollback lines per terminal', type: 'number', category: 'Terminal', default: 10000, range: [1000, 100000] },
+    shell_title_integration: { description: 'Allow shell to set tab titles via OSC escape sequences', type: 'boolean', category: 'Terminal', default: false },
+    shell_integration: { description: 'Enable OSC 133 shell integration for command detection', type: 'boolean', category: 'Terminal', default: false },
+    file_link_action: { description: 'How file links in the terminal are activated', type: 'string', category: 'Terminal', default: 'modifier_click', options: ['modifier_click', 'single_click'] },
+    windows_shell: { description: 'Default shell on Windows', type: 'string', category: 'Terminal', default: 'powershell', options: ['powershell', 'cmd'] },
+    theme: { description: 'Color theme ID (built-in or custom)', type: 'string', category: 'Appearance', default: 'tokyo-night', options: ['tokyo-night', 'dracula', 'solarized-dark', 'solarized-light', 'nord', 'gruvbox-dark', 'monokai', 'catppuccin-mocha', 'one-dark', 'macos-pro'] },
+    auto_save_interval: { description: 'Auto-save interval in seconds (0 to disable)', type: 'number', category: 'General', default: 10, range: [0, 300] },
+    restore_session: { description: 'Restore tabs and workspaces on app restart', type: 'boolean', category: 'General', default: false },
+    number_duplicated_tabs: { description: 'Prefix duplicated tab names with numbers (e.g. "2 My Tab")', type: 'boolean', category: 'Tabs', default: true },
+    tab_button_style: { description: 'Tab close button visibility', type: 'string', category: 'Tabs', default: 'hover', options: ['hover', 'always'] },
+    clone_cwd: { description: 'Copy working directory when duplicating tabs', type: 'boolean', category: 'Tabs', default: true },
+    clone_scrollback: { description: 'Copy scrollback buffer when duplicating tabs', type: 'boolean', category: 'Tabs', default: true },
+    clone_ssh: { description: 'Copy SSH session when duplicating tabs', type: 'boolean', category: 'Tabs', default: true },
+    clone_history: { description: 'Copy shell history when duplicating tabs', type: 'boolean', category: 'Tabs', default: true },
+    clone_notes: { description: 'Copy notes when duplicating tabs', type: 'boolean', category: 'Tabs', default: true },
+    clone_auto_resume: { description: 'Copy auto-resume config when duplicating tabs', type: 'boolean', category: 'Tabs', default: true },
+    clone_variables: { description: 'Copy trigger variables when duplicating tabs', type: 'boolean', category: 'Tabs', default: true },
+    notification_mode: { description: 'Notification delivery mode', type: 'string', category: 'Notifications', default: 'auto', options: ['auto', 'in_app', 'native', 'disabled'] },
+    notify_min_duration: { description: 'Minimum command duration (seconds) before notifying on completion', type: 'number', category: 'Notifications', default: 30, range: [0, 300] },
+    notification_sound: { description: 'Notification sound', type: 'string', category: 'Notifications', default: 'default', options: ['default', 'system', 'none'] },
+    notification_volume: { description: 'Notification volume percentage', type: 'number', category: 'Notifications', default: 50, range: [0, 100] },
+    toast_font_size: { description: 'Toast notification font size', type: 'number', category: 'Notifications', default: 14, range: [10, 24] },
+    toast_width: { description: 'Toast notification width in pixels', type: 'number', category: 'Notifications', default: 400, range: [280, 600] },
+    toast_duration: { description: 'Toast auto-dismiss duration in seconds', type: 'number', category: 'Notifications', default: 8, range: [3, 30] },
+    notes_font_size: { description: 'Notes panel font size', type: 'number', category: 'Notes', default: 16, range: [10, 24] },
+    notes_font_family: { description: 'Notes panel font family', type: 'string', category: 'Notes', default: 'Menlo' },
+    notes_width: { description: 'Notes panel width in pixels', type: 'number', category: 'Notes', default: 320, range: [200, 600] },
+    notes_word_wrap: { description: 'Wrap long lines in notes panel', type: 'boolean', category: 'Notes', default: true },
+    notes_scope: { description: 'Default notes panel view', type: 'string', category: 'Notes', default: 'tab', options: ['tab', 'workspace'] },
+    show_recent_workspaces: { description: 'Show recently used workspaces section in sidebar', type: 'boolean', category: 'Workspace', default: true },
+    workspace_sort_order: { description: 'Workspace list sort order', type: 'string', category: 'Workspace', default: 'default', options: ['default', 'alphabetical', 'recent'] },
+    show_workspace_tab_count: { description: 'Show tab count badges on workspace items', type: 'boolean', category: 'Workspace', default: false },
+    claude_code_ide: { description: 'Enable Claude Code IDE integration (MCP server)', type: 'boolean', category: 'Integration', default: false },
+    prompt_patterns: { description: 'Regex patterns for remote prompt/CWD detection', type: 'string[]', category: 'Terminal', default: [], readOnly: true },
+    custom_themes: { description: 'User-created custom color themes', type: 'object[]', category: 'Appearance', default: [], readOnly: true },
+    triggers: { description: 'Trigger rules for terminal pattern matching', type: 'object[]', category: 'Triggers', default: [], readOnly: true },
+    hidden_default_triggers: { description: 'IDs of deleted default trigger templates', type: 'string[]', category: 'Triggers', default: [], readOnly: true },
+  };
+
+  // Maps snake_case keys to preferencesStore setters
+  const PREFERENCE_SETTERS: Record<string, (v: any) => Promise<void>> = {
+    font_size: (v) => preferencesStore.setFontSize(v),
+    font_family: (v) => preferencesStore.setFontFamily(v),
+    cursor_style: (v) => preferencesStore.setCursorStyle(v),
+    cursor_blink: (v) => preferencesStore.setCursorBlink(v),
+    scrollback_limit: (v) => preferencesStore.setScrollbackLimit(v),
+    shell_title_integration: (v) => preferencesStore.setShellTitleIntegration(v),
+    shell_integration: (v) => preferencesStore.setShellIntegration(v),
+    file_link_action: (v) => preferencesStore.setFileLinkAction(v),
+    windows_shell: (v) => preferencesStore.setWindowsShell(v),
+    theme: (v) => preferencesStore.setTheme(v),
+    auto_save_interval: (v) => preferencesStore.setAutoSaveInterval(v),
+    restore_session: (v) => preferencesStore.setRestoreSession(v),
+    number_duplicated_tabs: (v) => preferencesStore.setNumberDuplicatedTabs(v),
+    tab_button_style: (v) => preferencesStore.setTabButtonStyle(v),
+    clone_cwd: (v) => preferencesStore.setCloneCwd(v),
+    clone_scrollback: (v) => preferencesStore.setCloneScrollback(v),
+    clone_ssh: (v) => preferencesStore.setCloneSsh(v),
+    clone_history: (v) => preferencesStore.setCloneHistory(v),
+    clone_notes: (v) => preferencesStore.setCloneNotes(v),
+    clone_auto_resume: (v) => preferencesStore.setCloneAutoResume(v),
+    clone_variables: (v) => preferencesStore.setCloneVariables(v),
+    notification_mode: (v) => preferencesStore.setNotificationMode(v),
+    notify_min_duration: (v) => preferencesStore.setNotifyMinDuration(v),
+    notification_sound: (v) => preferencesStore.setNotificationSound(v),
+    notification_volume: (v) => preferencesStore.setNotificationVolume(v),
+    toast_font_size: (v) => preferencesStore.setToastFontSize(v),
+    toast_width: (v) => preferencesStore.setToastWidth(v),
+    toast_duration: (v) => preferencesStore.setToastDuration(v),
+    notes_font_size: (v) => preferencesStore.setNotesFontSize(v),
+    notes_font_family: (v) => preferencesStore.setNotesFontFamily(v),
+    notes_width: (v) => preferencesStore.setNotesWidth(v),
+    notes_word_wrap: (v) => preferencesStore.setNotesWordWrap(v),
+    notes_scope: (v) => preferencesStore.setNotesScope(v),
+    show_recent_workspaces: (v) => preferencesStore.setShowRecentWorkspaces(v),
+    workspace_sort_order: (v) => preferencesStore.setWorkspaceSortOrder(v),
+    show_workspace_tab_count: (v) => preferencesStore.setShowWorkspaceTabCount(v),
+    claude_code_ide: (v) => preferencesStore.setClaudeCodeIde(v),
+  };
+
+  // Maps snake_case keys to preferencesStore getters
+  const PREFERENCE_GETTERS: Record<string, () => unknown> = {
+    font_size: () => preferencesStore.fontSize,
+    font_family: () => preferencesStore.fontFamily,
+    cursor_style: () => preferencesStore.cursorStyle,
+    cursor_blink: () => preferencesStore.cursorBlink,
+    scrollback_limit: () => preferencesStore.scrollbackLimit,
+    shell_title_integration: () => preferencesStore.shellTitleIntegration,
+    shell_integration: () => preferencesStore.shellIntegration,
+    file_link_action: () => preferencesStore.fileLinkAction,
+    windows_shell: () => preferencesStore.windowsShell,
+    theme: () => preferencesStore.theme,
+    auto_save_interval: () => preferencesStore.autoSaveInterval,
+    restore_session: () => preferencesStore.restoreSession,
+    number_duplicated_tabs: () => preferencesStore.numberDuplicatedTabs,
+    tab_button_style: () => preferencesStore.tabButtonStyle,
+    clone_cwd: () => preferencesStore.cloneCwd,
+    clone_scrollback: () => preferencesStore.cloneScrollback,
+    clone_ssh: () => preferencesStore.cloneSsh,
+    clone_history: () => preferencesStore.cloneHistory,
+    clone_notes: () => preferencesStore.cloneNotes,
+    clone_auto_resume: () => preferencesStore.cloneAutoResume,
+    clone_variables: () => preferencesStore.cloneVariables,
+    notification_mode: () => preferencesStore.notificationMode,
+    notify_min_duration: () => preferencesStore.notifyMinDuration,
+    notification_sound: () => preferencesStore.notificationSound,
+    notification_volume: () => preferencesStore.notificationVolume,
+    toast_font_size: () => preferencesStore.toastFontSize,
+    toast_width: () => preferencesStore.toastWidth,
+    toast_duration: () => preferencesStore.toastDuration,
+    notes_font_size: () => preferencesStore.notesFontSize,
+    notes_font_family: () => preferencesStore.notesFontFamily,
+    notes_width: () => preferencesStore.notesWidth,
+    notes_word_wrap: () => preferencesStore.notesWordWrap,
+    notes_scope: () => preferencesStore.notesScope,
+    show_recent_workspaces: () => preferencesStore.showRecentWorkspaces,
+    workspace_sort_order: () => preferencesStore.workspaceSortOrder,
+    show_workspace_tab_count: () => preferencesStore.showWorkspaceTabCount,
+    claude_code_ide: () => preferencesStore.claudeCodeIde,
+    prompt_patterns: () => preferencesStore.promptPatterns,
+    custom_themes: () => preferencesStore.customThemes,
+    triggers: () => preferencesStore.triggers,
+    hidden_default_triggers: () => preferencesStore.hiddenDefaultTriggers,
+  };
+
+  function handleGetPreferences(args: { query?: string }) {
+    const entries = Object.entries(PREFERENCE_META).map(([key, meta]) => {
+      const getter = PREFERENCE_GETTERS[key];
+      const entry: Record<string, unknown> = {
+        key,
+        value: getter ? getter() : undefined,
+        description: meta.description,
+        type: meta.type,
+        category: meta.category,
+        default: meta.default,
+      };
+      if (meta.options) entry.options = meta.options;
+      if (meta.range) entry.range = meta.range;
+      if (meta.readOnly) entry.readOnly = true;
+      return entry;
+    });
+
+    if (args.query) {
+      const q = args.query.toLowerCase();
+      const filtered = entries.filter(e =>
+        (e.key as string).includes(q) ||
+        (e.description as string).toLowerCase().includes(q) ||
+        (e.category as string).toLowerCase().includes(q)
+      );
+      return { preferences: filtered, query: args.query, total: entries.length, matched: filtered.length };
+    }
+
+    return { preferences: entries, total: entries.length };
+  }
+
+  async function handleSetPreference(args: { key: string; value: unknown }) {
+    const meta = PREFERENCE_META[args.key];
+    if (!meta) {
+      return { error: `Unknown preference key: '${args.key}'. Use getPreferences to discover available keys.` };
+    }
+    if (meta.readOnly) {
+      return { error: `Preference '${args.key}' is read-only and cannot be set via this tool.` };
+    }
+
+    const setter = PREFERENCE_SETTERS[args.key];
+    if (!setter) {
+      return { error: `No setter available for '${args.key}'.` };
+    }
+
+    // Type validation
+    const expectedType = meta.type;
+    const actualType = typeof args.value;
+    if (expectedType === 'number' && actualType !== 'number') {
+      return { error: `Expected number for '${args.key}', got ${actualType}.` };
+    }
+    if (expectedType === 'string' && actualType !== 'string') {
+      return { error: `Expected string for '${args.key}', got ${actualType}.` };
+    }
+    if (expectedType === 'boolean' && actualType !== 'boolean') {
+      return { error: `Expected boolean for '${args.key}', got ${actualType}.` };
+    }
+
+    // Options validation
+    if (meta.options && !meta.options.includes(args.value as string)) {
+      // For theme, also accept custom theme IDs
+      if (args.key === 'theme') {
+        const customIds = preferencesStore.customThemes.map((t: any) => t.id);
+        if (!customIds.includes(args.value as string)) {
+          return { error: `Invalid value for '${args.key}'. Valid options: ${[...meta.options, ...customIds].join(', ')}` };
+        }
+      } else {
+        return { error: `Invalid value for '${args.key}'. Valid options: ${meta.options.join(', ')}` };
+      }
+    }
+
+    // Range validation
+    if (meta.range) {
+      const num = args.value as number;
+      if (num < meta.range[0] || num > meta.range[1]) {
+        return { error: `Value for '${args.key}' must be between ${meta.range[0]} and ${meta.range[1]}.` };
+      }
+    }
+
+    await setter(args.value);
+    return { success: true, key: args.key, value: args.value };
   }
 
   /** Resolve a tab by ID or fall back to the active tab. Returns { workspace, pane, tab } or { error }. */

@@ -7,7 +7,7 @@
   import Tooltip from '$lib/components/Tooltip.svelte';
   import Icon from '$lib/components/Icon.svelte';
   import { modLabel, altLabel, isModKey } from '$lib/utils/platform';
-  import { getAllWorkspaces, listSystemSounds, playSystemSound, detectWindowsShells } from '$lib/tauri/commands';
+  import { getAllWorkspaces, getAllTabs, listSystemSounds, playSystemSound, detectWindowsShells } from '$lib/tauri/commands';
   import type { ShellInfo } from '$lib/tauri/types';
   import { tick, onMount } from 'svelte';
   import { slide } from 'svelte/transition';
@@ -37,6 +37,8 @@
 
   // Workspace list for trigger scope multiselect
   let allWorkspaces = $state<{ id: string; name: string }[]>([]);
+  // Tab list for trigger scope multiselect
+  let allTabs = $state<{ id: string; name: string; workspaceId: string; workspaceName: string; isActive: boolean }[]>([]);
   // System sounds for notification sound picker
   let systemSounds = $state<string[]>([]);
   // Available Windows shells (empty on non-Windows)
@@ -45,6 +47,8 @@
     try {
       const pairs = await getAllWorkspaces();
       allWorkspaces = pairs.map(([id, name]) => ({ id, name }));
+      const tabRows = await getAllTabs();
+      allTabs = tabRows.map(([id, name, workspaceId, workspaceName, isActive]) => ({ id, name, workspaceId, workspaceName, isActive }));
     } catch { /* preferences may open before main window */ }
 
     try {
@@ -68,7 +72,7 @@
     if (result) preferencesStore.setTriggers(result);
   }
 
-  const sectionIds = ['appearance', 'terminal', 'ui', 'panels', 'workspace', 'notes', 'notifications', 'triggers', 'claude_code'] as const;
+  const sectionIds = ['appearance', 'terminal', 'ui', 'tabs', 'workspace', 'notes', 'notifications', 'triggers', 'claude_code'] as const;
   type SectionId = typeof sectionIds[number];
   const saved = localStorage.getItem('prefs-section');
   let activeSection = $state<SectionId>(
@@ -80,7 +84,7 @@
     { id: 'appearance' as const, label: 'Appearance' },
     { id: 'terminal' as const, label: 'Terminal' },
     { id: 'ui' as const, label: 'Scrollback' },
-    { id: 'panels' as const, label: 'Panels' },
+    { id: 'tabs' as const, label: 'Tabs' },
     { id: 'workspace' as const, label: 'Workspace' },
     { id: 'notes' as const, label: 'Notes' },
     { id: 'notifications' as const, label: 'Notifications' },
@@ -89,6 +93,10 @@
   ];
 
   let expandedTriggerId = $state<string | null>(null);
+  let wsSearchQueries = $state(new Map<string, string>());
+  let wsShowSelected = $state(new Map<string, boolean>());
+  let tabSearchQueries = $state(new Map<string, string>());
+  let tabShowSelected = $state(new Map<string, boolean>());
 
   function addTrigger() {
     const trigger: Trigger = {
@@ -99,6 +107,7 @@
       actions: [],
       enabled: false,
       workspaces: [],
+      tabs: [],
       cooldown: 5,
       variables: [],
       plain_text: false,
@@ -543,7 +552,7 @@
             {/each}
           </select>
         </div>
-      {:else if activeSection === 'panels'}
+      {:else if activeSection === 'tabs'}
         <h3 class="section-heading">Duplication</h3>
         <p class="section-desc">
           What to clone when splitting a pane (<kbd>{modLabel}+D</kbd>).
@@ -1100,12 +1109,44 @@
                       />
                     </div>
                     <div class="trigger-field" style="flex: 1; min-width: 0;">
-                      <!-- svelte-ignore a11y_label_has_associated_control -- label is visual context for checkbox group below -->
-                      <label>Workspaces <span class="field-hint">(unchecked = all)</span></label>
-                      {#if allWorkspaces.length}
-                        <div class="workspace-chips">
-                          {#each allWorkspaces as ws}
-                            <label class="workspace-chip" class:selected={trigger.workspaces.includes(ws.id)}>
+                      <!-- svelte-ignore a11y_label_has_associated_control -- label is visual context for checkbox list below -->
+                      <label>Workspaces <span class="field-hint">({trigger.workspaces.length || 'all'})</span></label>
+                      {#if true}
+                      {@const wsQuery = (wsSearchQueries.get(trigger.id) ?? '').toLowerCase()}
+                      {@const wsShowSel = wsShowSelected.get(trigger.id) ?? false}
+                      {@const visibleWs = allWorkspaces.filter(ws => {
+                        if (wsShowSel && !trigger.workspaces.includes(ws.id)) return false;
+                        if (!wsQuery) return true;
+                        return ws.name.toLowerCase().includes(wsQuery);
+                      })}
+                      <div class="tab-selector">
+                        <div class="tab-selector-bar">
+                          <input
+                            type="text"
+                            class="tab-search-input"
+                            placeholder="Search workspaces…"
+                            value={wsSearchQueries.get(trigger.id) ?? ''}
+                            oninput={(e) => {
+                              wsSearchQueries.set(trigger.id, e.currentTarget.value);
+                              wsSearchQueries = new Map(wsSearchQueries);
+                            }}
+                          />
+                          <Tooltip text="Show selected only">
+                            <!-- svelte-ignore a11y_consider_explicit_label -->
+                            <input
+                              type="checkbox"
+                              class="tab-show-selected-cb"
+                              checked={wsShowSelected.get(trigger.id) ?? false}
+                              onchange={() => {
+                                wsShowSelected.set(trigger.id, !(wsShowSelected.get(trigger.id) ?? false));
+                                wsShowSelected = new Map(wsShowSelected);
+                              }}
+                            />
+                          </Tooltip>
+                        </div>
+                        <div class="tab-selector-list">
+                          {#each visibleWs as ws (ws.id)}
+                            <label class="tab-selector-item" class:selected={trigger.workspaces.includes(ws.id)}>
                               <input
                                 type="checkbox"
                                 checked={trigger.workspaces.includes(ws.id)}
@@ -1117,12 +1158,102 @@
                                   updateTrigger(trigger.id, { workspaces: next });
                                 }}
                               />
-                              {ws.name}
+                              <span class="tab-selector-label">{ws.name}</span>
                             </label>
+                          {:else}
+                            <span class="field-hint" style="padding: 4px 8px;">
+                              {wsShowSel ? 'No workspaces selected' : wsQuery ? 'No matching workspaces' : 'No workspaces found'}
+                            </span>
                           {/each}
                         </div>
-                      {:else}
-                        <span class="field-hint">No workspaces found</span>
+                        {#if trigger.workspaces.length > 0}
+                          <button class="deselect-all-btn" onclick={() => updateTrigger(trigger.id, { workspaces: [] })}>Deselect all</button>
+                        {/if}
+                      </div>
+                      {/if}
+                    </div>
+                    <div class="trigger-field" style="flex: 1; min-width: 0;">
+                      <!-- svelte-ignore a11y_label_has_associated_control -- label is visual context for checkbox list below -->
+                      <label>Tabs <span class="field-hint">({(trigger.tabs ?? []).length || 'all'})</span></label>
+                      {#if true}
+                      {@const scopedTabs = trigger.workspaces.length > 0
+                        ? allTabs.filter(t => trigger.workspaces.includes(t.workspaceId))
+                        : allTabs}
+                      {@const tQuery = (tabSearchQueries.get(trigger.id) ?? '').toLowerCase()}
+                      {@const tShowSelected = tabShowSelected.get(trigger.id) ?? false}
+                      {@const visibleTabs = scopedTabs.filter(t => {
+                        if (tShowSelected && !(trigger.tabs ?? []).includes(t.id)) return false;
+                        if (!tQuery) return true;
+                        const label = allWorkspaces.length > 1 ? `${t.workspaceName} / ${t.name}` : t.name;
+                        return label.toLowerCase().includes(tQuery);
+                      })}
+                      <div class="tab-selector">
+                        <div class="tab-selector-bar">
+                          {#if scopedTabs.some(t => t.isActive) && !(trigger.tabs ?? []).includes(scopedTabs.find(t => t.isActive)!.id)}
+                            <button
+                              class="tab-active-btn"
+                              title="Add the currently active tab"
+                              onclick={() => {
+                                const active = scopedTabs.find(t => t.isActive);
+                                if (active) {
+                                  const cur = trigger.tabs ?? [];
+                                  if (!cur.includes(active.id)) {
+                                    updateTrigger(trigger.id, { tabs: [...cur, active.id] });
+                                  }
+                                }
+                              }}
+                            >+ Active</button>
+                          {/if}
+                          <input
+                            type="text"
+                            class="tab-search-input"
+                            placeholder="Search tabs…"
+                            value={tabSearchQueries.get(trigger.id) ?? ''}
+                            oninput={(e) => {
+                              tabSearchQueries.set(trigger.id, e.currentTarget.value);
+                              tabSearchQueries = new Map(tabSearchQueries);
+                            }}
+                          />
+                          <Tooltip text="Show selected only">
+                            <!-- svelte-ignore a11y_consider_explicit_label -->
+                            <input
+                              type="checkbox"
+                              class="tab-show-selected-cb"
+                              checked={tabShowSelected.get(trigger.id) ?? false}
+                              onchange={() => {
+                                tabShowSelected.set(trigger.id, !(tabShowSelected.get(trigger.id) ?? false));
+                                tabShowSelected = new Map(tabShowSelected);
+                              }}
+                            />
+                          </Tooltip>
+                        </div>
+                        <div class="tab-selector-list">
+                          {#each visibleTabs as tab (tab.id)}
+                            <label class="tab-selector-item" class:selected={(trigger.tabs ?? []).includes(tab.id)}>
+                              <input
+                                type="checkbox"
+                                checked={(trigger.tabs ?? []).includes(tab.id)}
+                                onchange={() => {
+                                  const cur = trigger.tabs ?? [];
+                                  const next = cur.includes(tab.id)
+                                    ? cur.filter(id => id !== tab.id)
+                                    : [...cur, tab.id];
+                                  updateTrigger(trigger.id, { tabs: next });
+                                }}
+                              />
+                              <span class="tab-selector-label">{allWorkspaces.length > 1 ? `${tab.workspaceName} / ${tab.name}` : tab.name}</span>
+                              {#if tab.isActive}<span class="tab-active-badge">active</span>{/if}
+                            </label>
+                          {:else}
+                            <span class="field-hint" style="padding: 4px 8px;">
+                              {tShowSelected ? 'No tabs selected' : tQuery ? 'No matching tabs' : 'No tabs found'}
+                            </span>
+                          {/each}
+                        </div>
+                        {#if (trigger.tabs ?? []).length > 0}
+                          <button class="deselect-all-btn" onclick={() => updateTrigger(trigger.id, { tabs: [] })}>Deselect all</button>
+                        {/if}
+                      </div>
                       {/if}
                     </div>
                   </div>
@@ -1952,39 +2083,123 @@
     font-family: 'Menlo', Monaco, monospace;
   }
 
-  .workspace-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
+  .tab-selector {
+    border: 1px solid var(--bg-light);
+    border-radius: 4px;
+    overflow: hidden;
   }
 
-  .workspace-chip {
-    display: inline-flex;
+  .tab-selector-bar {
+    display: flex;
     align-items: center;
     gap: 4px;
+    padding: 4px;
+    background: var(--bg-dark);
+    border-bottom: 1px solid var(--bg-light);
+  }
+
+  .tab-search-input {
+    flex: 1;
+    min-width: 0;
+    background: var(--bg-medium);
+    border: 1px solid var(--bg-light);
+    border-radius: 3px;
+    color: var(--fg);
+    font-size: 12px;
+    padding: 3px 6px;
+    outline: none;
+  }
+
+  .tab-search-input:focus {
+    border-color: var(--accent);
+  }
+
+  .tab-show-selected-cb {
+    flex: none;
+    cursor: pointer;
+    accent-color: var(--accent);
+  }
+
+  .tab-active-btn {
+    flex: none;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    background: transparent;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .tab-active-btn:hover {
+    background: color-mix(in srgb, var(--accent) 15%, var(--bg-dark));
+  }
+
+  .tab-selector-list {
+    max-height: 140px;
+    overflow-y: auto;
+    background: var(--bg-dark);
+  }
+
+  .tab-selector-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     padding: 3px 8px;
-    border-radius: 4px;
     font-size: 12px;
     color: var(--fg-dim);
-    background: var(--bg-dark);
-    border: 1px solid var(--bg-light);
     cursor: pointer;
     user-select: none;
-    transition: border-color 0.1s, color 0.1s;
   }
 
-  .workspace-chip input[type="checkbox"] {
-    display: none;
+  .tab-selector-item:hover {
+    background: var(--bg-medium);
   }
 
-  .workspace-chip.selected {
+  .tab-selector-item.selected {
     color: var(--fg);
-    border-color: var(--accent);
-    background: color-mix(in srgb, var(--accent) 10%, var(--bg-dark));
   }
 
-  .workspace-chip:hover {
-    border-color: var(--fg-dim);
+  .tab-selector-item input[type="checkbox"] {
+    flex: none;
+    accent-color: var(--accent);
+  }
+
+  .tab-selector-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .tab-active-badge {
+    flex: none;
+    font-size: 10px;
+    color: var(--accent);
+    padding: 0 4px;
+    border: 1px solid var(--accent);
+    border-radius: 3px;
+    line-height: 1.4;
+  }
+
+  .deselect-all-btn {
+    display: block;
+    width: 100%;
+    padding: 3px 8px;
+    font-size: 11px;
+    color: var(--fg-dim);
+    background: none;
+    border: none;
+    border-top: 1px solid var(--bg-light);
+    cursor: pointer;
+    text-align: center;
+  }
+
+  .deselect-all-btn:hover {
+    color: var(--fg);
+    background: var(--bg-medium);
   }
 
   .action-row {
