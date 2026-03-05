@@ -499,9 +499,12 @@ export function suppressTab(tabId: string) {
   suppressedTabs.add(tabId);
 }
 
-/** Re-enable action execution for a tab after the restore window. */
+/** Re-enable action execution for a tab after the restore window.
+ *  Clears the trigger buffer so stale content from the suppression window
+ *  can't combine with new output to produce false matches. */
 export function unsuppressTab(tabId: string) {
   suppressedTabs.delete(tabId);
+  buffers.delete(tabId);
 }
 
 /** Load persisted trigger variables into runtime map (called on mount).
