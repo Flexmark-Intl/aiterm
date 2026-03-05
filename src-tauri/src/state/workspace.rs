@@ -469,6 +469,8 @@ pub enum TriggerActionType {
     SetTabState,
     #[serde(rename = "enable_auto_resume")]
     EnableAutoResume,
+    #[serde(rename = "replay_auto_resume")]
+    ReplayAutoResume,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

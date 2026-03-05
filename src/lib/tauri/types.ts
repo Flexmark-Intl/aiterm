@@ -86,7 +86,7 @@ export interface Workspace {
 
 export type CursorStyle = 'block' | 'underline' | 'bar';
 
-export type TriggerActionType = 'notify' | 'send_command' | 'set_tab_state' | 'enable_auto_resume';
+export type TriggerActionType = 'notify' | 'send_command' | 'set_tab_state' | 'enable_auto_resume' | 'replay_auto_resume';
 
 export type MatchMode = 'regex' | 'plain_text' | 'variable';
 

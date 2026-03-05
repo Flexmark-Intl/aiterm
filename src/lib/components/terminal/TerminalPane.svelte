@@ -23,7 +23,7 @@
   import { isModKey, modSymbol } from '$lib/utils/platform';
   import { buildShellIntegrationSnippet, buildInstallSnippet } from '$lib/utils/shellIntegration';
   import ResizableTextarea from '$lib/components/ResizableTextarea.svelte';
-  import { processOutput, cleanupTab, loadTabVariables, interpolateVariables, getVariables, clearTabVariables, suppressTab, unsuppressTab } from '$lib/stores/triggers.svelte';
+  import { processOutput, cleanupTab, loadTabVariables, interpolateVariables, getVariables, clearTabVariables, suppressTab, unsuppressTab, replayAutoResume } from '$lib/stores/triggers.svelte';
   import { dispatch } from '$lib/stores/notificationDispatch';
   import { CLAUDE_RESUME_COMMAND } from '$lib/triggers/defaults';
   import { createFilePathLinkProvider } from '$lib/utils/filePathDetector';
@@ -925,13 +925,19 @@
         },
       ] : []),
       { label: '', separator: true, action: () => {} },
-      ...(isAutoResume ? [{
-        label: 'Disable Auto-resume',
-        action: async () => {
-          await workspacesStore.setTabAutoResumeContext(workspaceId, paneId, tabId, null, null, null, null);
-          isAutoResume = false;
+      ...(isAutoResume ? [
+        {
+          label: 'Replay Auto-Resume',
+          action: () => replayAutoResume(tabId),
         },
-      }] : [
+        {
+          label: 'Disable Auto-resume',
+          action: async () => {
+            await workspacesStore.setTabAutoResumeContext(workspaceId, paneId, tabId, null, null, null, null);
+            isAutoResume = false;
+          },
+        },
+      ] : [
         {
           label: 'Auto-resume',
           action: async () => {

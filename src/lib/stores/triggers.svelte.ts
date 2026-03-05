@@ -279,6 +279,8 @@ async function executeActions(
       activityStore.setTabState(tabId, state);
     } else if (entry.action_type === 'enable_auto_resume') {
       await handleEnableAutoResume(tabId, entry.command ?? '');
+    } else if (entry.action_type === 'replay_auto_resume') {
+      await replayAutoResume(tabId);
     }
   }
 }
@@ -345,6 +347,24 @@ export async function handleEnableAutoResume(tabId: string, commandTemplate: str
     );
   } catch (e) {
     logError(`enable_auto_resume failed for tab ${tabId}: ${e}`);
+  }
+}
+
+/** Replay the stored auto-resume command into the current PTY. */
+export async function replayAutoResume(tabId: string) {
+  const instance = terminalsStore.get(tabId);
+  if (!instance) return;
+  const ws = workspacesStore.workspaces.find(w => w.id === instance.workspaceId);
+  const pane = ws?.panes.find(p => p.id === instance.paneId);
+  const tab = pane?.tabs.find(t => t.id === tabId);
+  const cmd = tab?.auto_resume_command;
+  if (!cmd) return;
+  try {
+    const interpolated = interpolateVariables(tabId, cmd, true);
+    const bytes = Array.from(new TextEncoder().encode(interpolated + '\n'));
+    await writeTerminal(instance.ptyId, bytes);
+  } catch (e) {
+    logError(`replay_auto_resume failed for tab ${tabId}: ${e}`);
   }
 }
 

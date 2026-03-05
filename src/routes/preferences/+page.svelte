@@ -1362,6 +1362,7 @@
                         <option value="send_command">Send Command</option>
                         <option value="set_tab_state">Change Tab State</option>
                         <option value="enable_auto_resume">Enable Auto-Resume</option>
+                        <option value="replay_auto_resume">Replay Auto-Resume</option>
                       </select>
                       {#if entry.action_type === 'send_command'}
                         <input
