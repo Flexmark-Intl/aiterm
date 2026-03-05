@@ -505,6 +505,8 @@ pub struct Trigger {
     pub enabled: bool,
     #[serde(default)]
     pub workspaces: Vec<String>,
+    #[serde(default)]
+    pub tabs: Vec<String>,
     #[serde(default = "default_trigger_cooldown")]
     pub cooldown: f64,
     /// Variable extraction from capture groups (ordered)

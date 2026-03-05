@@ -114,6 +114,7 @@ export interface Trigger {
   actions: TriggerActionEntry[];
   enabled: boolean;
   workspaces: string[];
+  tabs: string[];
   cooldown: number;
   variables: VariableMapping[];
   plain_text: boolean;

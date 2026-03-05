@@ -215,6 +215,10 @@ export async function getAllWorkspaces(): Promise<[string, string][]> {
   return invoke('get_all_workspaces');
 }
 
+export async function getAllTabs(): Promise<[string, string, string, string, boolean][]> {
+  return invoke('get_all_tabs');
+}
+
 export async function setTabAutoResumeContext(
   workspaceId: string,
   paneId: string,

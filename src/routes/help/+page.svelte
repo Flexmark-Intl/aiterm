@@ -201,7 +201,7 @@
         {#if openAccordions['c-triggers']}
           <div class="accordion-body" transition:slide={{ duration: 150 }}>
             <p class="description">
-              Built-in triggers watch Claude Code's terminal output for key events. Configure them in <strong>Preferences &rsaquo; Triggers</strong>.
+              Built-in triggers watch Claude Code's terminal output for key events. Triggers can be scoped to specific workspaces and/or tabs in <strong>Preferences &rsaquo; Triggers</strong>.
             </p>
             <div class="trigger-list">
               <div class="trigger-item">

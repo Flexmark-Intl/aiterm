@@ -4,7 +4,7 @@ import type { Trigger, MatchMode } from '$lib/tauri/types';
 export const CLAUDE_RESUME_COMMAND = "if [ -n '%claudeSessionId' ]; then claude --resume %claudeSessionId; elif [ -n '%claudeResumeCommand' ]; then eval %claudeResumeCommand; else claude --continue; fi";
 
 /** App-provided default trigger templates. Keyed by stable default_id. */
-export const DEFAULT_TRIGGERS: Record<string, Omit<Trigger, 'id' | 'enabled' | 'workspaces' | 'default_id'> & { match_mode?: MatchMode }> = {
+export const DEFAULT_TRIGGERS: Record<string, Omit<Trigger, 'id' | 'enabled' | 'workspaces' | 'tabs' | 'default_id'> & { match_mode?: MatchMode }> = {
   'claude-resume': {
     name: 'Claude Resume',
     description: 'Captures the claude --resume command and session ID when Claude Code exits. Useful for setting up auto-resume to reconnect to the same session.',
@@ -142,6 +142,7 @@ export function seedDefaultTriggers(
       ...structuredClone(tmpl),
       enabled: enableAll,
       workspaces: [],
+      tabs: [],
       default_id: defaultId,
     }, ...list];
     changed = true;

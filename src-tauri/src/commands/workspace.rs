@@ -718,6 +718,33 @@ pub fn copy_tab_history(source_tab_id: String, dest_tab_id: String) -> Result<()
     Ok(())
 }
 
+/// Return all tab info across all windows (for preferences UI trigger scoping).
+#[tauri::command]
+pub fn get_all_tabs(state: State<'_, Arc<AppState>>) -> Vec<(String, String, String, String, bool)> {
+    let app_data = state.app_data.read();
+    let mut result = Vec::new();
+    for win in &app_data.windows {
+        // Determine active tab across all workspaces in this window
+        let active_ws = win.active_workspace_id.as_deref()
+            .and_then(|id| win.workspaces.iter().find(|w| w.id == id));
+        let active_tab_id = active_ws.and_then(|ws| {
+            let pane = ws.active_pane_id.as_deref()
+                .and_then(|pid| ws.panes.iter().find(|p| p.id == pid));
+            pane.and_then(|p| p.active_tab_id.clone())
+        });
+
+        for ws in &win.workspaces {
+            for pane in &ws.panes {
+                for tab in &pane.tabs {
+                    let is_active = active_tab_id.as_deref() == Some(&tab.id);
+                    result.push((tab.id.clone(), tab.name.clone(), ws.id.clone(), ws.name.clone(), is_active));
+                }
+            }
+        }
+    }
+    result
+}
+
 /// Return all workspace id/name pairs across all windows (for preferences UI).
 #[tauri::command]
 pub fn get_all_workspaces(state: State<'_, Arc<AppState>>) -> Vec<(String, String)> {

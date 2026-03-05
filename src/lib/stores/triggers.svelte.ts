@@ -363,6 +363,9 @@ function evaluateVariableTriggers(tabId: string) {
       if (!trigger.workspaces.includes(wsId)) continue;
     }
 
+    // Tab scope filter
+    if (trigger.tabs?.length > 0 && !trigger.tabs.includes(tabId)) continue;
+
     // Cooldown check
     if (!checkCooldown(trigger.id, tabId, trigger.cooldown)) continue;
 
@@ -428,6 +431,9 @@ export function processOutput(tabId: string, data: Uint8Array) {
     if (trigger.workspaces.length > 0 && wsId) {
       if (!trigger.workspaces.includes(wsId)) continue;
     }
+
+    // Tab scope filter (by ID)
+    if (trigger.tabs?.length > 0 && !trigger.tabs.includes(tabId)) continue;
 
     const re = getRegex(trigger.pattern, resolveMatchMode(trigger) === 'plain_text');
     if (!re) continue;
