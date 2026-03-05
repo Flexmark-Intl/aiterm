@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.6.0
+
+- Add state backup/import with automatic daily backups and manual export
+- Add editor file watching — detect external changes and prompt to reload
+- Overhaul auto-resume: pin settings per tab, SSH session replay, edit menu, Cmd+Opt+R shortcut
+- Add `replay_auto_resume` trigger action and context menu option
+
 ## v1.5.0
 
 - Add tab-level scoping to triggers for per-tab pattern matching
