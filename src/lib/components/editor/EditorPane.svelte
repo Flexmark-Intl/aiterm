@@ -8,7 +8,7 @@
   import { search, searchKeymap, highlightSelectionMatches, getSearchQuery } from '@codemirror/search';
   import { ViewPlugin } from '@codemirror/view';
   import type { EditorFileInfo } from '$lib/tauri/types';
-  import { readFile, readFileBase64, writeFile, scpReadFile, scpReadFileBase64, scpWriteFile } from '$lib/tauri/commands';
+  import { readFile, readFileBase64, writeFile, scpReadFile, scpReadFileBase64, scpWriteFile, watchFile, unwatchFile, getFileMtime } from '$lib/tauri/commands';
   import { loadLanguageExtension, detectLanguageFromContent, isImageFile, getImageMimeType, isPdfFile, isMarkdownFile } from '$lib/utils/languageDetect';
   import { marked } from 'marked';
   import { open as shellOpen } from '@tauri-apps/plugin-shell';
@@ -20,7 +20,9 @@
   import { registerEditor, unregisterEditor, setEditorDirty } from '$lib/stores/editorRegistry.svelte';
   import { claudeCodeStore } from '$lib/stores/claudeCode.svelte';
   import { EditorSelection } from '@codemirror/state';
-  import { error as logError } from '@tauri-apps/plugin-log';
+  import { listen } from '@tauri-apps/api/event';
+  import type { UnlistenFn } from '@tauri-apps/api/event';
+  import { error as logError, info as logInfo } from '@tauri-apps/plugin-log';
   import IconButton from '$lib/components/ui/IconButton.svelte';
   import Icon from '$lib/components/Icon.svelte';
   import Button from '$lib/components/ui/Button.svelte';
@@ -52,6 +54,12 @@
   let altKeyHeld = $state(false);
   let wordWrap = $state(false);
   const wrapCompartment = new Compartment();
+
+  // File watching state
+  let lastKnownMtime = 0;
+  let fileConflict = $state(false);
+  let unlistenFileChanged: UnlistenFn | null = null;
+  const isLocalFile = !editorFile.is_remote;
 
   // PDF viewer state
   let pdfDoc = $state<any>(null);
@@ -385,11 +393,89 @@
       });
       dirty = false;
       setEditorDirty(tabId, false);
+      if (isLocalFile) {
+        try { lastKnownMtime = await getFileMtime(editorFile.file_path); } catch { /* ignore */ }
+      }
       dispatch('File reloaded', filePath.split('/').pop() ?? 'file', 'info');
     } catch (e) {
       dispatch('Reload failed', String(e), 'error');
       logError(`Failed to reload file: ${e}`);
     }
+  }
+
+  async function startWatching() {
+    if (!isLocalFile) return;
+    try {
+      // Check mtime first — file may have changed while tab was hidden
+      const currentMtime = await getFileMtime(editorFile.file_path);
+      if (lastKnownMtime > 0 && currentMtime > lastKnownMtime) {
+        await handleExternalChange();
+      }
+      lastKnownMtime = currentMtime;
+
+      // Start fs watcher
+      await watchFile(tabId, editorFile.file_path);
+      unlistenFileChanged = await listen(`file-changed-${tabId}`, async () => {
+        try {
+          const newMtime = await getFileMtime(editorFile.file_path);
+          if (newMtime <= lastKnownMtime) return;
+          lastKnownMtime = newMtime;
+          await handleExternalChange();
+        } catch {
+          // File may have been deleted — ignore
+        }
+      });
+    } catch (e) {
+      logError(`Failed to start file watcher: ${e}`);
+    }
+  }
+
+  async function stopWatching() {
+    if (unlistenFileChanged) {
+      unlistenFileChanged();
+      unlistenFileChanged = null;
+    }
+    if (isLocalFile) {
+      try {
+        await unwatchFile(tabId);
+      } catch { /* ignore */ }
+    }
+  }
+
+  async function handleExternalChange() {
+    if (!editorView) return;
+    if (!dirty) {
+      // Auto-reload silently
+      try {
+        const result = await readFile(editorFile.file_path);
+        originalContent = result.content;
+        editorView.dispatch({
+          changes: { from: 0, to: editorView.state.doc.length, insert: result.content },
+        });
+        dirty = false;
+        setEditorDirty(tabId, false);
+        logInfo(`Auto-reloaded ${editorFile.file_path}`);
+      } catch (e) {
+        logError(`Auto-reload failed: ${e}`);
+      }
+    } else {
+      // Show conflict banner
+      fileConflict = true;
+    }
+  }
+
+  function dismissConflict() {
+    fileConflict = false;
+  }
+
+  async function conflictReload() {
+    fileConflict = false;
+    await reloadFile();
+  }
+
+  async function conflictOverwrite() {
+    fileConflict = false;
+    await saveFile();
   }
 
   async function saveFile() {
@@ -404,6 +490,10 @@
       dirty = false;
       originalContent = content;
       setEditorDirty(tabId, false);
+      // Update mtime so the watcher doesn't treat our own save as an external change
+      if (isLocalFile) {
+        try { lastKnownMtime = await getFileMtime(editorFile.file_path); } catch { /* ignore */ }
+      }
       dispatch('File saved', editorFile.file_path.split('/').pop() ?? 'file', 'info');
     } catch (e) {
       dispatch('Save failed', String(e), 'error');
@@ -604,6 +694,14 @@
 
         registerEditor(tabId, editorView, editorFile.file_path);
 
+        // Record initial mtime and start watching if visible
+        if (isLocalFile) {
+          try { lastKnownMtime = await getFileMtime(editorFile.file_path); } catch { /* ignore */ }
+          if (visible) {
+            (async () => { await startWatching(); })();
+          }
+        }
+
         // Apply pending selection from Claude Code openFile
         const pending = claudeCodeStore.getPendingSelection(tabId);
         if (pending) {
@@ -656,6 +754,7 @@
   });
 
   onDestroy(() => {
+    stopWatching();
     window.removeEventListener('terminal-slot-ready', handleSlotReady);
     window.removeEventListener('editor-save', handleEditorSave);
     window.removeEventListener('editor-reload', handleEditorReload);
@@ -691,6 +790,16 @@
       requestAnimationFrame(() => {
         editorView?.focus();
       });
+    }
+  });
+
+  // Start/stop file watching based on visibility
+  $effect(() => {
+    if (!isLocalFile || !editorView) return;
+    if (visible) {
+      startWatching();
+    } else {
+      stopWatching();
     }
   });
 </script>
@@ -800,6 +909,14 @@
           </div>
         {/each}
       </div>
+    </div>
+  {/if}
+  {#if fileConflict}
+    <div class="conflict-banner">
+      <span class="conflict-text">File changed on disk.</span>
+      <button class="conflict-btn" onclick={conflictReload}>Reload</button>
+      <button class="conflict-btn" onclick={conflictOverwrite}>Overwrite</button>
+      <button class="conflict-btn dismiss" onclick={dismissConflict}>Dismiss</button>
     </div>
   {/if}
   {#if !loading && !errorMsg && !imageDataUrl && !pdfDoc}
@@ -1122,6 +1239,52 @@
   .pdf-page-input::-webkit-outer-spin-button {
     -webkit-appearance: none;
     margin: 0;
+  }
+
+  .conflict-banner {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: color-mix(in srgb, var(--yellow, #e0af68) 15%, var(--bg-dark));
+    border-left: 3px solid var(--yellow, #e0af68);
+    font-size: 12px;
+    color: var(--yellow, #e0af68);
+  }
+
+  .conflict-text {
+    flex: 1;
+  }
+
+  .conflict-btn {
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    border: 1px solid var(--yellow, #e0af68);
+    background: transparent;
+    color: var(--yellow, #e0af68);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .conflict-btn:hover {
+    background: var(--yellow, #e0af68);
+    color: var(--bg-dark);
+  }
+
+  .conflict-btn.dismiss {
+    border-color: var(--fg-dim);
+    color: var(--fg-dim);
+  }
+
+  .conflict-btn.dismiss:hover {
+    background: var(--fg-dim);
+    color: var(--bg-dark);
   }
 
   /* Editor toolbar (word wrap, markdown preview) */

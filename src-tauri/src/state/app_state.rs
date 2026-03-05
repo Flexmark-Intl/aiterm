@@ -15,9 +15,15 @@ pub struct PtyHandle {
     pub child_pid: Option<u32>,
 }
 
+pub struct FileWatcherHandle {
+    pub _debouncer: notify_debouncer_mini::Debouncer<notify::RecommendedWatcher>,
+}
+
 pub struct AppState {
     pub pty_registry: RwLock<HashMap<String, PtyHandle>>,
     pub app_data: RwLock<AppData>,
+    // File watchers keyed by tab ID
+    pub file_watchers: RwLock<HashMap<String, FileWatcherHandle>>,
     // Claude Code IDE integration
     pub claude_code_port: RwLock<Option<u16>>,
     pub claude_code_auth: RwLock<Option<String>>,
@@ -31,6 +37,7 @@ impl Default for AppState {
         Self {
             pty_registry: RwLock::new(HashMap::new()),
             app_data: RwLock::new(AppData::default()),
+            file_watchers: RwLock::new(HashMap::new()),
             claude_code_port: RwLock::new(None),
             claude_code_auth: RwLock::new(None),
             claude_code_pending: RwLock::new(HashMap::new()),

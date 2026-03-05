@@ -1,9 +1,10 @@
 use crate::state::persistence::save_state;
-use crate::state::{AppState, EditorFileInfo, Tab};
+use crate::state::{AppState, EditorFileInfo, FileWatcherHandle, Tab};
 use base64::Engine;
 use std::io::Read;
+use std::path::Path;
 use std::sync::Arc;
-use tauri::{command, State, Window};
+use tauri::{command, Emitter, State, Window};
 
 fn expand_tilde(path: &str) -> String {
     if path == "~" {
@@ -341,6 +342,79 @@ fn expand_remote_tilde(user_host: &str, path: &str) -> String {
         }
     }
     path.to_string()
+}
+
+#[command]
+pub async fn watch_file(
+    state: State<'_, Arc<AppState>>,
+    window: Window,
+    tab_id: String,
+    path: String,
+) -> Result<(), String> {
+    let path = expand_tilde(&path);
+    let file_path = Path::new(&path).to_path_buf();
+
+    if !file_path.exists() {
+        return Err("File does not exist".to_string());
+    }
+
+    // Remove existing watcher for this tab if any
+    state.file_watchers.write().remove(&tab_id);
+
+    let event_tab_id = tab_id.clone();
+    let debouncer = notify_debouncer_mini::new_debouncer(
+        std::time::Duration::from_millis(500),
+        move |res: Result<Vec<notify_debouncer_mini::DebouncedEvent>, notify::Error>| {
+            if let Ok(events) = res {
+                let dominated_by_remove = events.iter().all(|e| {
+                    matches!(e.kind, notify_debouncer_mini::DebouncedEventKind::Any)
+                        && !e.path.exists()
+                });
+                if dominated_by_remove {
+                    return;
+                }
+                let _ = window.emit(&format!("file-changed-{}", event_tab_id), ());
+            }
+        },
+    )
+    .map_err(|e| format!("Failed to create file watcher: {}", e))?;
+
+    let mut debouncer = debouncer;
+    debouncer
+        .watcher()
+        .watch(&file_path, notify::RecursiveMode::NonRecursive)
+        .map_err(|e| format!("Failed to watch file: {}", e))?;
+
+    state.file_watchers.write().insert(
+        tab_id,
+        FileWatcherHandle {
+            _debouncer: debouncer,
+        },
+    );
+
+    Ok(())
+}
+
+#[command]
+pub async fn unwatch_file(
+    state: State<'_, Arc<AppState>>,
+    tab_id: String,
+) -> Result<(), String> {
+    state.file_watchers.write().remove(&tab_id);
+    Ok(())
+}
+
+#[command]
+pub async fn get_file_mtime(path: String) -> Result<u64, String> {
+    let path = expand_tilde(&path);
+    let metadata = std::fs::metadata(&path).map_err(|e| format!("Cannot stat file: {}", e))?;
+    let mtime = metadata
+        .modified()
+        .map_err(|e| format!("Cannot get mtime: {}", e))?;
+    let epoch = mtime
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("Time error: {}", e))?;
+    Ok(epoch.as_millis() as u64)
 }
 
 /// Extract user@host from an SSH command string.

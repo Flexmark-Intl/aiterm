@@ -50,6 +50,12 @@ function createPreferencesStore() {
   let claudeCodeIde = $state(false);
   let windowsShell = $state('powershell');
   let fileLinkAction = $state('modifier_click');
+  let backupDirectory = $state<string | null>(null);
+  let backupInterval = $state('off');
+  let backupCompress = $state(false);
+  let backupExcludeScrollback = $state(true);
+  let backupTrimEnabled = $state(false);
+  let backupTrimAge = $state('1m');
 
   return {
     /** Resolves once the initial load() has completed. */
@@ -97,6 +103,12 @@ function createPreferencesStore() {
     get claudeCodeIde() { return claudeCodeIde; },
     get windowsShell() { return windowsShell; },
     get fileLinkAction() { return fileLinkAction; },
+    get backupDirectory() { return backupDirectory; },
+    get backupInterval() { return backupInterval; },
+    get backupCompress() { return backupCompress; },
+    get backupExcludeScrollback() { return backupExcludeScrollback; },
+    get backupTrimEnabled() { return backupTrimEnabled; },
+    get backupTrimAge() { return backupTrimAge; },
 
     async load() {
       const prefs = await commands.getPreferences();
@@ -154,6 +166,12 @@ function createPreferencesStore() {
       claudeCodeIde = prefs.claude_code_ide ?? false;
       windowsShell = prefs.windows_shell ?? 'powershell';
       fileLinkAction = prefs.file_link_action ?? 'modifier_click';
+      backupDirectory = prefs.backup_directory ?? null;
+      backupInterval = prefs.backup_interval || 'off';
+      backupCompress = prefs.backup_compress ?? false;
+      backupExcludeScrollback = prefs.backup_exclude_scrollback ?? true;
+      backupTrimEnabled = prefs.backup_trim_enabled ?? false;
+      backupTrimAge = prefs.backup_trim_age || '1m';
       _resolveReady();
     },
 
@@ -367,6 +385,36 @@ function createPreferencesStore() {
       await this.save();
     },
 
+    async setBackupDirectory(value: string | null) {
+      backupDirectory = value;
+      await this.save();
+    },
+
+    async setBackupInterval(value: string) {
+      backupInterval = value;
+      await this.save();
+    },
+
+    async setBackupCompress(value: boolean) {
+      backupCompress = value;
+      await this.save();
+    },
+
+    async setBackupExcludeScrollback(value: boolean) {
+      backupExcludeScrollback = value;
+      await this.save();
+    },
+
+    async setBackupTrimEnabled(value: boolean) {
+      backupTrimEnabled = value;
+      await this.save();
+    },
+
+    async setBackupTrimAge(value: string) {
+      backupTrimAge = value;
+      await this.save();
+    },
+
     async addCustomTheme(t: Theme) {
       customThemes = [...customThemes, t];
       await this.save();
@@ -433,6 +481,12 @@ function createPreferencesStore() {
       claudeCodeIde = prefs.claude_code_ide ?? false;
       windowsShell = prefs.windows_shell ?? 'powershell';
       fileLinkAction = prefs.file_link_action ?? 'modifier_click';
+      backupDirectory = prefs.backup_directory ?? null;
+      backupInterval = prefs.backup_interval || 'off';
+      backupCompress = prefs.backup_compress ?? false;
+      backupExcludeScrollback = prefs.backup_exclude_scrollback ?? true;
+      backupTrimEnabled = prefs.backup_trim_enabled ?? false;
+      backupTrimAge = prefs.backup_trim_age || '1m';
     },
 
     async save() {
@@ -481,6 +535,12 @@ function createPreferencesStore() {
         claude_code_ide: claudeCodeIde,
         windows_shell: windowsShell,
         file_link_action: fileLinkAction,
+        backup_directory: backupDirectory,
+        backup_interval: backupInterval === 'off' ? '' : backupInterval,
+        backup_compress: backupCompress,
+        backup_exclude_scrollback: backupExcludeScrollback,
+        backup_trim_enabled: backupTrimEnabled,
+        backup_trim_age: backupTrimAge,
       };
       await commands.setPreferences(prefs);
     }

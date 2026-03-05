@@ -32,7 +32,7 @@ fn get_temp_path() -> Option<PathBuf> {
 /// Patch raw JSON to migrate old action_type values before deserialization.
 /// "alert" and "question" were briefly used as standalone action types before
 /// being consolidated into "set_tab_state" with a separate tab_state field.
-fn migrate_json(contents: &str) -> String {
+pub(crate) fn migrate_json(contents: &str) -> String {
     // Replace "action_type":"alert" with "action_type":"set_tab_state","tab_state":"alert"
     // and same for "question". Only matches inside action entries.
     contents
@@ -40,7 +40,7 @@ fn migrate_json(contents: &str) -> String {
         .replace(r#""action_type":"question""#, r#""action_type":"set_tab_state","tab_state":"question""#)
 }
 
-fn parse_state(contents: &str) -> Result<AppData, serde_json::Error> {
+pub(crate) fn parse_state(contents: &str) -> Result<AppData, serde_json::Error> {
     let migrated = migrate_json(contents);
     serde_json::from_str::<AppData>(&migrated)
 }

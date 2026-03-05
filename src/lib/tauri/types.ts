@@ -170,6 +170,12 @@ export interface Preferences {
   claude_code_ide: boolean;
   windows_shell: string;
   file_link_action: string;
+  backup_directory: string | null;
+  backup_interval: string;
+  backup_compress: boolean;
+  backup_exclude_scrollback: boolean;
+  backup_trim_enabled: boolean;
+  backup_trim_age: string;
 }
 
 export interface WindowData {

@@ -18,7 +18,7 @@
   import type { ClaudeCodeToolRequest, Preferences } from '$lib/tauri/types';
   import { claudeCodeStore } from '$lib/stores/claudeCode.svelte';
   import { isModKey, isMac } from '$lib/utils/platform';
-  import { open as dialogOpen } from '@tauri-apps/plugin-dialog';
+  import { open as dialogOpen, save as dialogSave } from '@tauri-apps/plugin-dialog';
   import { openFileFromTerminal } from '$lib/utils/openFile';
   import { detectLanguageFromPath } from '$lib/utils/languageDetect';
   import { readFile } from '$lib/tauri/commands';
@@ -70,6 +70,38 @@
     if (!ws) return;
     const suffix = import.meta.env.DEV ? ' (Dev)' : '';
     getCurrentWindow().setTitle(`aiTerm | ${ws.name}${suffix}`);
+  });
+
+  // Scheduled backup timer — only runs on the main window
+  $effect(() => {
+    const dir = preferencesStore.backupDirectory;
+    const interval = preferencesStore.backupInterval;
+    if (!dir || interval === 'off' || !interval) return;
+    if (getCurrentWindow().label !== 'main') return;
+
+    const intervalMs: Record<string, number> = {
+      hourly: 3600_000,
+      daily: 86400_000,
+      weekly: 604800_000,
+      monthly: 2592000_000,
+    };
+    const ms = intervalMs[interval];
+    if (!ms) return;
+
+    const timer = setInterval(async () => {
+      try {
+        const path = await commands.runScheduledBackup();
+        logInfo(`Scheduled backup: ${path}`);
+        if (preferencesStore.backupTrimEnabled) {
+          const trimmed = await commands.trimOldBackups();
+          if (trimmed > 0) logInfo(`Trimmed ${trimmed} old backup(s)`);
+        }
+      } catch (e) {
+        logError(`Scheduled backup failed: ${e}`);
+      }
+    }, ms);
+
+    return () => clearInterval(timer);
   });
 
   onMount(() => {
@@ -134,6 +166,44 @@
         workspacesStore.reloadTab(ws.id, pane.id, tab.id);
       }
     }).then(unlisten => { unlistenReloadTab = unlisten; });
+
+    // State backup menu events
+    let unlistenExportState: (() => void) | undefined;
+    listen('export_state', async () => {
+      try {
+        const path = await dialogSave({
+          defaultPath: commands.backupFilename(),
+          filters: [{ name: 'JSON', extensions: ['json'] }],
+        });
+        if (path) {
+          await commands.exportState(path, preferencesStore.backupExcludeScrollback);
+          logInfo(`State exported to ${path}`);
+        }
+      } catch (e) {
+        logError(`Export state failed: ${e}`);
+      }
+    }).then(unlisten => { unlistenExportState = unlisten; });
+
+    let unlistenImportState: (() => void) | undefined;
+    listen('import_state', async () => {
+      try {
+        const path = await dialogOpen({
+          multiple: false,
+          filters: [{ name: 'JSON', extensions: ['json'] }],
+        });
+        if (typeof path === 'string') {
+          await commands.importState(path);
+          window.location.reload();
+        }
+      } catch (e) {
+        logError(`Import state failed: ${e}`);
+      }
+    }).then(unlisten => { unlistenImportState = unlisten; });
+
+    let unlistenStateImported: (() => void) | undefined;
+    listen('state-imported', () => {
+      window.location.reload();
+    }).then(unlisten => { unlistenStateImported = unlisten; });
 
     // Claude Code IDE integration event listeners
     let unlistenClaudeTool: (() => void) | undefined;
@@ -561,6 +631,9 @@
       unlistenClose?.();
       unlistenQuit?.();
       unlistenReloadTab?.();
+      unlistenExportState?.();
+      unlistenImportState?.();
+      unlistenStateImported?.();
       unlistenClaudeTool?.();
       unlistenClaudeConnection?.();
       unlistenNotificationAction?.unregister();

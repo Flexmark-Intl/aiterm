@@ -387,6 +387,18 @@ export async function createEditorTab(workspaceId: string, paneId: string, name:
   return invoke('create_editor_tab', { workspaceId, paneId, name, fileInfo, afterTabId: afterTabId ?? null });
 }
 
+export async function watchFile(tabId: string, path: string): Promise<void> {
+  return invoke('watch_file', { tabId, path });
+}
+
+export async function unwatchFile(tabId: string): Promise<void> {
+  return invoke('unwatch_file', { tabId });
+}
+
+export async function getFileMtime(path: string): Promise<number> {
+  return invoke('get_file_mtime', { path });
+}
+
 // Claude Code IDE integration commands
 export async function claudeCodeRespond(requestId: string, result: unknown): Promise<void> {
   return invoke('claude_code_respond', { requestId, result });
@@ -433,4 +445,33 @@ export async function deleteArchivedTab(
   tabId: string,
 ): Promise<void> {
   return invoke('delete_archived_tab', { workspaceId, tabId });
+}
+
+/** Generate default backup filename: aiterm_backup_YYYYMMDD_HHMM.json */
+export function backupFilename(): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
+  return `aiterm_backup_${stamp}.json`;
+}
+
+// State backup commands
+export async function exportState(path: string, excludeScrollback: boolean = false): Promise<void> {
+  return invoke('export_state', { path, excludeScrollback });
+}
+
+export async function importState(path: string): Promise<void> {
+  return invoke('import_state', { path });
+}
+
+export async function runScheduledBackup(): Promise<string> {
+  return invoke('run_scheduled_backup');
+}
+
+export async function trimOldBackups(): Promise<number> {
+  return invoke('trim_old_backups');
+}
+
+export async function pickBackupDirectory(): Promise<string | null> {
+  return invoke('pick_backup_directory');
 }

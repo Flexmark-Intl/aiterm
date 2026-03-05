@@ -166,12 +166,18 @@ pub fn run() {
                 .item(&quit_item)
                 .build()?;
 
+            let export_state_item = MenuItem::with_id(app, "export_state", "Export State…", true, None::<&str>)?;
+            let import_state_item = MenuItem::with_id(app, "import_state", "Import State…", true, None::<&str>)?;
+
             let file_menu = SubmenuBuilder::new(app, "File")
                 .item(&new_window_item)
                 .item(&duplicate_window_item)
                 .separator()
                 .item(&reload_tab_item)
                 .item(&reload_all_item)
+                .separator()
+                .item(&export_state_item)
+                .item(&import_state_item)
                 .build()?;
 
             let edit_menu = SubmenuBuilder::new(app, "Edit")
@@ -245,6 +251,16 @@ pub fn run() {
                         for (_, win) in app_handle.webview_windows() {
                             if win.is_focused().unwrap_or(false) {
                                 let _ = tauri::WebviewWindow::eval(&win, "window.location.reload()");
+                                break;
+                            }
+                        }
+                    }
+                    "export_state" | "import_state" => {
+                        // Emit to the focused window so the frontend can show a file dialog
+                        let event_name = event.id().as_ref();
+                        for (_, win) in app_handle.webview_windows() {
+                            if win.is_focused().unwrap_or(false) {
+                                let _ = win.emit(event_name, ());
                                 break;
                             }
                         }
@@ -339,12 +355,20 @@ pub fn run() {
             commands::editor::scp_read_file_base64,
             commands::editor::scp_write_file,
             commands::editor::create_editor_tab,
+            commands::editor::watch_file,
+            commands::editor::unwatch_file,
+            commands::editor::get_file_mtime,
             commands::claude_code::claude_code_respond,
             commands::claude_code::claude_code_notify_selection,
             commands::workspace::create_diff_tab,
             commands::workspace::archive_tab,
             commands::workspace::restore_archived_tab,
             commands::workspace::delete_archived_tab,
+            commands::workspace::export_state,
+            commands::workspace::import_state,
+            commands::workspace::run_scheduled_backup,
+            commands::workspace::trim_old_backups,
+            commands::workspace::pick_backup_directory,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

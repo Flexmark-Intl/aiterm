@@ -7,7 +7,9 @@
   import Tooltip from '$lib/components/Tooltip.svelte';
   import Icon from '$lib/components/Icon.svelte';
   import { modLabel, altLabel, isModKey } from '$lib/utils/platform';
-  import { getAllWorkspaces, getAllTabs, listSystemSounds, playSystemSound, detectWindowsShells } from '$lib/tauri/commands';
+  import { getAllWorkspaces, getAllTabs, listSystemSounds, playSystemSound, detectWindowsShells, exportState, importState, pickBackupDirectory, backupFilename } from '$lib/tauri/commands';
+  import { open as dialogOpen, save as dialogSave } from '@tauri-apps/plugin-dialog';
+  import { error as logError, info as logInfo } from '@tauri-apps/plugin-log';
   import type { ShellInfo } from '$lib/tauri/types';
   import { tick, onMount } from 'svelte';
   import { slide } from 'svelte/transition';
@@ -72,7 +74,7 @@
     if (result) preferencesStore.setTriggers(result);
   }
 
-  const sectionIds = ['appearance', 'terminal', 'ui', 'tabs', 'workspace', 'notes', 'notifications', 'triggers', 'claude_code'] as const;
+  const sectionIds = ['appearance', 'terminal', 'ui', 'tabs', 'workspace', 'notes', 'notifications', 'triggers', 'claude_code', 'backup'] as const;
   type SectionId = typeof sectionIds[number];
   const saved = localStorage.getItem('prefs-section');
   let activeSection = $state<SectionId>(
@@ -90,7 +92,60 @@
     { id: 'notifications' as const, label: 'Notifications' },
     { id: 'triggers' as const, label: 'Triggers' },
     { id: 'claude_code' as const, label: 'Claude Code' },
+    { id: 'backup' as const, label: 'Backup' },
   ];
+
+  let backupStatus = $state<string | null>(null);
+  let excludeScrollbackExport = $state(false);
+
+  // Sync the per-export checkbox with the preference on load
+  $effect(() => {
+    excludeScrollbackExport = preferencesStore.backupExcludeScrollback;
+  });
+
+  async function handleExportState() {
+    try {
+      const path = await dialogSave({
+        defaultPath: backupFilename(),
+        filters: [{ name: 'JSON', extensions: ['json'] }],
+      });
+      if (path) {
+        await exportState(path, excludeScrollbackExport);
+        backupStatus = 'State exported successfully.';
+        setTimeout(() => { backupStatus = null; }, 3000);
+      }
+    } catch (e) {
+      backupStatus = `Export failed: ${e}`;
+      logError(`Export state failed: ${e}`);
+    }
+  }
+
+  async function handleImportState() {
+    try {
+      const path = await dialogOpen({
+        multiple: false,
+        filters: [{ name: 'JSON', extensions: ['json'] }],
+      });
+      if (typeof path === 'string') {
+        await importState(path);
+        window.location.reload();
+      }
+    } catch (e) {
+      backupStatus = `Import failed: ${e}`;
+      logError(`Import state failed: ${e}`);
+    }
+  }
+
+  async function handlePickDirectory() {
+    try {
+      const dir = await pickBackupDirectory();
+      if (dir) {
+        await preferencesStore.setBackupDirectory(dir);
+      }
+    } catch (e) {
+      logError(`Pick backup directory failed: ${e}`);
+    }
+  }
 
   let expandedTriggerId = $state<string | null>(null);
   let wsSearchQueries = $state(new Map<string, string>());
@@ -1486,6 +1541,137 @@
             <span class="toggle-knob"></span>
           </button>
         </div>
+      {:else if activeSection === 'backup'}
+        <h3 class="section-heading">Manual Export / Import</h3>
+        <p class="section-desc">
+          Export your entire aiTerm configuration — all workspaces, tabs, preferences, triggers,
+          and notes — to a JSON file. Import to restore from a backup.
+        </p>
+
+        <div class="setting" style="flex-direction: column; align-items: flex-start; gap: 12px;">
+          <div style="display: flex; gap: 10px; align-items: center;">
+            <button class="backup-btn" onclick={handleExportState}>Export State</button>
+            <button class="backup-btn backup-btn-warn" onclick={handleImportState}>Import State</button>
+            <label class="checkbox-label" style="margin-left: 8px;">
+              <input
+                type="checkbox"
+                checked={excludeScrollbackExport}
+                onchange={() => { excludeScrollbackExport = !excludeScrollbackExport; }}
+              />
+              Exclude scrollback
+            </label>
+          </div>
+          <p class="setting-hint" style="max-width: none;">
+            Importing replaces all current state. The app will reload after import.
+          </p>
+          {#if backupStatus}
+            <p class="backup-status">{backupStatus}</p>
+          {/if}
+        </div>
+
+        <h3 class="section-heading">Scheduled Backups</h3>
+
+        <div class="setting" style="align-items: flex-start;">
+          <div>
+            <label for="backup-dir">Backup Directory</label>
+            <p class="setting-hint">
+              {#if preferencesStore.backupDirectory}
+                {preferencesStore.backupDirectory}
+              {:else}
+                No directory selected
+              {/if}
+            </p>
+          </div>
+          <div style="display: flex; gap: 6px;">
+            <button id="backup-dir" class="backup-btn" onclick={handlePickDirectory}>Choose…</button>
+            {#if preferencesStore.backupDirectory}
+              <button class="backup-btn" onclick={() => preferencesStore.setBackupDirectory(null)}>Clear</button>
+            {/if}
+          </div>
+        </div>
+
+        <div class="setting">
+          <label for="backup-interval">Interval</label>
+          <select
+            id="backup-interval"
+            value={preferencesStore.backupInterval}
+            onchange={(e) => preferencesStore.setBackupInterval(e.currentTarget.value)}
+            disabled={!preferencesStore.backupDirectory}
+          >
+            <option value="off">Off</option>
+            <option value="hourly">Hourly</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+          </select>
+        </div>
+
+        <div class="setting">
+          <div>
+            <label for="backup-compress">Compress Backups</label>
+            <p class="setting-hint">Save as .json.gz instead of .json</p>
+          </div>
+          <button
+            class="toggle"
+            class:active={preferencesStore.backupCompress}
+            onclick={() => preferencesStore.setBackupCompress(!preferencesStore.backupCompress)}
+            disabled={!preferencesStore.backupDirectory}
+            aria-pressed={preferencesStore.backupCompress}
+            aria-label="Toggle backup compression"
+          >
+            <span class="toggle-knob"></span>
+          </button>
+        </div>
+
+        <div class="setting">
+          <div>
+            <label for="backup-exclude-scrollback">Exclude Scrollback</label>
+            <p class="setting-hint">Omit terminal scrollback from scheduled backups</p>
+          </div>
+          <button
+            class="toggle"
+            class:active={preferencesStore.backupExcludeScrollback}
+            onclick={() => preferencesStore.setBackupExcludeScrollback(!preferencesStore.backupExcludeScrollback)}
+            disabled={!preferencesStore.backupDirectory}
+            aria-pressed={preferencesStore.backupExcludeScrollback}
+            aria-label="Toggle exclude scrollback"
+          >
+            <span class="toggle-knob"></span>
+          </button>
+        </div>
+
+        <div class="setting" style="align-items: flex-start;">
+          <div>
+            <label for="backup-trim">Auto-Trim Old Backups</label>
+            <p class="setting-hint">Automatically delete backups older than the selected age</p>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <button
+              class="toggle"
+              class:active={preferencesStore.backupTrimEnabled}
+              onclick={() => preferencesStore.setBackupTrimEnabled(!preferencesStore.backupTrimEnabled)}
+              disabled={!preferencesStore.backupDirectory}
+              aria-pressed={preferencesStore.backupTrimEnabled}
+              aria-label="Toggle auto-trim old backups"
+            >
+              <span class="toggle-knob"></span>
+            </button>
+            {#if preferencesStore.backupTrimEnabled}
+              <select
+                value={preferencesStore.backupTrimAge}
+                onchange={(e) => preferencesStore.setBackupTrimAge(e.currentTarget.value)}
+                disabled={!preferencesStore.backupDirectory}
+                style="min-width: auto;"
+              >
+                <option value="1h">1 hour</option>
+                <option value="1d">1 day</option>
+                <option value="1w">1 week</option>
+                <option value="1m">1 month</option>
+                <option value="1y">1 year</option>
+              </select>
+            {/if}
+          </div>
+        </div>
       {/if}
     </div>
   </div>
@@ -2294,6 +2480,47 @@
   .var-template-input {
     flex: 1;
     min-width: 0;
+  }
+
+  .checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--fg-dim);
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .checkbox-label input[type="checkbox"] {
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+
+  .backup-btn {
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-size: 13px;
+    color: var(--fg);
+    background: var(--bg-dark);
+    border: 1px solid var(--bg-light);
+    cursor: pointer;
+  }
+
+  .backup-btn:hover {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 10%, var(--bg-dark));
+  }
+
+  .backup-btn-warn:hover {
+    border-color: var(--yellow, #e0af68);
+    background: color-mix(in srgb, var(--yellow, #e0af68) 10%, var(--bg-dark));
+  }
+
+  .backup-status {
+    font-size: 12px;
+    color: var(--fg-dim);
+    margin: 0;
   }
 
   .sound-picker {

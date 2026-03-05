@@ -409,6 +409,14 @@ fn default_file_link_action() -> String {
     "modifier_click".to_string()
 }
 
+fn default_backup_exclude_scrollback() -> bool {
+    true
+}
+
+fn default_backup_trim_age() -> String {
+    "1m".to_string()
+}
+
 fn default_tab_button_style() -> String {
     "hover".to_string()
 }
@@ -643,6 +651,24 @@ pub struct Preferences {
     /// File link click behavior: "click", "modifier_click", "alt_click", "disabled"
     #[serde(default = "default_file_link_action")]
     pub file_link_action: String,
+    /// Backup directory path (None = scheduled backups disabled)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backup_directory: Option<String>,
+    /// Scheduled backup interval: "off", "hourly", "daily", "weekly", "monthly"
+    #[serde(default)]
+    pub backup_interval: String,
+    /// Compress backups with gzip
+    #[serde(default)]
+    pub backup_compress: bool,
+    /// Exclude terminal scrollback from backups
+    #[serde(default = "default_backup_exclude_scrollback")]
+    pub backup_exclude_scrollback: bool,
+    /// Auto-delete old backups
+    #[serde(default)]
+    pub backup_trim_enabled: bool,
+    /// Max age for auto-trim: "1h", "1d", "1w", "1m", "1y"
+    #[serde(default = "default_backup_trim_age")]
+    pub backup_trim_age: String,
 }
 
 impl Default for Preferences {
@@ -692,6 +718,12 @@ impl Default for Preferences {
             claude_code_ide: true,
             windows_shell: default_windows_shell(),
             file_link_action: default_file_link_action(),
+            backup_directory: None,
+            backup_interval: String::new(),
+            backup_compress: false,
+            backup_exclude_scrollback: true,
+            backup_trim_enabled: false,
+            backup_trim_age: default_backup_trim_age(),
         }
     }
 }

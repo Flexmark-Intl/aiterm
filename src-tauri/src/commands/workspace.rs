@@ -6,7 +6,7 @@ use tauri::{Emitter, State};
 
 use crate::state::{save_state, AppState, Pane, Preferences, Tab, Workspace};
 use crate::state::workspace::WorkspaceNote;
-use crate::state::persistence::app_data_slug;
+use crate::state::persistence::{app_data_slug, parse_state};
 use crate::state::workspace::{EditorFileInfo, SplitDirection};
 use crate::commands::window::{TabContext, clone_workspace_with_id_mapping};
 
@@ -904,16 +904,18 @@ pub fn play_system_sound(name: String, volume: u32) -> Result<(), String> {
     Err(format!("Sound '{}' not found", name))
 }
 
-fn iso_now() -> String {
-    let d = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
-    let secs = d.as_secs();
-    // Simple ISO 8601 from epoch seconds (UTC)
+/// Returns (year, month, day, hour, minute, second) in UTC from the current system time.
+fn now_utc_parts() -> (i64, u32, u32, u64, u64, u64) {
+    let secs = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
     let s = secs % 60;
     let m = (secs / 60) % 60;
     let h = (secs / 3600) % 24;
-    // days since epoch → date via civil algorithm
-    let days = (secs / 86400) as i64;
-    let (y, mo, da) = civil_from_days(days);
+    let (y, mo, da) = civil_from_days((secs / 86400) as i64);
+    (y, mo, da, h, m, s)
+}
+
+fn iso_now() -> String {
+    let (y, mo, da, h, m, s) = now_utc_parts();
     format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", y, mo, da, h, m, s)
 }
 
@@ -1154,4 +1156,180 @@ pub fn delete_archived_tab(
         app_data.clone()
     };
     save_state(&data_clone)
+}
+
+/// Clone app_data and filter out ephemeral diff tabs + optionally strip scrollback.
+fn prepare_export(data: &crate::state::AppData, exclude_scrollback: bool) -> crate::state::AppData {
+    let mut filtered = data.clone();
+    for win in &mut filtered.windows {
+        for ws in &mut win.workspaces {
+            for pane in &mut ws.panes {
+                pane.tabs.retain(|t| t.tab_type != crate::state::workspace::TabType::Diff);
+                if let Some(ref active_id) = pane.active_tab_id {
+                    if !pane.tabs.iter().any(|t| t.id == *active_id) {
+                        pane.active_tab_id = pane.tabs.last().map(|t| t.id.clone());
+                    }
+                }
+                if exclude_scrollback {
+                    for tab in &mut pane.tabs {
+                        tab.scrollback = None;
+                    }
+                }
+            }
+            if exclude_scrollback {
+                for tab in &mut ws.archived_tabs {
+                    tab.scrollback = None;
+                }
+            }
+        }
+    }
+    filtered
+}
+
+#[tauri::command]
+pub fn export_state(state: State<'_, Arc<AppState>>, path: String, exclude_scrollback: bool) -> Result<(), String> {
+    let app_data = state.app_data.read();
+    let filtered = prepare_export(&app_data, exclude_scrollback);
+
+    let json = serde_json::to_string_pretty(&filtered).map_err(|e| e.to_string())?;
+    std::fs::write(&path, json).map_err(|e| format!("Failed to write export file: {}", e))?;
+    log::info!("State exported to {}", path);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn run_scheduled_backup(state: State<'_, Arc<AppState>>) -> Result<String, String> {
+    let app_data = state.app_data.read();
+    let prefs = &app_data.preferences;
+
+    let dir = prefs.backup_directory.as_deref()
+        .ok_or("No backup directory configured")?;
+
+    let dir_path = PathBuf::from(dir);
+    if !dir_path.exists() {
+        std::fs::create_dir_all(&dir_path)
+            .map_err(|e| format!("Failed to create backup directory: {}", e))?;
+    }
+
+    let filtered = prepare_export(&app_data, prefs.backup_exclude_scrollback);
+    let json = serde_json::to_string_pretty(&filtered).map_err(|e| e.to_string())?;
+
+    let (y, mo, da, h, m, _) = now_utc_parts();
+    let timestamp = format!("{:04}{:02}{:02}_{:02}{:02}", y, mo, da, h, m);
+
+    let compress = prefs.backup_compress;
+    let ext = if compress { "json.gz" } else { "json" };
+    let filename = format!("aiterm_backup_{}.{}", timestamp, ext);
+    let file_path = dir_path.join(&filename);
+
+    if compress {
+        use flate2::write::GzEncoder;
+        use flate2::Compression;
+        use std::io::Write;
+        let file = std::fs::File::create(&file_path)
+            .map_err(|e| format!("Failed to create backup file: {}", e))?;
+        let mut encoder = GzEncoder::new(file, Compression::default());
+        encoder.write_all(json.as_bytes())
+            .map_err(|e| format!("Failed to write compressed backup: {}", e))?;
+        encoder.finish()
+            .map_err(|e| format!("Failed to finish compression: {}", e))?;
+    } else {
+        std::fs::write(&file_path, json)
+            .map_err(|e| format!("Failed to write backup file: {}", e))?;
+    }
+
+    let path_str = file_path.to_string_lossy().to_string();
+    log::info!("Scheduled backup written to {}", path_str);
+    Ok(path_str)
+}
+
+#[tauri::command]
+pub fn trim_old_backups(state: State<'_, Arc<AppState>>) -> Result<u32, String> {
+    let app_data = state.app_data.read();
+    let prefs = &app_data.preferences;
+
+    let dir = prefs.backup_directory.as_deref()
+        .ok_or("No backup directory configured")?;
+
+    if !prefs.backup_trim_enabled {
+        return Ok(0);
+    }
+
+    let max_age_secs: u64 = match prefs.backup_trim_age.as_str() {
+        "1h" => 3600,
+        "1d" => 86400,
+        "1w" => 7 * 86400,
+        "1m" => 30 * 86400,
+        "1y" => 365 * 86400,
+        _ => 30 * 86400, // default to 1 month
+    };
+
+    let now = SystemTime::now();
+    let dir_path = PathBuf::from(dir);
+    let mut deleted = 0u32;
+
+    if let Ok(entries) = std::fs::read_dir(&dir_path) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if !name.starts_with("aiterm_backup_") {
+                continue;
+            }
+            if !name.ends_with(".json") && !name.ends_with(".json.gz") {
+                continue;
+            }
+            // Check file age via filesystem metadata
+            if let Ok(meta) = entry.metadata() {
+                if let Ok(modified) = meta.modified() {
+                    if let Ok(age) = now.duration_since(modified) {
+                        if age.as_secs() > max_age_secs {
+                            if std::fs::remove_file(entry.path()).is_ok() {
+                                deleted += 1;
+                                log::info!("Trimmed old backup: {}", name);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if deleted > 0 {
+        log::info!("Trimmed {} old backup(s)", deleted);
+    }
+    Ok(deleted)
+}
+
+#[tauri::command]
+pub async fn pick_backup_directory(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let dir = app.dialog().file()
+        .blocking_pick_folder();
+
+    Ok(dir.map(|p| p.to_string()))
+}
+
+#[tauri::command]
+pub fn import_state(app: tauri::AppHandle, state: State<'_, Arc<AppState>>, path: String) -> Result<(), String> {
+    let contents = std::fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read import file: {}", e))?;
+
+    let mut imported = parse_state(&contents)
+        .map_err(|e| format!("Invalid state file: {}", e))?;
+
+    crate::state::persistence::migrate_app_data(&mut imported);
+
+    // Replace in-memory state and persist
+    {
+        let mut app_data = state.app_data.write();
+        *app_data = imported;
+    }
+    let data_clone = state.app_data.read().clone();
+    save_state(&data_clone)?;
+
+    log::info!("State imported from {}", path);
+
+    // Notify all windows to reload
+    let _ = app.emit("state-imported", ());
+    Ok(())
 }
