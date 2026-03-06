@@ -62,17 +62,17 @@
   // Sync external changes to notes mode (e.g. from MCP tools)
   $effect(() => {
     const propMode = (notesMode ?? 'source') as 'source' | 'render';
-    if (propMode !== mode) {
+    if (propMode !== untrack(() => mode)) {
       mode = propMode;
     }
   });
 
   // Sync external changes to tab notes (e.g. from MCP tools) to local state.
-  // When the user types, the debounced save updates the prop to match `value`, so the
-  // equality check prevents loops. Only truly external changes (prop !== value) trigger a sync.
+  // Read `value` inside untrack() so this effect only re-runs when the `notes`
+  // prop changes, not when the user types (which would reset their input).
   $effect(() => {
     const propValue = notes ?? '';
-    if (propValue !== value) {
+    if (propValue !== untrack(() => value)) {
       value = propValue;
     }
   });
