@@ -52,6 +52,21 @@ The MCP server starts automatically when aiTerm launches (configurable in prefer
 | `openNotesPanel` | Open, close, or toggle the notes panel |
 | `setNotesScope` | Switch notes panel between tab and workspace views |
 
+### Tab State & Preferences
+
+| Tool | Description |
+|------|-------------|
+| `getActiveTab` | Get the currently active workspace, pane, and tab info |
+| `setTriggerVariable` | Set or clear a trigger variable for a tab |
+| `getTriggerVariables` | Read all trigger variables for a tab |
+| `setAutoResume` | Enable/disable auto-resume with optional command/cwd/ssh overrides |
+| `getAutoResume` | Get current auto-resume configuration for a tab |
+| `getPreferences` | Read aiTerm preferences |
+| `setPreference` | Update an aiTerm preference |
+| `findNotes` | Search all tabs and workspaces for notes in one call |
+| `getDiagnostics` | App diagnostics — version, PTY stats, memory, WebGL state |
+| `readLogs` | Tail the log file with level filter and search |
+
 ### Tab Context Discovery
 
 The `getTabContext` tool lets Claude Code peek at what's happening in your tabs — recent terminal output or editor file content. If you have fewer than 10 tabs, it automatically returns context for all of them, making it easy for Claude to find the right tab without you having to specify. For larger workspaces, you can pass specific tab IDs.

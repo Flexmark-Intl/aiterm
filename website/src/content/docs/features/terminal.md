@@ -35,3 +35,18 @@ Duplicate a tab and get *everything*: scrollback history, CWD, SSH session, Clau
 ## Archive and Restore
 
 Done with a session but not ready to lose it? Archive the tab. It disappears from your tab bar but preserves everything — scrollback, notes, trigger state. Restore it later and resume right where you left off.
+
+## State Backup & Import
+
+Export your entire aiTerm state — workspaces, tabs, scrollback, notes, preferences, triggers — to a backup file. Import it on a new machine or restore after a reset.
+
+- **Manual export/import** from Preferences or the File menu
+- **Scheduled backups** — hourly, daily, weekly, or monthly with a directory of your choice
+- **Gzip compression** for scheduled backups
+- **Auto-trim** old backups by configurable age
+- **Selective import** — preview what's in a backup, pick which workspaces to import, choose overwrite or merge mode
+- **Exclude scrollback** option to keep exports lightweight
+
+## Auto-Resume
+
+Pin auto-resume settings so they survive across restarts. Configure SSH reconnection, remote CWD, and the resume command — aiTerm handles the rest. Edit settings anytime via context menu or replay with `Cmd+Opt+R`.

@@ -42,28 +42,31 @@ Other terminals give you tabs and splits. aiTerm gives you a system for managing
     Interpolated tab names like `CustomName %title` combine your label with live terminal state. Name a tab "billing API" and always know what's running in it — no more guessing across 15 identical "bash" tabs.
   </Card>
   <Card title="Restart without losing anything" icon="rocket">
-    Reboot your machine, restart aiTerm — every tab comes back exactly as it was. Scrollback, layout, SSH sessions, Claude Code sessions. No re-`cd`ing, no lost context, no "what was I doing?"
+    Reboot your machine, restart aiTerm — every tab comes back exactly as it was. Scrollback, layout, SSH sessions, Claude Code sessions. Back up your state on a schedule or export it manually — and import it on a new machine.
   </Card>
   <Card title="Workspace Organization" icon="seti:folder">
     Group terminals by project. Each workspace has its own pane layout, tabs, and context. Switch between projects without losing your place.
   </Card>
   <Card title="Claude Code Integration" icon="puzzle">
-    24 MCP tools let Claude Code navigate your workspaces, read and write notes, review diffs, and discover what's running in your tabs — all without leaving the terminal. Auto-capture session IDs and auto-resume too.
+    30+ MCP tools let Claude Code navigate your workspaces, manage notes, control preferences, review diffs, and discover what's running in your tabs — all without leaving the terminal. Auto-capture session IDs and auto-resume too.
   </Card>
   <Card title="Built-in Editor" icon="document">
-    Click any file path in terminal output to open it in an editor tab. Works over SSH too — remote files load transparently via SCP. 50+ languages supported.
+    Click any file path in terminal output to open it in an editor tab. Works over SSH too — remote files load transparently via SCP. 50+ languages, auto-reload on external changes, and conflict detection when files are dirty.
   </Card>
   <Card title="Smart Triggers" icon="setting">
-    Regex triggers watch terminal output for patterns and fire actions — notifications, commands, variable capture. 6+ built-in Claude Code triggers included.
+    Regex triggers watch terminal output for patterns and fire actions — notifications, commands, variable capture. Scope triggers to specific tabs or fire them globally. 6+ built-in Claude Code triggers included.
   </Card>
   <Card title="Archive and restore tabs" icon="seti:time-cop">
-    Set up auto-resume on a tab, then archive it. The tab disappears from your tab bar but preserves everything — scrollback, notes, triggers, resume command. When you need that task again, restore and pick up instantly.
+    Set up auto-resume on a tab, then archive it. The tab disappears from your tab bar but preserves everything — scrollback, notes, triggers, resume command. When you need that task again, restore and pick up instantly. Pin auto-resume settings so they survive across restarts and replays.
   </Card>
   <Card title="Notes on everything" icon="pencil">
     Every tab has its own markdown notes panel — track TODOs, paste connection strings, jot down what you're debugging. Workspace-level notes too. Claude Code can read, write, organize, merge, and clean up your notes via MCP tools — your AI agent shares the same scratchpad.
   </Card>
-  <Card title="Scrollback Persistence" icon="laptop">
-    Full terminal state survives restarts. Reboot your machine, restart aiTerm — everything comes back. Tab layout, workspace state, scrollback history.
+  <Card title="GPU-Accelerated Terminal" icon="laptop">
+    WebGL rendering for buttery-smooth output. Full terminal state survives restarts — tab layout, workspace state, scrollback history all come back after a reboot.
+  </Card>
+  <Card title="Backup & Selective Import" icon="seti:zip">
+    Export your entire state — workspaces, tabs, scrollback, notes, triggers, preferences. Schedule automatic backups with gzip compression and auto-trim. Import on a new machine and preview what's inside — pick which workspaces to bring in, choose merge or overwrite, toggle preferences.
   </Card>
   <Card title="Split Pane Cloning" icon="random">
     Duplicate a tab and get everything: scrollback, CWD, SSH session, Claude resume command, notes, trigger variables. SSH sessions clone to the same remote CWD.

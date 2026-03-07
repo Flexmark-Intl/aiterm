@@ -39,6 +39,7 @@ Operators: `&&`, `||`, `!`, `==`, `!=`
 | `notify` | Send a notification (toast or OS notification) |
 | `send_command` | Write a command to the PTY |
 | `enable_auto_resume` | Enable auto-resume for the tab |
+| `replay_auto_resume` | Re-send the stored auto-resume command to the PTY |
 | `set_tab_state` | Set the tab's state indicator |
 
 ## Variables
@@ -65,6 +66,10 @@ aiTerm ships with default triggers for Claude Code workflows:
 | `claude-auto-resume` | Variable-mode trigger for auto-resume |
 
 Default triggers are seeded automatically and can be customized or deleted. Deleted defaults are tracked so they don't reappear.
+
+## Tab-Level Scoping
+
+Triggers can be scoped to specific tabs for per-tab pattern matching. This lets you set up different automation for different contexts — one trigger watching for build failures in your dev tab, another watching for deploy prompts in your staging tab — without them interfering with each other.
 
 ## Notifications
 
