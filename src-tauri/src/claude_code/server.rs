@@ -93,6 +93,10 @@ pub async fn start_server(app_handle: AppHandle, state: Arc<AppState>) {
 
     log::info!("Claude Code IDE server listening on http://127.0.0.1:{}", port);
 
+    // Graceful shutdown signal — sender stored in AppState, triggered on app exit
+    let (shutdown_tx, mut shutdown_rx) = tokio::sync::watch::channel(false);
+    *state.claude_code_shutdown.lock() = Some(shutdown_tx);
+
     let sse_sessions: SseSessions = Arc::new(parking_lot::RwLock::new(HashMap::new()));
 
     let server_state = ServerState {
@@ -110,8 +114,87 @@ pub async fn start_server(app_handle: AppHandle, state: Arc<AppState>) {
         .route("/message", post(sse_message_handler))
         .with_state(server_state);
 
-    if let Err(e) = axum::serve(listener, app).await {
+    if let Err(e) = axum::serve(listener, app)
+        .with_graceful_shutdown(async move {
+            let _ = shutdown_rx.wait_for(|v| *v).await;
+            log::info!("Claude Code server shutting down");
+        })
+        .await
+    {
         log::error!("Claude Code server error: {}", e);
+    }
+}
+
+/// Find the window label that owns a given tab ID.
+fn find_window_for_tab(state: &Arc<AppState>, tab_id: &str) -> Option<String> {
+    let app_data = state.app_data.read();
+    for win in &app_data.windows {
+        for ws in &win.workspaces {
+            for pane in &ws.panes {
+                if pane.tabs.iter().any(|t| t.id == tab_id) {
+                    return Some(win.label.clone());
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Resolve the best window label to emit a tool event to.
+/// Checks windowId, then tabId in the tool arguments, then falls back to the first window.
+fn resolve_target_window(state: &Arc<AppState>, arguments: &Value) -> Option<String> {
+    let app_data = state.app_data.read();
+
+    // If a windowId (UUID) is provided, find the window by ID
+    if let Some(window_id) = arguments.get("windowId").and_then(|v| v.as_str()) {
+        if let Some(win) = app_data.windows.iter().find(|w| w.id == window_id) {
+            return Some(win.label.clone());
+        }
+    }
+
+    // If a tabId is provided, find the owning window
+    if let Some(tab_id) = arguments.get("tabId").and_then(|v| v.as_str()) {
+        drop(app_data); // release read lock for find_window_for_tab
+        if let Some(label) = find_window_for_tab(state, tab_id) {
+            return Some(label);
+        }
+        return state.app_data.read().windows.first().map(|w| w.label.clone());
+    }
+
+    // Fall back to the first window (main)
+    app_data.windows.first().map(|w| w.label.clone())
+}
+
+/// Handle tools that can be resolved entirely on the backend without frontend involvement.
+/// Returns Some(result) if handled, None if the tool should be forwarded to the frontend.
+fn handle_backend_tool(tool_name: &str, _arguments: &Value, state: &Arc<AppState>) -> Option<Value> {
+    match tool_name {
+        "listWindows" => {
+            let app_data = state.app_data.read();
+            let windows: Vec<Value> = app_data.windows.iter()
+                .filter(|w| w.label != "preferences" && w.label != "help")
+                .map(|w| {
+                    let workspaces: Vec<Value> = w.workspaces.iter().map(|ws| {
+                        let tab_count: usize = ws.panes.iter().map(|p| p.tabs.len()).sum();
+                        serde_json::json!({
+                            "id": ws.id,
+                            "name": ws.name,
+                            "paneCount": ws.panes.len(),
+                            "tabCount": tab_count,
+                            "isActive": Some(&ws.id) == w.active_workspace_id.as_ref(),
+                        })
+                    }).collect();
+                    serde_json::json!({
+                        "windowId": w.id,
+                        "windowLabel": w.label,
+                        "workspaceCount": workspaces.len(),
+                        "workspaces": workspaces,
+                    })
+                })
+                .collect();
+            Some(serde_json::json!({ "windows": windows }))
+        }
+        _ => None,
     }
 }
 
@@ -356,50 +439,68 @@ async fn handle_message(
                     .cloned()
                     .unwrap_or(Value::Object(serde_json::Map::new()));
 
-                let request_id = uuid::Uuid::new_v4().to_string();
-                let (tx, rx) = oneshot::channel::<Value>();
-                state
-                    .claude_code_pending
-                    .write()
-                    .insert(request_id.clone(), tx);
+                // Backend-only tools: handle directly without emitting to frontend
+                if let Some(result) = handle_backend_tool(&tool_name, &arguments, state) {
+                    let content_text = serde_json::to_string(&result).unwrap_or_default();
+                    let resp = JsonRpcResponse::success(
+                        id,
+                        serde_json::json!({
+                            "content": [{ "type": "text", "text": content_text }]
+                        }),
+                    );
+                    Some(serde_json::to_string(&resp).unwrap())
+                } else {
+                    // Frontend-handled tools: emit to the correct window
+                    let request_id = uuid::Uuid::new_v4().to_string();
+                    let (tx, rx) = oneshot::channel::<Value>();
+                    state
+                        .claude_code_pending
+                        .write()
+                        .insert(request_id.clone(), tx);
 
-                let _ = app_handle.emit(
-                    "claude-code-tool",
-                    serde_json::json!({
+                    let payload = serde_json::json!({
                         "request_id": request_id,
                         "tool": tool_name,
                         "arguments": arguments,
-                    }),
-                );
+                    });
 
-                match tokio::time::timeout(RESPONSE_TIMEOUT, rx).await {
-                    Ok(Ok(result)) => {
-                        let content_text = serde_json::to_string(&result).unwrap_or_default();
-                        let resp = JsonRpcResponse::success(
-                            id,
-                            serde_json::json!({
-                                "content": [{ "type": "text", "text": content_text }]
-                            }),
-                        );
-                        Some(serde_json::to_string(&resp).unwrap())
+                    // Emit to the specific window that owns the tab (avoids race
+                    // when preferences/help windows also listen for the event)
+                    if let Some(label) = resolve_target_window(state, &arguments) {
+                        let _ = app_handle.emit_to(&label, "claude-code-tool", payload);
+                    } else {
+                        let _ = app_handle.emit("claude-code-tool", payload);
                     }
-                    Ok(Err(_)) => {
-                        state.claude_code_pending.write().remove(&request_id);
-                        let resp = JsonRpcResponse::error(
-                            id,
-                            -32603,
-                            "Tool handler disconnected".to_string(),
-                        );
-                        Some(serde_json::to_string(&resp).unwrap())
-                    }
-                    Err(_) => {
-                        state.claude_code_pending.write().remove(&request_id);
-                        let resp = JsonRpcResponse::error(
-                            id,
-                            -32603,
-                            "Tool response timeout".to_string(),
-                        );
-                        Some(serde_json::to_string(&resp).unwrap())
+
+                    match tokio::time::timeout(RESPONSE_TIMEOUT, rx).await {
+                        Ok(Ok(result)) => {
+                            let content_text = serde_json::to_string(&result).unwrap_or_default();
+                            let resp = JsonRpcResponse::success(
+                                id,
+                                serde_json::json!({
+                                    "content": [{ "type": "text", "text": content_text }]
+                                }),
+                            );
+                            Some(serde_json::to_string(&resp).unwrap())
+                        }
+                        Ok(Err(_)) => {
+                            state.claude_code_pending.write().remove(&request_id);
+                            let resp = JsonRpcResponse::error(
+                                id,
+                                -32603,
+                                "Tool handler disconnected".to_string(),
+                            );
+                            Some(serde_json::to_string(&resp).unwrap())
+                        }
+                        Err(_) => {
+                            state.claude_code_pending.write().remove(&request_id);
+                            let resp = JsonRpcResponse::error(
+                                id,
+                                -32603,
+                                "Tool response timeout".to_string(),
+                            );
+                            Some(serde_json::to_string(&resp).unwrap())
+                        }
                     }
                 }
             } else {

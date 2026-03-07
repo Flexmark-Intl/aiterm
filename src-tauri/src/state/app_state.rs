@@ -49,6 +49,7 @@ pub struct AppState {
     pub claude_code_pending: RwLock<HashMap<String, tokio::sync::oneshot::Sender<serde_json::Value>>>,
     pub claude_code_connected: RwLock<bool>,
     pub claude_code_notify_tx: parking_lot::Mutex<Option<tokio::sync::mpsc::UnboundedSender<String>>>,
+    pub claude_code_shutdown: parking_lot::Mutex<Option<tokio::sync::watch::Sender<bool>>>,
     // Diagnostics
     pub pty_stats: RwLock<HashMap<String, PtyStats>>,
     pub memory_samples: RwLock<Vec<MemorySample>>,
@@ -66,6 +67,7 @@ impl Default for AppState {
             claude_code_pending: RwLock::new(HashMap::new()),
             claude_code_connected: RwLock::new(false),
             claude_code_notify_tx: parking_lot::Mutex::new(None),
+            claude_code_shutdown: parking_lot::Mutex::new(None),
             pty_stats: RwLock::new(HashMap::new()),
             memory_samples: RwLock::new(Vec::new()),
         }

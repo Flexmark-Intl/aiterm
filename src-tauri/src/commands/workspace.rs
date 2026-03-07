@@ -13,6 +13,10 @@ use crate::commands::window::{TabContext, clone_workspace_with_id_mapping};
 #[tauri::command]
 pub fn exit_app(app: tauri::AppHandle, state: State<'_, Arc<AppState>>) {
     log::info!("exit_app called — cleaning up and terminating process");
+    // Shut down the Claude Code MCP server gracefully (releases the port)
+    if let Some(tx) = state.claude_code_shutdown.lock().take() {
+        let _ = tx.send(true);
+    }
     let port = *state.claude_code_port.read();
     if let Some(port) = port {
         crate::claude_code::lockfile::delete_lockfile(port);

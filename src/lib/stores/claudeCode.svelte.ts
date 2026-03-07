@@ -428,6 +428,8 @@ function createClaudeCodeStore() {
 
   function handleListWorkspaces() {
     return {
+      windowId: workspacesStore.windowId,
+      windowLabel: workspacesStore.windowLabel,
       workspaces: workspacesStore.workspaces.map(ws => ({
         id: ws.id,
         name: ws.name,
@@ -799,6 +801,8 @@ function createClaudeCodeStore() {
     const tab = pane.tabs.find(t => t.id === pane.active_tab_id);
     if (!tab) return { error: 'No active tab' };
     return {
+      windowId: workspacesStore.windowId,
+      windowLabel: workspacesStore.windowLabel,
       workspace: { id: ws.id, name: ws.name },
       pane: { id: pane.id },
       tab: {

@@ -130,9 +130,20 @@ pub fn tool_list_response() -> Value {
                 "inputSchema": { "type": "object", "properties": {}, "required": [] }
             },
             {
-                "name": "listWorkspaces",
-                "description": "List all workspaces with their panes and tabs. Returns workspace IDs, names, pane structure, tab IDs, interpolated display names, tab types, active states, and notes indicators. Use this to discover tabs for switchTab or notes operations.",
+                "name": "listWindows",
+                "description": "List all aiTerm windows with their IDs, labels, and workspace summaries. Use this to discover windows before querying a specific window's workspaces via listWorkspaces with a windowId.",
                 "inputSchema": { "type": "object", "properties": {}, "required": [] }
+            },
+            {
+                "name": "listWorkspaces",
+                "description": "List all workspaces with their panes and tabs. Returns windowId, windowLabel, workspace IDs, names, pane structure, tab IDs, interpolated display names, tab types, active states, and notes indicators. Use this to discover tabs for switchTab or notes operations. Each aiTerm window has its own set of workspaces; pass windowId to query a specific window.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "windowId": { "type": "string", "description": "Window ID (UUID) to list workspaces from. If omitted, uses the window this terminal belongs to." }
+                    },
+                    "required": []
+                }
             },
             {
                 "name": "switchTab",
@@ -276,7 +287,7 @@ pub fn tool_list_response() -> Value {
             },
             {
                 "name": "getActiveTab",
-                "description": "Get the currently active workspace, pane, and tab. Returns IDs, names, tab type, display name, and notes status. Use this as a lightweight alternative to listWorkspaces when you just need to know the current context.",
+                "description": "Get the currently active workspace, pane, and tab in the current window. Returns windowLabel, IDs, names, tab type, display name, and notes status. Use this as a lightweight alternative to listWorkspaces when you just need to know the current context. Prefer reading $AITERM_TAB_ID for your own tab ID instead of calling this.",
                 "inputSchema": { "type": "object", "properties": {}, "required": [] }
             },
             {
@@ -366,6 +377,7 @@ pub fn initialize_response() -> Value {
     serde_json::json!({
         "protocolVersion": "2024-11-05",
         "capabilities": { "tools": {} },
-        "serverInfo": { "name": crate::APP_DISPLAY_NAME, "version": crate::APP_VERSION }
+        "serverInfo": { "name": crate::APP_DISPLAY_NAME, "version": crate::APP_VERSION },
+        "instructions": "You are running inside an aiTerm terminal tab. Your tab ID is available in the environment variable AITERM_TAB_ID. Always read $AITERM_TAB_ID and pass it as the 'tabId' parameter when calling tools that accept one (setTabNotes, getTabNotes, setTriggerVariable, getTriggerVariables, setAutoResume, getAutoResume, etc.). This ensures operations target YOUR terminal tab, not whichever tab the user happens to be looking at."
     })
 }

@@ -57,6 +57,9 @@ pub fn spawn_pty(
 
         let mut cmd = CommandBuilder::new(&shell);
 
+        // Expose tab ID so processes (e.g. Claude Code) can identify their terminal
+        cmd.env("AITERM_TAB_ID", tab_id);
+
         // Most shells use -l for login, fish uses --login
         match shell_name {
             "fish" => { cmd.arg("--login"); }

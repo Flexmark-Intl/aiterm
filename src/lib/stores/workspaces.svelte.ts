@@ -79,6 +79,8 @@ function allTabNames(ws: Workspace): string[] {
 const RECENT_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
 
 function createWorkspacesStore() {
+  let windowId = $state<string>('');
+  let windowLabel = $state<string>('');
   let workspaces = $state<Workspace[]>([]);
   let activeWorkspaceId = $state<string | null>(null);
   let sidebarWidth = $state(180);
@@ -115,6 +117,8 @@ function createWorkspacesStore() {
   });
 
   return {
+    get windowId() { return windowId; },
+    get windowLabel() { return windowLabel; },
     get workspaces() { return workspaces; },
     get activeWorkspaceId() { return activeWorkspaceId; },
     get activeWorkspace() { return activeWorkspace; },
@@ -132,6 +136,8 @@ function createWorkspacesStore() {
 
     async load() {
       const data = await commands.getWindowData();
+      windowId = data.id;
+      windowLabel = data.label;
       workspaces = data.workspaces;
       activeWorkspaceId = data.active_workspace_id;
       sidebarWidth = data.sidebar_width || 180;
