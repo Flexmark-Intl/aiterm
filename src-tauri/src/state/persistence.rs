@@ -1,6 +1,6 @@
 use std::fs;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use super::workspace::{AppData, Layout, SplitDirection, SplitNode, WindowData};
 
@@ -8,6 +8,21 @@ use super::workspace::{AppData, Layout, SplitDirection, SplitNode, WindowData};
 /// When false, save_state() will NOT overwrite the backup — preserving the last
 /// known-good backup from being clobbered by a default/empty state.
 static LOADED_SUCCESSFULLY: AtomicBool = AtomicBool::new(false);
+
+// Save timing diagnostics (global atomics — no AppState dependency needed)
+static SAVE_COUNT: AtomicU64 = AtomicU64::new(0);
+static SAVE_LAST_DURATION_US: AtomicU64 = AtomicU64::new(0);
+static SAVE_TOTAL_DURATION_US: AtomicU64 = AtomicU64::new(0);
+static SAVE_LAST_BYTES: AtomicU64 = AtomicU64::new(0);
+
+pub fn get_save_stats() -> (u64, u64, u64, u64) {
+    (
+        SAVE_COUNT.load(Ordering::Relaxed),
+        SAVE_LAST_DURATION_US.load(Ordering::Relaxed),
+        SAVE_TOTAL_DURATION_US.load(Ordering::Relaxed),
+        SAVE_LAST_BYTES.load(Ordering::Relaxed),
+    )
+}
 
 pub fn app_data_slug() -> &'static str {
     if cfg!(debug_assertions) {
@@ -196,6 +211,7 @@ pub fn migrate_app_data(data: &mut AppData) {
 }
 
 pub fn save_state(data: &AppData) -> Result<(), String> {
+    let save_start = std::time::Instant::now();
     let path = get_state_path().ok_or("Could not determine data directory")?;
     let temp_path = get_temp_path().ok_or("Could not determine temp path")?;
     let backup_path = get_backup_path().ok_or("Could not determine backup path")?;
@@ -236,6 +252,13 @@ pub fn save_state(data: &AppData) -> Result<(), String> {
 
     // Atomic rename temp -> real path
     fs::rename(&temp_path, &path).map_err(|e| format!("Failed to rename temp file: {}", e))?;
+
+    // Record save timing
+    let elapsed_us = save_start.elapsed().as_micros() as u64;
+    SAVE_COUNT.fetch_add(1, Ordering::Relaxed);
+    SAVE_LAST_DURATION_US.store(elapsed_us, Ordering::Relaxed);
+    SAVE_TOTAL_DURATION_US.fetch_add(elapsed_us, Ordering::Relaxed);
+    SAVE_LAST_BYTES.store(json.len() as u64, Ordering::Relaxed);
 
     Ok(())
 }

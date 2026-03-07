@@ -7,6 +7,7 @@
   import { workspacesStore, navigateToTab } from '$lib/stores/workspaces.svelte';
   import { terminalsStore } from '$lib/stores/terminals.svelte';
   import ClaudeIntegrationModal from '$lib/components/ClaudeIntegrationModal.svelte';
+  import ImportPreviewModal from '$lib/components/ImportPreviewModal.svelte';
   import Toast from '$lib/components/Toast.svelte';
   import { seedDefaultTriggers } from '$lib/triggers/defaults';
   import { preferencesStore } from '$lib/stores/preferences.svelte';
@@ -16,6 +17,7 @@
   import { onAction as onNotificationAction } from '@tauri-apps/plugin-notification';
   import * as commands from '$lib/tauri/commands';
   import type { ClaudeCodeToolRequest, Preferences } from '$lib/tauri/types';
+  import type { ImportPreview } from '$lib/tauri/commands';
   import { claudeCodeStore } from '$lib/stores/claudeCode.svelte';
   import { isModKey, isMac } from '$lib/utils/platform';
   import { open as dialogOpen, save as dialogSave } from '@tauri-apps/plugin-dialog';
@@ -32,6 +34,9 @@
 
   let { children }: Props = $props();
   let showClaudeIntegration = $state(false);
+  let showImportPreview = $state(false);
+  let importPreview = $state<ImportPreview | null>(null);
+  let importFilePath = $state('');
 
   function dismissClaudeIntegration() {
     showClaudeIntegration = false;
@@ -189,11 +194,13 @@
       try {
         const path = await dialogOpen({
           multiple: false,
-          filters: [{ name: 'JSON', extensions: ['json'] }],
+          filters: [{ name: 'aiTerm Backup', extensions: ['json', 'gz'] }],
         });
         if (typeof path === 'string') {
-          await commands.importState(path);
-          window.location.reload();
+          const preview = await commands.previewImport(path);
+          importPreview = preview;
+          importFilePath = path;
+          showImportPreview = true;
         }
       } catch (e) {
         logError(`Import state failed: ${e}`);
@@ -646,4 +653,11 @@
 {@render children()}
 
 <ClaudeIntegrationModal open={showClaudeIntegration} onclose={dismissClaudeIntegration} onenable={enableClaudeIntegration} onlater={askLaterClaudeIntegration} />
+<ImportPreviewModal
+  open={showImportPreview}
+  preview={importPreview}
+  filePath={importFilePath}
+  onclose={() => { showImportPreview = false; }}
+  onimported={() => { showImportPreview = false; window.location.reload(); }}
+/>
 <Toast />

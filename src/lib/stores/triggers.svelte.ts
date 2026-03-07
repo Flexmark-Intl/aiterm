@@ -24,6 +24,20 @@ const buffers = new Map<string, string>();
 // Cooldown tracking: triggerId → tabId → lastFiredMs
 const cooldowns = new Map<string, Map<string, number>>();
 
+// Diagnostic counters for trigger processing
+let triggerProcessCalls = 0;
+let triggerProcessTimeUs = 0;
+let triggerMatchCount = 0;
+
+export function getTriggerStats() {
+  return {
+    calls: triggerProcessCalls,
+    total_time_us: triggerProcessTimeUs,
+    avg_time_us: triggerProcessCalls > 0 ? Math.round(triggerProcessTimeUs / triggerProcessCalls) : 0,
+    match_count: triggerMatchCount,
+  };
+}
+
 // Dedup tracking: triggerId → tabId → { text, timestamp }
 // Prevents re-firing on identical matches from TUI redraws (e.g. Claude Code
 // repaints "Enter to confirm" on every frame, producing the same stripped text).
@@ -445,6 +459,9 @@ export function processOutput(tabId: string, data: Uint8Array) {
   // Quick exit: no triggers configured
   if (!preferencesStore.triggers.length) return;
 
+  const t0 = performance.now();
+  triggerProcessCalls++;
+
   const text = new TextDecoder().decode(data);
   const clean = stripAnsi(text).replace(/\r/g, '');
 
@@ -513,6 +530,7 @@ export function processOutput(tabId: string, data: Uint8Array) {
       }
       tabMap.set(tabId, { text: matchedText, ts: now });
 
+      triggerMatchCount++;
       fireTrigger(trigger, tabId, match);
     }
   }
@@ -522,6 +540,8 @@ export function processOutput(tabId: string, data: Uint8Array) {
   // Evaluate variable-mode triggers after all regex triggers have run
   // (variables may have been updated by regex trigger extractions above)
   evaluateVariableTriggers(tabId);
+
+  triggerProcessTimeUs += Math.round((performance.now() - t0) * 1000);
 }
 
 /** Called when a terminal is destroyed to clean up per-tab state. */

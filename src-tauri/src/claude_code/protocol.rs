@@ -59,8 +59,21 @@ pub fn tool_list_response() -> Value {
             },
             {
                 "name": "getDiagnostics",
-                "description": "Get language diagnostics (errors, warnings) for a file in the aiTerm editor.",
-                "inputSchema": { "type": "object", "properties": { "uri": { "type": "string" } }, "required": [] }
+                "description": "Get app diagnostics: version, tab/PTY counts, orphaned PTYs, WebGL status, buffer sizes, state file size, PTY throughput, state save timing, trigger engine stats, render FPS, process memory/CPU, memory trend. Use this to investigate performance issues or health of the running aiTerm instance. Note: FPS probe takes ~1 second to measure.",
+                "inputSchema": { "type": "object", "properties": {}, "required": [] }
+            },
+            {
+                "name": "readLogs",
+                "description": "Read recent log entries from the aiTerm log file. Returns the last N lines, optionally filtered by log level or search string. Use this to investigate errors, warnings, or trace application behavior.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "lines": { "type": "number", "description": "Number of lines to return (default: 100, max: 1000). Returns the most recent lines." },
+                        "level": { "type": "string", "description": "Filter by log level: DEBUG, INFO, WARN, ERROR. Only lines containing this level are returned." },
+                        "search": { "type": "string", "description": "Filter lines containing this substring (case-sensitive)." }
+                    },
+                    "required": []
+                }
             },
             {
                 "name": "checkDocumentDirty",

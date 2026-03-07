@@ -3,7 +3,7 @@ import * as commands from '$lib/tauri/commands';
 import { workspacesStore, navigateToTab } from '$lib/stores/workspaces.svelte';
 import { terminalsStore } from '$lib/stores/terminals.svelte';
 import { getEditorByFilePath, getEditorByTabId } from '$lib/stores/editorRegistry.svelte';
-import { interpolateVariables, getVariables, setVariable, handleEnableAutoResume } from '$lib/stores/triggers.svelte';
+import { interpolateVariables, getVariables, setVariable, handleEnableAutoResume, getTriggerStats } from '$lib/stores/triggers.svelte';
 import { CLAUDE_RESUME_COMMAND } from '$lib/triggers/defaults';
 import { preferencesStore } from '$lib/stores/preferences.svelte';
 import { stripAnsi } from '$lib/utils/ansi';
@@ -44,7 +44,10 @@ function createClaudeCodeStore() {
           result = handleGetWorkspaceFolders();
           break;
         case 'getDiagnostics':
-          result = { diagnostics: [] };
+          result = await handleGetDiagnostics();
+          break;
+        case 'readLogs':
+          result = await commands.readAppLogs(args as { lines?: number; level?: string; search?: string });
           break;
         case 'checkDocumentDirty':
           result = handleCheckDocumentDirty(args as { filePath: string });
@@ -145,6 +148,53 @@ function createClaudeCodeStore() {
       logError(`Claude Code tool error: ${err}`);
       await commands.claudeCodeRespond(request_id, { error: String(err) });
     }
+  }
+
+  async function handleGetDiagnostics() {
+    // Backend diagnostics: version, PTY count, orphans, state file, process stats
+    const backend = await commands.getAppDiagnostics();
+
+    // Frontend diagnostics: terminal instances, WebGL state
+    const instances = terminalsStore.instances;
+    const terminalDetails: Record<string, unknown>[] = [];
+    for (const [tabId, inst] of instances) {
+      terminalDetails.push({
+        tabId,
+        ptyId: inst.ptyId,
+        webgl: terminalsStore.isWebgl(tabId),
+        bufferLines: inst.terminal.buffer.normal.length,
+        altBufferActive: inst.terminal.buffer.active === inst.terminal.buffer.alternate,
+      });
+    }
+
+    // Trigger engine stats
+    const triggerStats = getTriggerStats();
+
+    // FPS probe: measure render performance over ~1 second
+    const fps = await new Promise<number>((resolve) => {
+      let frames = 0;
+      const start = performance.now();
+      function tick() {
+        frames++;
+        if (performance.now() - start < 1000) {
+          requestAnimationFrame(tick);
+        } else {
+          resolve(Math.round(frames / ((performance.now() - start) / 1000)));
+        }
+      }
+      requestAnimationFrame(tick);
+    });
+
+    return {
+      ...backend,
+      frontend: {
+        terminal_instances: instances.size,
+        webgl_active: terminalDetails.filter(t => t.webgl).length,
+        terminals: terminalDetails,
+        trigger_engine: triggerStats,
+        render_fps: fps,
+      },
+    };
   }
 
   function handleGetOpenEditors() {

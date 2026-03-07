@@ -7,7 +7,9 @@
   import Tooltip from '$lib/components/Tooltip.svelte';
   import Icon from '$lib/components/Icon.svelte';
   import { modLabel, altLabel, isModKey } from '$lib/utils/platform';
-  import { getAllWorkspaces, getAllTabs, listSystemSounds, playSystemSound, detectWindowsShells, exportState, importState, pickBackupDirectory, backupFilename } from '$lib/tauri/commands';
+  import { getAllWorkspaces, getAllTabs, listSystemSounds, playSystemSound, detectWindowsShells, exportState, importState, pickBackupDirectory, backupFilename, previewImport } from '$lib/tauri/commands';
+  import type { ImportPreview } from '$lib/tauri/commands';
+  import ImportPreviewModal from '$lib/components/ImportPreviewModal.svelte';
   import { open as dialogOpen, save as dialogSave } from '@tauri-apps/plugin-dialog';
   import { error as logError, info as logInfo } from '@tauri-apps/plugin-log';
   import type { ShellInfo } from '$lib/tauri/types';
@@ -97,6 +99,9 @@
 
   let backupStatus = $state<string | null>(null);
   let excludeScrollbackExport = $state(false);
+  let importPreview = $state<ImportPreview | null>(null);
+  let importFilePath = $state('');
+  let showImportPreview = $state(false);
 
   // Sync the per-export checkbox with the preference on load
   $effect(() => {
@@ -124,11 +129,13 @@
     try {
       const path = await dialogOpen({
         multiple: false,
-        filters: [{ name: 'JSON', extensions: ['json'] }],
+        filters: [{ name: 'aiTerm Backup', extensions: ['json', 'gz'] }],
       });
       if (typeof path === 'string') {
-        await importState(path);
-        window.location.reload();
+        const preview = await previewImport(path);
+        importPreview = preview;
+        importFilePath = path;
+        showImportPreview = true;
       }
     } catch (e) {
       backupStatus = `Import failed: ${e}`;
@@ -1562,7 +1569,7 @@
             </label>
           </div>
           <p class="setting-hint" style="max-width: none;">
-            Importing replaces all current state. The app will reload after import.
+            Import opens a preview where you can select workspaces and choose overwrite or merge.
           </p>
           {#if backupStatus}
             <p class="backup-status">{backupStatus}</p>
@@ -1676,6 +1683,14 @@
     </div>
   </div>
 </div>
+
+<ImportPreviewModal
+  open={showImportPreview}
+  preview={importPreview}
+  filePath={importFilePath}
+  onclose={() => { showImportPreview = false; }}
+  onimported={() => { showImportPreview = false; window.location.reload(); }}
+/>
 
 <style>
   .window {

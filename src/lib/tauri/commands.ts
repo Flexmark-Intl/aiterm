@@ -464,6 +464,50 @@ export async function importState(path: string): Promise<void> {
   return invoke('import_state', { path });
 }
 
+export interface ImportPreviewTab {
+  id: string;
+  name: string;
+  tab_type: string;
+  has_scrollback: boolean;
+  has_notes: boolean;
+  has_auto_resume: boolean;
+  editor_file_path: string | null;
+}
+
+export interface ImportPreviewWorkspace {
+  id: string;
+  name: string;
+  tab_count: number;
+  tabs: ImportPreviewTab[];
+  note_count: number;
+  archived_count: number;
+}
+
+export interface ImportPreviewWindow {
+  label: string;
+  workspaces: ImportPreviewWorkspace[];
+}
+
+export interface ImportPreview {
+  windows: ImportPreviewWindow[];
+  file_size: number;
+  has_preferences: boolean;
+}
+
+export interface ImportConfig {
+  mode: 'overwrite' | 'merge';
+  selected_workspace_ids: string[];
+  import_preferences: boolean;
+}
+
+export async function previewImport(path: string): Promise<ImportPreview> {
+  return invoke('preview_import', { path });
+}
+
+export async function importStateSelective(path: string, config: ImportConfig): Promise<void> {
+  return invoke('import_state_selective', { path, config });
+}
+
 export async function runScheduledBackup(): Promise<string> {
   return invoke('run_scheduled_backup');
 }
@@ -474,4 +518,12 @@ export async function trimOldBackups(): Promise<number> {
 
 export async function pickBackupDirectory(): Promise<string | null> {
   return invoke('pick_backup_directory');
+}
+
+export async function getAppDiagnostics(): Promise<Record<string, unknown>> {
+  return invoke('get_app_diagnostics');
+}
+
+export async function readAppLogs(opts?: { lines?: number; level?: string; search?: string }): Promise<{ path: string; total_matching: number; lines: string[]; truncated: boolean }> {
+  return invoke('read_app_logs', { lines: opts?.lines ?? null, level: opts?.level ?? null, search: opts?.search ?? null });
 }

@@ -1158,6 +1158,18 @@ pub fn delete_archived_tab(
     save_state(&data_clone)
 }
 
+/// Regenerate split node IDs to match new pane IDs after cloning.
+fn regenerate_split_ids(node: &mut crate::state::workspace::SplitNode) {
+    match node {
+        crate::state::workspace::SplitNode::Leaf { .. } => {}
+        crate::state::workspace::SplitNode::Split { id, children, .. } => {
+            *id = uuid::Uuid::new_v4().to_string();
+            regenerate_split_ids(&mut children.0);
+            regenerate_split_ids(&mut children.1);
+        }
+    }
+}
+
 /// Clone app_data and filter out ephemeral diff tabs + optionally strip scrollback.
 fn prepare_export(data: &crate::state::AppData, exclude_scrollback: bool) -> crate::state::AppData {
     let mut filtered = data.clone();
@@ -1309,17 +1321,161 @@ pub async fn pick_backup_directory(app: tauri::AppHandle) -> Result<Option<Strin
     Ok(dir.map(|p| p.to_string()))
 }
 
-#[tauri::command]
-pub fn import_state(app: tauri::AppHandle, state: State<'_, Arc<AppState>>, path: String) -> Result<(), String> {
-    let contents = std::fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read import file: {}", e))?;
+/// Read and parse a backup file (supports .gz).
+fn read_backup_file(path: &str) -> Result<crate::state::AppData, String> {
+    let contents = if path.ends_with(".gz") {
+        use std::io::Read;
+        let file = std::fs::File::open(path)
+            .map_err(|e| format!("Failed to open import file: {}", e))?;
+        let mut decoder = flate2::read::GzDecoder::new(file);
+        let mut s = String::new();
+        decoder.read_to_string(&mut s)
+            .map_err(|e| format!("Failed to decompress import file: {}", e))?;
+        s
+    } else {
+        std::fs::read_to_string(path)
+            .map_err(|e| format!("Failed to read import file: {}", e))?
+    };
 
     let mut imported = parse_state(&contents)
         .map_err(|e| format!("Invalid state file: {}", e))?;
-
     crate::state::persistence::migrate_app_data(&mut imported);
+    Ok(imported)
+}
 
-    // Replace in-memory state and persist
+#[tauri::command]
+pub fn preview_import(path: String) -> Result<serde_json::Value, String> {
+    let data = read_backup_file(&path)?;
+
+    let file_meta = std::fs::metadata(&path).ok();
+    let file_size = file_meta.map(|m| m.len()).unwrap_or(0);
+
+    let windows: Vec<serde_json::Value> = data.windows.iter().map(|win| {
+        let workspaces: Vec<serde_json::Value> = win.workspaces.iter().map(|ws| {
+            let tabs: Vec<serde_json::Value> = ws.panes.iter()
+                .flat_map(|p| p.tabs.iter())
+                .filter(|t| t.tab_type != crate::state::workspace::TabType::Diff)
+                .map(|t| {
+                    serde_json::json!({
+                        "id": t.id,
+                        "name": t.name,
+                        "tab_type": t.tab_type,
+                        "has_scrollback": t.scrollback.is_some(),
+                        "has_notes": t.notes.is_some(),
+                        "has_auto_resume": t.auto_resume_command.is_some(),
+                        "editor_file_path": t.editor_file.as_ref().map(|f| f.file_path.clone()),
+                    })
+                })
+                .collect();
+            serde_json::json!({
+                "id": ws.id,
+                "name": ws.name,
+                "tab_count": tabs.len(),
+                "tabs": tabs,
+                "note_count": ws.workspace_notes.len(),
+                "archived_count": ws.archived_tabs.len(),
+            })
+        }).collect();
+        serde_json::json!({
+            "label": win.label,
+            "workspaces": workspaces,
+        })
+    }).collect();
+
+    Ok(serde_json::json!({
+        "windows": windows,
+        "file_size": file_size,
+        "has_preferences": true,
+    }))
+}
+
+#[derive(serde::Deserialize)]
+pub struct ImportConfig {
+    pub mode: String,                       // "overwrite" or "merge"
+    pub selected_workspace_ids: Vec<String>, // workspace IDs to import
+    pub import_preferences: bool,
+}
+
+#[tauri::command]
+pub fn import_state_selective(
+    app: tauri::AppHandle,
+    state: State<'_, Arc<AppState>>,
+    path: String,
+    config: ImportConfig,
+) -> Result<(), String> {
+    let mut imported = read_backup_file(&path)?;
+
+    // Filter to selected workspaces only
+    for win in &mut imported.windows {
+        win.workspaces.retain(|ws| config.selected_workspace_ids.contains(&ws.id));
+        // Also filter diff tabs
+        for ws in &mut win.workspaces {
+            for pane in &mut ws.panes {
+                pane.tabs.retain(|t| t.tab_type != crate::state::workspace::TabType::Diff);
+                if let Some(ref active_id) = pane.active_tab_id {
+                    if !pane.tabs.iter().any(|t| t.id == *active_id) {
+                        pane.active_tab_id = pane.tabs.last().map(|t| t.id.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    match config.mode.as_str() {
+        "merge" => {
+            let mut app_data = state.app_data.write();
+            // Add selected workspaces into the first (main) window
+            if let Some(target_win) = app_data.windows.first_mut() {
+                for src_win in &imported.windows {
+                    for ws in &src_win.workspaces {
+                        // Avoid duplicate IDs — generate new ones if collision
+                        let mut ws_clone = ws.clone();
+                        if target_win.workspaces.iter().any(|w| w.id == ws_clone.id) {
+                            ws_clone.id = uuid::Uuid::new_v4().to_string();
+                            // Also regen pane IDs to avoid collisions
+                            for pane in &mut ws_clone.panes {
+                                pane.id = uuid::Uuid::new_v4().to_string();
+                            }
+                            if let Some(ref mut root) = ws_clone.split_root {
+                                regenerate_split_ids(root);
+                            }
+                        }
+                        target_win.workspaces.push(ws_clone);
+                    }
+                }
+            }
+            if config.import_preferences {
+                app_data.preferences = imported.preferences;
+            }
+            let data_clone = app_data.clone();
+            drop(app_data);
+            save_state(&data_clone)?;
+        }
+        _ => {
+            // "overwrite" — replace everything, keeping only selected workspaces
+            if !config.import_preferences {
+                // Preserve current preferences
+                let current_prefs = state.app_data.read().preferences.clone();
+                imported.preferences = current_prefs;
+            }
+            let mut app_data = state.app_data.write();
+            *app_data = imported;
+            let data_clone = app_data.clone();
+            drop(app_data);
+            save_state(&data_clone)?;
+        }
+    }
+
+    log::info!("State imported from {} (mode: {})", path, config.mode);
+    let _ = app.emit("state-imported", ());
+    Ok(())
+}
+
+/// Legacy full-replace import (kept for File menu backward compat)
+#[tauri::command]
+pub fn import_state(app: tauri::AppHandle, state: State<'_, Arc<AppState>>, path: String) -> Result<(), String> {
+    let imported = read_backup_file(&path)?;
+
     {
         let mut app_data = state.app_data.write();
         *app_data = imported;
@@ -1328,8 +1484,278 @@ pub fn import_state(app: tauri::AppHandle, state: State<'_, Arc<AppState>>, path
     save_state(&data_clone)?;
 
     log::info!("State imported from {}", path);
-
-    // Notify all windows to reload
     let _ = app.emit("state-imported", ());
     Ok(())
+}
+
+#[tauri::command]
+pub fn get_app_diagnostics(state: State<'_, Arc<AppState>>) -> serde_json::Value {
+    let app_data = state.app_data.read();
+
+    let mut total_tabs = 0usize;
+    let mut terminal_tabs = 0usize;
+    let mut editor_tabs = 0usize;
+    let mut diff_tabs = 0usize;
+    let mut total_panes = 0usize;
+    let mut total_workspaces = 0usize;
+    // All terminal tab PTY IDs (for orphaned PTY detection)
+    let mut all_tab_pty_ids: Vec<Option<String>> = Vec::new();
+    // PTY IDs from active workspaces only (tabs that should have live PTYs)
+    let mut active_tab_pty_ids: Vec<Option<String>> = Vec::new();
+
+    for window in &app_data.windows {
+        let active_ws_id = window.active_workspace_id.as_deref();
+        for ws in &window.workspaces {
+            total_workspaces += 1;
+            let is_active = active_ws_id == Some(ws.id.as_str());
+            for pane in &ws.panes {
+                total_panes += 1;
+                for tab in &pane.tabs {
+                    total_tabs += 1;
+                    match tab.tab_type {
+                        crate::state::workspace::TabType::Editor => editor_tabs += 1,
+                        crate::state::workspace::TabType::Diff => diff_tabs += 1,
+                        crate::state::workspace::TabType::Terminal => {
+                            terminal_tabs += 1;
+                            all_tab_pty_ids.push(tab.pty_id.clone());
+                            if is_active {
+                                active_tab_pty_ids.push(tab.pty_id.clone());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let pty_count = state.pty_registry.read().len();
+    let file_watcher_count = state.file_watchers.read().len();
+
+    // Tabs in active workspaces with pty_id set but no matching PTY in registry
+    // (truly orphaned — these should have running PTYs)
+    let orphaned_pty_refs: Vec<String> = {
+        let registry = state.pty_registry.read();
+        active_tab_pty_ids.iter()
+            .filter_map(|id| id.as_ref())
+            .filter(|id| !registry.contains_key(id.as_str()))
+            .cloned()
+            .collect()
+    };
+
+    // PTYs in registry with no matching tab in any workspace (leaked processes)
+    let orphaned_ptys: Vec<String> = {
+        let registry = state.pty_registry.read();
+        let all_ids: std::collections::HashSet<&str> = all_tab_pty_ids.iter()
+            .filter_map(|id| id.as_deref())
+            .collect();
+        registry.keys()
+            .filter(|k| !all_ids.contains(k.as_str()))
+            .cloned()
+            .collect()
+    };
+
+    // Tabs in inactive workspaces waiting to be initialized
+    let uninitialized_tabs = terminal_tabs.saturating_sub(pty_count + orphaned_pty_refs.len());
+
+    // State file info
+    let state_path = crate::state::persistence::get_state_path();
+    let state_file_size = state_path.as_ref()
+        .and_then(|p| std::fs::metadata(p).ok())
+        .map(|m| m.len());
+
+    // Process-level resource stats via sysinfo
+    use sysinfo::{System, Pid, ProcessesToUpdate, ProcessRefreshKind, UpdateKind};
+    let pid = Pid::from_u32(std::process::id());
+    let mut sys = System::new();
+    let refresh = ProcessRefreshKind::nothing()
+        .with_memory()
+        .with_cpu()
+        .with_disk_usage();
+    sys.refresh_processes_specifics(ProcessesToUpdate::Some(&[pid]), true, refresh);
+
+    let process_info = sys.process(pid).map(|p| {
+        serde_json::json!({
+            "pid": std::process::id(),
+            "memory_bytes": p.memory(),
+            "virtual_memory_bytes": p.virtual_memory(),
+            "cpu_usage_percent": p.cpu_usage(),
+            "disk_read_bytes": p.disk_usage().read_bytes,
+            "disk_written_bytes": p.disk_usage().written_bytes,
+            "run_time_secs": p.run_time(),
+        })
+    });
+
+    // Child PTY process stats
+    let child_pids: Vec<u32> = {
+        let registry = state.pty_registry.read();
+        registry.values().filter_map(|h| h.child_pid).collect()
+    };
+    let mut child_info: Vec<serde_json::Value> = Vec::new();
+    if !child_pids.is_empty() {
+        let child_sysinfo_pids: Vec<Pid> = child_pids.iter().map(|&p| Pid::from_u32(p)).collect();
+        let mut child_sys = System::new();
+        let child_refresh = ProcessRefreshKind::nothing()
+            .with_memory()
+            .with_cpu()
+            .with_cmd(UpdateKind::Always);
+        child_sys.refresh_processes_specifics(ProcessesToUpdate::Some(&child_sysinfo_pids), true, child_refresh);
+        for &cpid in &child_pids {
+            if let Some(p) = child_sys.process(Pid::from_u32(cpid)) {
+                let cmd_str: Vec<String> = p.cmd().iter().map(|s| s.to_string_lossy().into_owned()).collect();
+                child_info.push(serde_json::json!({
+                    "pid": cpid,
+                    "name": p.name().to_string_lossy(),
+                    "cmd": cmd_str.join(" "),
+                    "memory_bytes": p.memory(),
+                    "cpu_usage_percent": p.cpu_usage(),
+                }));
+            }
+        }
+    }
+
+    // PTY throughput stats
+    let pty_throughput: Vec<serde_json::Value> = {
+        use std::sync::atomic::Ordering;
+        let stats = state.pty_stats.read();
+        stats.iter().map(|(pty_id, s)| {
+            serde_json::json!({
+                "pty_id": pty_id,
+                "bytes_read": s.bytes_read.load(Ordering::Relaxed),
+                "bytes_written": s.bytes_written.load(Ordering::Relaxed),
+            })
+        }).collect()
+    };
+
+    // State save timing
+    let (save_count, save_last_us, save_total_us, save_last_bytes) =
+        crate::state::persistence::get_save_stats();
+
+    // System-level stats
+    let mut total_sys = System::new();
+    total_sys.refresh_memory();
+    total_sys.refresh_cpu_all();
+
+    // Append memory sample (ring buffer, capped)
+    let rss = sys.process(pid).map(|p| p.memory()).unwrap_or(0);
+    {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let mut samples = state.memory_samples.write();
+        samples.push(crate::state::app_state::MemorySample {
+            timestamp_secs: timestamp,
+            rss_bytes: rss,
+        });
+        if samples.len() > crate::state::app_state::MEMORY_SAMPLE_CAP {
+            let drain = samples.len() - crate::state::app_state::MEMORY_SAMPLE_CAP;
+            samples.drain(..drain);
+        }
+    }
+    let memory_trend: Vec<crate::state::app_state::MemorySample> =
+        state.memory_samples.read().clone();
+
+    serde_json::json!({
+        "version": crate::APP_VERSION,
+        "mode": if cfg!(debug_assertions) { "dev" } else { "production" },
+        "windows": app_data.windows.len(),
+        "workspaces": total_workspaces,
+        "panes": total_panes,
+        "tabs": {
+            "total": total_tabs,
+            "terminal": terminal_tabs,
+            "editor": editor_tabs,
+            "diff": diff_tabs,
+        },
+        "pty_registry_count": pty_count,
+        "uninitialized_terminal_tabs": uninitialized_tabs,
+        "file_watcher_count": file_watcher_count,
+        "orphaned_pty_refs": orphaned_pty_refs,
+        "orphaned_ptys": orphaned_ptys,
+        "pty_throughput": pty_throughput,
+        "state_save": {
+            "count": save_count,
+            "last_duration_us": save_last_us,
+            "avg_duration_us": if save_count > 0 { save_total_us / save_count } else { 0 },
+            "total_duration_us": save_total_us,
+            "last_bytes": save_last_bytes,
+        },
+        "state_file_bytes": state_file_size,
+        "process": process_info,
+        "pty_processes": child_info,
+        "system": {
+            "total_memory_bytes": total_sys.total_memory(),
+            "used_memory_bytes": total_sys.used_memory(),
+            "cpu_count": total_sys.cpus().len(),
+        },
+        "memory_trend": memory_trend,
+    })
+}
+
+#[tauri::command]
+pub fn read_app_logs(lines: Option<usize>, level: Option<String>, search: Option<String>) -> Result<serde_json::Value, String> {
+    let max_lines = lines.unwrap_or(100).min(1000);
+    let is_dev = cfg!(debug_assertions);
+    let file_name = if is_dev { "aiterm-dev" } else { "aiterm" };
+
+    // Resolve log directory (matches tauri-plugin-log default)
+    let log_dir = dirs::data_dir()
+        .or_else(dirs::config_dir)
+        .map(|d| {
+            if cfg!(target_os = "macos") {
+                // macOS: ~/Library/Logs/com.aiterm.app/
+                dirs::home_dir().unwrap_or(d.clone())
+                    .join("Library/Logs/com.aiterm.app")
+            } else {
+                // Linux/Windows: config_dir/aiterm/logs/
+                d.join("aiterm/logs")
+            }
+        })
+        .ok_or("Could not determine log directory")?;
+
+    let log_path = log_dir.join(format!("{}.log", file_name));
+
+    if !log_path.exists() {
+        return Ok(serde_json::json!({
+            "path": log_path.to_string_lossy(),
+            "lines": [],
+            "truncated": false,
+        }));
+    }
+
+    let content = std::fs::read_to_string(&log_path)
+        .map_err(|e| format!("Failed to read log file: {}", e))?;
+
+    let all_lines: Vec<&str> = content.lines().collect();
+
+    // Filter by level if specified
+    let level_upper = level.map(|l| l.to_uppercase());
+    let filtered: Vec<&str> = all_lines.into_iter()
+        .filter(|line| {
+            if let Some(ref lvl) = level_upper {
+                // Log lines look like: [2024-01-01][INFO][aiterm] message
+                line.contains(&format!("[{}]", lvl))
+            } else {
+                true
+            }
+        })
+        .filter(|line| {
+            if let Some(ref q) = search {
+                line.contains(q.as_str())
+            } else {
+                true
+            }
+        })
+        .collect();
+
+    let total = filtered.len();
+    let truncated = total > max_lines;
+    let result: Vec<&str> = filtered.into_iter().rev().take(max_lines).collect::<Vec<_>>().into_iter().rev().collect();
+
+    Ok(serde_json::json!({
+        "path": log_path.to_string_lossy(),
+        "total_matching": total,
+        "lines": result,
+        "truncated": truncated,
+    }))
 }

@@ -366,9 +366,13 @@ pub fn run() {
             commands::workspace::delete_archived_tab,
             commands::workspace::export_state,
             commands::workspace::import_state,
+            commands::workspace::preview_import,
+            commands::workspace::import_state_selective,
             commands::workspace::run_scheduled_backup,
             commands::workspace::trim_old_backups,
             commands::workspace::pick_backup_directory,
+            commands::workspace::get_app_diagnostics,
+            commands::workspace::read_app_logs,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

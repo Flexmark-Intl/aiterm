@@ -57,6 +57,7 @@
   let serializeAddon: SerializeAddon;
   let searchAddon: SearchAddon;
   let ptyId: string;
+  let destroyed = false;
   let unlistenOutput: UnlistenFn;
   let unlistenClose: UnlistenFn;
   let unlistenDragOver: UnlistenFn;
@@ -400,7 +401,7 @@
     // Listen for PTY close — when the shell exits (exit/logout/Ctrl+D),
     // close the tab using the same logic as Cmd+W.
     unlistenClose = await listen(`pty-close-${ptyId}`, () => {
-      if (terminalsStore.shuttingDown) return;
+      if (destroyed || terminalsStore.shuttingDown) return;
 
       const ws = workspacesStore.workspaces.find(w => w.id === workspaceId);
       const pane = ws?.panes.find(p => p.id === paneId);
@@ -585,6 +586,7 @@
     // Do NOT save scrollback here — saveAllScrollback() handles it before
     // destroy is called, and async onDestroy is not awaited by Svelte,
     // which causes race conditions with terminal.dispose() below.
+    destroyed = true;
 
     window.removeEventListener('terminal-slot-ready', handleSlotReady);
 
