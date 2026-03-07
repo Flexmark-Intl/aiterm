@@ -281,6 +281,11 @@ function createWorkspacesStore() {
       }
       await commands.setActiveWorkspace(workspaceId);
       activeWorkspaceId = workspaceId;
+      // Clear import highlight on activation
+      const ws = workspaces.find(w => w.id === workspaceId);
+      if (ws?.import_highlight) {
+        workspaces = workspaces.map(w => w.id === workspaceId ? { ...w, import_highlight: false } : w);
+      }
     },
 
     async splitPane(workspaceId: string, targetPaneId: string, direction: SplitDirection) {
@@ -850,7 +855,11 @@ function createWorkspacesStore() {
             ...w,
             panes: w.panes.map(p => {
               if (p.id === paneId) {
-                return { ...p, active_tab_id: tabId };
+                return {
+                  ...p,
+                  active_tab_id: tabId,
+                  tabs: p.tabs.map(t => t.id === tabId && t.import_highlight ? { ...t, import_highlight: false } : t),
+                };
               }
               return p;
             })

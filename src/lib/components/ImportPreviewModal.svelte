@@ -155,9 +155,9 @@
 
         <p class="mode-hint">
           {#if mode === 'overwrite'}
-            Replaces all current workspaces with the selected ones from the backup.
+            Replaces matching workspaces with the backup versions. Unselected workspaces are left untouched.
           {:else}
-            Adds the selected workspaces alongside your existing ones.
+            Merges into existing workspaces: adds missing tabs and restores empty notes. New workspaces are added alongside.
           {/if}
         </p>
 
@@ -176,13 +176,15 @@
         <div class="workspace-list">
           {#each allWorkspaces as ws (ws.id)}
             <div class="workspace-item" class:deselected={!selectedWorkspaces.has(ws.id)}>
-              <div class="workspace-row">
+              <!-- svelte-ignore a11y_click_events_have_key_events -->
+              <div class="workspace-row" role="button" tabindex="0" onclick={(e) => { if ((e.target as HTMLElement).closest('.expand-btn')) return; toggleWorkspace(ws.id); }}>
                 <input
                   type="checkbox"
                   checked={selectedWorkspaces.has(ws.id)}
+                  onclick={(e) => e.stopPropagation()}
                   onchange={() => toggleWorkspace(ws.id)}
                 />
-                <button class="expand-btn" onclick={() => toggleExpand(ws.id)} class:expanded={expandedWorkspaces.has(ws.id)}>
+                <button class="expand-btn" onclick={(e) => { e.stopPropagation(); toggleExpand(ws.id); }} class:expanded={expandedWorkspaces.has(ws.id)}>
                   {expandedWorkspaces.has(ws.id) ? '\u25BE' : '\u25B8'}
                 </button>
                 <span class="ws-name">{ws.name}</span>
@@ -376,6 +378,11 @@
     align-items: center;
     gap: 6px;
     padding: 6px 8px;
+    cursor: pointer;
+  }
+
+  .workspace-row:hover {
+    background: color-mix(in srgb, var(--bg-light) 50%, transparent);
   }
 
   .workspace-row input[type="checkbox"] {

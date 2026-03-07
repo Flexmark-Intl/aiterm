@@ -602,6 +602,7 @@
       class:failed={!tabState && shellState?.state === 'completed' && shellState?.exitCode !== 0}
       class:tab-alert={tabState === 'alert'}
       class:tab-question={tabState === 'question'}
+      class:import-highlight={tab.import_highlight}
       class:dragging={dragTabId === tab.id}
       class:buttons-always={preferencesStore.tabButtonStyle === 'always'}
       class:buttons-never={preferencesStore.tabButtonStyle === 'never'}
@@ -794,6 +795,10 @@
   }
 
   .tab.tab-question {
+    box-shadow: inset 0 -2px 0 var(--yellow, #e0af68);
+  }
+
+  .tab.import-highlight {
     box-shadow: inset 0 -2px 0 var(--yellow, #e0af68);
   }
 

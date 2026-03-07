@@ -358,6 +358,38 @@
             </ul>
           </div>
         {/if}
+
+        <button class="accordion" class:open={openAccordions['t-backup']} onclick={() => toggleAccordion('t-backup')}>
+          <span class="chevron">&#x203A;</span> Backup & Import
+        </button>
+        {#if openAccordions['t-backup']}
+          <div class="accordion-body" transition:slide={{ duration: 150 }}>
+            <p class="description">
+              Export your entire state (workspaces, tabs, notes, preferences) as a backup file via <strong>File &rsaquo; Export State</strong>. Import from <strong>File &rsaquo; Import State</strong> or <strong>Preferences &rsaquo; Backup</strong>.
+            </p>
+            <h4>Import modes</h4>
+            <p class="description">
+              When importing, you get a preview of the backup contents and can select which workspaces to import.
+            </p>
+            <div class="trigger-list">
+              <div class="trigger-item">
+                <strong>Overwrite</strong>
+                <span>&mdash; Replaces matching workspaces with the backup versions. Workspaces you deselect (or that aren't in the backup) are left untouched.</span>
+              </div>
+              <div class="trigger-item">
+                <strong>Merge</strong>
+                <span>&mdash; Deep-merges into existing workspaces. Missing tabs are added, tab notes are restored only if currently empty, and missing workspace notes are added. Workspaces that don't exist locally are added as new.</span>
+              </div>
+            </div>
+            <h4>Tips</h4>
+            <ul class="tips">
+              <li>Use <strong>Merge</strong> to recover lost notes or tabs from a backup without overwriting your current work.</li>
+              <li>Use <strong>Overwrite</strong> to restore a workspace to its exact backup state.</li>
+              <li>Deselect workspaces you don't want to touch &mdash; they won't be modified in either mode.</li>
+              <li>Automatic backups can be configured in <strong>Preferences &rsaquo; Backup</strong> with a custom schedule and directory.</li>
+            </ul>
+          </div>
+        {/if}
       {/if}
     </div>
   </div>

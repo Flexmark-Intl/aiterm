@@ -42,6 +42,7 @@ export interface Tab {
   tab_type: TabType;
   editor_file: EditorFileInfo | null;
   diff_context: DiffContext | null;
+  import_highlight?: boolean;
 }
 
 export interface Pane {
@@ -84,6 +85,7 @@ export interface Workspace {
   split_root: SplitNode | null;
   workspace_notes: WorkspaceNote[];
   archived_tabs: Tab[];
+  import_highlight?: boolean;
 }
 
 export type CursorStyle = 'block' | 'underline' | 'bar';

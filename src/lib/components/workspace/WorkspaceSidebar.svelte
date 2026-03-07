@@ -335,6 +335,7 @@
       <div
         class="workspace-item"
         class:active={workspace.id === workspacesStore.activeWorkspaceId}
+        class:import-highlight={workspace.import_highlight}
         class:dragging={dragWorkspaceId === workspace.id}
         class:drop-before={dropTargetIndex === index && dropSide === 'before' && dragWorkspaceId !== workspace.id}
         class:drop-after={dropTargetIndex === index && dropSide === 'after' && dragWorkspaceId !== workspace.id}
@@ -540,6 +541,10 @@
     background: rgba(122, 162, 247, 0.2);
     outline: 1px solid var(--accent);
     outline-offset: -1px;
+  }
+
+  .workspace-item.import-highlight {
+    box-shadow: inset 3px 0 0 var(--yellow, #e0af68);
   }
 
   .workspace-item.dragging {

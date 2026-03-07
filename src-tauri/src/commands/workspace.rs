@@ -305,7 +305,11 @@ pub fn set_active_workspace(window: tauri::Window, state: State<'_, Arc<AppState
     let label = window.label().to_string();
     let mut app_data = state.app_data.write();
     let win = app_data.window_mut(&label).ok_or("Window not found")?;
-    win.active_workspace_id = Some(workspace_id);
+    win.active_workspace_id = Some(workspace_id.clone());
+    // Clear import highlight on activation
+    if let Some(ws) = win.workspaces.iter_mut().find(|w| w.id == workspace_id) {
+        ws.import_highlight = false;
+    }
     Ok(())
 }
 
@@ -338,7 +342,11 @@ pub fn set_active_tab(
     let win = app_data.window_mut(&label).ok_or("Window not found")?;
     if let Some(workspace) = win.workspaces.iter_mut().find(|w| w.id == workspace_id) {
         if let Some(pane) = workspace.panes.iter_mut().find(|p| p.id == pane_id) {
-            pane.active_tab_id = Some(tab_id);
+            pane.active_tab_id = Some(tab_id.clone());
+            // Clear import highlight on activation
+            if let Some(tab) = pane.tabs.iter_mut().find(|t| t.id == tab_id) {
+                tab.import_highlight = false;
+            }
         }
     }
     Ok(())
@@ -1158,18 +1166,6 @@ pub fn delete_archived_tab(
     save_state(&data_clone)
 }
 
-/// Regenerate split node IDs to match new pane IDs after cloning.
-fn regenerate_split_ids(node: &mut crate::state::workspace::SplitNode) {
-    match node {
-        crate::state::workspace::SplitNode::Leaf { .. } => {}
-        crate::state::workspace::SplitNode::Split { id, children, .. } => {
-            *id = uuid::Uuid::new_v4().to_string();
-            regenerate_split_ids(&mut children.0);
-            regenerate_split_ids(&mut children.1);
-        }
-    }
-}
-
 /// Clone app_data and filter out ephemeral diff tabs + optionally strip scrollback.
 fn prepare_export(data: &crate::state::AppData, exclude_scrollback: bool) -> crate::state::AppData {
     let mut filtered = data.clone();
@@ -1389,6 +1385,24 @@ pub fn preview_import(path: String) -> Result<serde_json::Value, String> {
     }))
 }
 
+/// Reorder workspaces to match a reference order. IDs not in the reference are appended at the end.
+fn reorder_workspaces_by(workspaces: &mut Vec<Workspace>, order: &[String]) {
+    workspaces.sort_by(|a, b| {
+        let pos_a = order.iter().position(|id| id == &a.id).unwrap_or(usize::MAX);
+        let pos_b = order.iter().position(|id| id == &b.id).unwrap_or(usize::MAX);
+        pos_a.cmp(&pos_b)
+    });
+}
+
+/// Reorder tabs to match a reference order. IDs not in the reference are appended at the end.
+fn reorder_tabs_by(tabs: &mut Vec<Tab>, order: &[String]) {
+    tabs.sort_by(|a, b| {
+        let pos_a = order.iter().position(|id| id == &a.id).unwrap_or(usize::MAX);
+        let pos_b = order.iter().position(|id| id == &b.id).unwrap_or(usize::MAX);
+        pos_a.cmp(&pos_b)
+    });
+}
+
 #[derive(serde::Deserialize)]
 pub struct ImportConfig {
     pub mode: String,                       // "overwrite" or "merge"
@@ -1421,28 +1435,80 @@ pub fn import_state_selective(
         }
     }
 
+    // Collect the backup's workspace ID order for reordering after import
+    let backup_order: Vec<String> = imported.windows.iter()
+        .flat_map(|w| w.workspaces.iter().map(|ws| ws.id.clone()))
+        .collect();
+
+    let is_merge = config.mode == "merge";
+
     match config.mode.as_str() {
         "merge" => {
             let mut app_data = state.app_data.write();
-            // Add selected workspaces into the first (main) window
             if let Some(target_win) = app_data.windows.first_mut() {
                 for src_win in &imported.windows {
-                    for ws in &src_win.workspaces {
-                        // Avoid duplicate IDs — generate new ones if collision
-                        let mut ws_clone = ws.clone();
-                        if target_win.workspaces.iter().any(|w| w.id == ws_clone.id) {
-                            ws_clone.id = uuid::Uuid::new_v4().to_string();
-                            // Also regen pane IDs to avoid collisions
-                            for pane in &mut ws_clone.panes {
-                                pane.id = uuid::Uuid::new_v4().to_string();
+                    for src_ws in &src_win.workspaces {
+                        if let Some(existing_ws) = target_win.workspaces.iter_mut().find(|w| w.id == src_ws.id) {
+                            // Deep merge: merge tabs and notes into existing workspace
+                            existing_ws.import_highlight = true;
+                            for src_pane in &src_ws.panes {
+                                if let Some(existing_pane) = existing_ws.panes.iter_mut().find(|p| p.id == src_pane.id) {
+                                    // Merge tabs within matching pane
+                                    let tab_order: Vec<String> = src_pane.tabs.iter().map(|t| t.id.clone()).collect();
+                                    for src_tab in &src_pane.tabs {
+                                        if let Some(existing_tab) = existing_pane.tabs.iter_mut().find(|t| t.id == src_tab.id) {
+                                            // Existing tab: only restore notes if currently empty
+                                            if existing_tab.notes.as_ref().map_or(true, |n| n.is_empty()) {
+                                                if src_tab.notes.as_ref().map_or(false, |n| !n.is_empty()) {
+                                                    existing_tab.notes = src_tab.notes.clone();
+                                                    existing_tab.notes_mode = src_tab.notes_mode.clone();
+                                                    existing_tab.import_highlight = true;
+                                                }
+                                            }
+                                        } else {
+                                            // Missing tab: add it
+                                            let mut new_tab = src_tab.clone();
+                                            new_tab.import_highlight = true;
+                                            existing_pane.tabs.push(new_tab);
+                                        }
+                                    }
+                                    reorder_tabs_by(&mut existing_pane.tabs, &tab_order);
+                                } else {
+                                    // Missing pane: add it entirely — mark all its tabs
+                                    let mut new_pane = src_pane.clone();
+                                    for t in &mut new_pane.tabs {
+                                        t.import_highlight = true;
+                                    }
+                                    existing_ws.panes.push(new_pane);
+                                }
                             }
-                            if let Some(ref mut root) = ws_clone.split_root {
-                                regenerate_split_ids(root);
+                            // Merge workspace notes: add missing ones by ID
+                            for src_note in &src_ws.workspace_notes {
+                                if !existing_ws.workspace_notes.iter().any(|n| n.id == src_note.id) {
+                                    existing_ws.workspace_notes.push(src_note.clone());
+                                }
                             }
+                            // Merge archived tabs: add missing ones by ID
+                            for src_tab in &src_ws.archived_tabs {
+                                if !existing_ws.archived_tabs.iter().any(|t| t.id == src_tab.id) {
+                                    existing_ws.archived_tabs.push(src_tab.clone());
+                                }
+                            }
+                        } else {
+                            // Workspace doesn't exist locally — add it with highlight
+                            let mut new_ws = src_ws.clone();
+                            new_ws.import_highlight = true;
+                            for pane in &mut new_ws.panes {
+                                for t in &mut pane.tabs {
+                                    t.import_highlight = true;
+                                }
+                            }
+                            target_win.workspaces.push(new_ws);
                         }
-                        target_win.workspaces.push(ws_clone);
                     }
                 }
+                // Restore backup's workspace order, local-only workspaces appended at end
+                reorder_workspaces_by(&mut target_win.workspaces, &backup_order);
             }
             if config.import_preferences {
                 app_data.preferences = imported.preferences;
@@ -1452,21 +1518,29 @@ pub fn import_state_selective(
             save_state(&data_clone)?;
         }
         _ => {
-            // "overwrite" — replace everything, keeping only selected workspaces
-            if !config.import_preferences {
-                // Preserve current preferences
-                let current_prefs = state.app_data.read().preferences.clone();
-                imported.preferences = current_prefs;
-            }
+            // "overwrite" — replace matching workspaces, keep unselected existing ones
             let mut app_data = state.app_data.write();
-            *app_data = imported;
+            if let Some(target_win) = app_data.windows.first_mut() {
+                for src_win in &imported.windows {
+                    for ws in &src_win.workspaces {
+                        // Remove existing workspace with same ID if present
+                        target_win.workspaces.retain(|w| w.id != ws.id);
+                        target_win.workspaces.push(ws.clone());
+                    }
+                }
+                // Restore backup's workspace order, local-only workspaces appended at end
+                reorder_workspaces_by(&mut target_win.workspaces, &backup_order);
+            }
+            if config.import_preferences {
+                app_data.preferences = imported.preferences;
+            }
             let data_clone = app_data.clone();
             drop(app_data);
             save_state(&data_clone)?;
         }
     }
 
-    log::info!("State imported from {} (mode: {})", path, config.mode);
+    log::info!("State imported from {} (mode: {}, merge: {})", path, config.mode, is_merge);
     let _ = app.emit("state-imported", ());
     Ok(())
 }

@@ -195,6 +195,9 @@ pub struct Tab {
     /// True when the user has explicitly renamed this tab (disables OSC title).
     #[serde(default)]
     pub custom_name: bool,
+    /// Transient flag set after merge import — cleared on tab activation.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub import_highlight: bool,
     /// Persisted restore context: local cwd from last session.
     #[serde(default)]
     pub restore_cwd: Option<String>,
@@ -287,6 +290,9 @@ pub struct Workspace {
     pub workspace_notes: Vec<WorkspaceNote>,
     #[serde(default)]
     pub archived_tabs: Vec<Tab>,
+    /// Transient flag set after merge import — cleared on workspace activation.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub import_highlight: bool,
     // Old field kept for migration deserialization only
     #[serde(default, alias = "window_sizes", skip_serializing)]
     #[allow(dead_code)]
@@ -756,6 +762,7 @@ impl Tab {
             editor_file: None,
             last_cwd: None,
             diff_context: None,
+            import_highlight: false,
         }
     }
 
@@ -786,6 +793,7 @@ impl Tab {
             editor_file: Some(file_info),
             last_cwd: None,
             diff_context: None,
+            import_highlight: false,
         }
     }
 
@@ -816,6 +824,7 @@ impl Tab {
             editor_file: None,
             last_cwd: None,
             diff_context: Some(diff_context),
+            import_highlight: false,
         }
     }
 }
@@ -845,6 +854,7 @@ impl Workspace {
             split_root: Some(SplitNode::Leaf { pane_id }),
             workspace_notes: Vec::new(),
             archived_tabs: Vec::new(),
+            import_highlight: false,
             pane_sizes: None,
         }
     }

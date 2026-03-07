@@ -334,6 +334,7 @@ pub(crate) fn clone_workspace_with_id_mapping(
                 editor_file: tab.editor_file.clone(),
                 last_cwd: tab.last_cwd.clone(),
                 diff_context: tab.diff_context.clone(),
+                import_highlight: false,
             }
         }).collect();
 
@@ -363,6 +364,7 @@ pub(crate) fn clone_workspace_with_id_mapping(
         split_root: new_split_root,
         workspace_notes: ws.workspace_notes.clone(),
         archived_tabs: Vec::new(),
+        import_highlight: false,
         pane_sizes: None,
     };
 
