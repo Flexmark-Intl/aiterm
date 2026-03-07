@@ -308,6 +308,7 @@ pub fn run() {
             commands::workspace::rename_pane,
             commands::workspace::create_tab,
             commands::workspace::delete_tab,
+            commands::workspace::move_tab_to_workspace,
             commands::workspace::rename_tab,
             commands::workspace::set_active_workspace,
             commands::workspace::set_active_pane,

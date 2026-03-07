@@ -1108,33 +1108,55 @@ function createWorkspacesStore() {
      * Move a tab to another workspace (delete source, create in target).
      */
     async moveTabToWorkspace(sourceWsId: string, sourcePaneId: string, sourceTabId: string, targetWsId: string) {
-      // Copy first, then delete source
-      await this.copyTabToWorkspace(sourceWsId, sourcePaneId, sourceTabId, targetWsId);
-
-      // Delete source tab (or pane if last tab)
       const sourceWs = workspaces.find(w => w.id === sourceWsId);
       const sourcePane = sourceWs?.panes.find(p => p.id === sourcePaneId);
-      if (!sourcePane) return;
+      if (!sourceWs || !sourcePane) return;
 
-      const sourceTab = sourcePane.tabs.find(t => t.id === sourceTabId);
-      if (!sourceTab) return; // already gone
-
-      if (sourcePane.tabs.length <= 1) {
-        // Last tab — delete the pane (if not last pane)
-        if (sourceWs && sourceWs.panes.length > 1) {
-          await commands.deletePane(sourceWsId, sourcePaneId);
-        } else {
-          // Last pane in workspace — just delete the tab and create a fresh one
-          await commands.deleteTab(sourceWsId, sourcePaneId, sourceTabId);
-          await commands.createTab(sourceWsId, sourcePaneId, 'Terminal 1');
-        }
-      } else {
-        await commands.deleteTab(sourceWsId, sourcePaneId, sourceTabId);
+      // Mark the PTY as preserved so the old TerminalPane's onDestroy
+      // doesn't kill it when Svelte removes it from the source workspace's keyed each block
+      const termInstance = terminalsStore.get(sourceTabId);
+      if (termInstance) {
+        terminalsStore.preservePty(termInstance.ptyId);
       }
 
-      // Reload all workspaces to reflect deletions
+      // Move the tab in backend state (preserves PTY, scrollback, everything)
+      await commands.moveTabToWorkspaceCmd(sourceWsId, sourcePaneId, sourceTabId, targetWsId);
+
+      // Refresh frontend state from backend
       const data = await commands.getWindowData();
-      workspaces = data.workspaces;
+
+      // Ensure source pane's active_tab_id points to an existing tab
+      // (backend handles this, but guard against stale binary during dev)
+      const updatedSourceWs = data.workspaces.find(w => w.id === sourceWsId);
+      const updatedSourcePane = updatedSourceWs?.panes.find(p => p.id === sourcePaneId);
+      if (updatedSourcePane && updatedSourcePane.active_tab_id && !updatedSourcePane.tabs.some(t => t.id === updatedSourcePane.active_tab_id)) {
+        const fallback = updatedSourcePane.tabs[updatedSourcePane.tabs.length - 1]?.id ?? null;
+        updatedSourcePane.active_tab_id = fallback;
+        if (fallback) {
+          await commands.setActiveTab(sourceWsId, sourcePaneId, fallback);
+        }
+      }
+
+      // If the source pane is now empty, handle cleanup
+      if (updatedSourcePane && updatedSourcePane.tabs.length === 0) {
+        if (updatedSourceWs!.panes.length > 1) {
+          await commands.deletePane(sourceWsId, sourcePaneId);
+        } else {
+          await commands.createTab(sourceWsId, sourcePaneId, 'Terminal 1');
+        }
+        // Re-fetch after cleanup
+        const data2 = await commands.getWindowData();
+        workspaces = data2.workspaces;
+      } else {
+        workspaces = data.workspaces;
+      }
+
+      // Update the terminal store's workspace/pane references for the moved tab
+      const finalTargetWs = workspaces.find(w => w.id === targetWsId);
+      const finalTargetPane = finalTargetWs?.panes.find(p => p.tabs.some(t => t.id === sourceTabId));
+      if (finalTargetPane) {
+        terminalsStore.updateTabLocation(sourceTabId, targetWsId, finalTargetPane.id);
+      }
     },
 
     async reorderWorkspaces(workspaceIds: string[]) {

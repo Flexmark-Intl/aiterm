@@ -210,6 +210,18 @@ When the split tree changes (leaf → split node), Svelte destroys and recreates
 
 **Do not** move TerminalPane rendering into SplitPane — this breaks terminal persistence on split.
 
+### Tab Move Between Workspaces (PTY Preservation)
+
+Dragging a terminal tab to another workspace preserves the running PTY instead of killing and respawning:
+
+- **`terminalsStore.preservePty(ptyId)`** — called before the move, prevents `onDestroy` from killing the PTY
+- **`terminalsStore.consumePreserve(ptyId)`** — checked in `onDestroy`, skips `killTerminal` if set
+- **Backend `move_tab_to_workspace`** — atomically moves the tab (with `pty_id`) between workspaces
+- **`existingPtyId` prop** — `+page.svelte` passes `tab.pty_id` only when `terminalsStore.get(tab.id)` is truthy (avoids reattach on app restart with stale PTY IDs)
+- **New TerminalPane reattach** — when `existingPtyId` is set, skips `spawnTerminal`, SSH replay, and auto-resume; sets up fresh PTY output listener and registers with the store
+
+**Known issue**: TUI apps (Claude Code/Ink) may render at the wrong size after a tab move. The new xterm instance starts at default 80×24 and a resize is sent to the PTY, but the SIGWINCH doesn't always trigger a full TUI redraw. A manual window resize or toggling the notes panel forces a refit and fixes it. Root cause is unclear — the `setTimeout` resize in the reattach path of `onMount` fires but the TUI doesn't respond. Needs investigation with a full `tauri:dev` restart (not HMR) to rule out stale closures.
+
 **EditorPane and DiffPane use the same portal pattern** — `attachToSlot()` portals into `data-terminal-slot={tabId}`, listens for `terminal-slot-ready`.
 
 ## CodeMirror Editor Tabs

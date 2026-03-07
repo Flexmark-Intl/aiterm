@@ -174,44 +174,49 @@
         </div>
 
         <div class="workspace-list">
-          {#each allWorkspaces as ws (ws.id)}
-            <div class="workspace-item" class:deselected={!selectedWorkspaces.has(ws.id)}>
-              <!-- svelte-ignore a11y_click_events_have_key_events -->
-              <div class="workspace-row" role="button" tabindex="0" onclick={(e) => { if ((e.target as HTMLElement).closest('.expand-btn')) return; toggleWorkspace(ws.id); }}>
-                <input
-                  type="checkbox"
-                  checked={selectedWorkspaces.has(ws.id)}
-                  onclick={(e) => e.stopPropagation()}
-                  onchange={() => toggleWorkspace(ws.id)}
-                />
-                <button class="expand-btn" onclick={(e) => { e.stopPropagation(); toggleExpand(ws.id); }} class:expanded={expandedWorkspaces.has(ws.id)}>
-                  {expandedWorkspaces.has(ws.id) ? '\u25BE' : '\u25B8'}
-                </button>
-                <span class="ws-name">{ws.name}</span>
-                <span class="ws-meta">
-                  {ws.tab_count} tab{ws.tab_count === 1 ? '' : 's'}
-                  {#if ws.note_count > 0}, {ws.note_count} note{ws.note_count === 1 ? '' : 's'}{/if}
-                  {#if ws.archived_count > 0}, {ws.archived_count} archived{/if}
-                </span>
-              </div>
-              {#if expandedWorkspaces.has(ws.id)}
-                <div class="tab-list">
-                  {#each ws.tabs as tab (tab.id)}
-                    <div class="tab-item">
-                      <span class="tab-type">{tabTypeIcon(tab.tab_type)}</span>
-                      <span class="tab-name">{tab.name}</span>
-                      {#if tab.editor_file_path}
-                        <span class="tab-detail">{tab.editor_file_path}</span>
-                      {/if}
-                      <span class="tab-badges">
-                        {#if tab.has_auto_resume}<span class="badge">resume</span>{/if}
-                        {#if tab.has_notes}<span class="badge">notes</span>{/if}
-                      </span>
-                    </div>
-                  {/each}
+          {#each preview.windows as win, winIdx}
+            {#if preview.windows.length > 1}
+              <div class="window-header">Window: {win.label || `Window ${winIdx + 1}`}</div>
+            {/if}
+            {#each win.workspaces as ws (ws.id)}
+              <div class="workspace-item" class:deselected={!selectedWorkspaces.has(ws.id)}>
+                <!-- svelte-ignore a11y_click_events_have_key_events -->
+                <div class="workspace-row" role="button" tabindex="0" onclick={(e) => { if ((e.target as HTMLElement).closest('.expand-btn')) return; toggleWorkspace(ws.id); }}>
+                  <input
+                    type="checkbox"
+                    checked={selectedWorkspaces.has(ws.id)}
+                    onclick={(e) => e.stopPropagation()}
+                    onchange={() => toggleWorkspace(ws.id)}
+                  />
+                  <button class="expand-btn" onclick={(e) => { e.stopPropagation(); toggleExpand(ws.id); }} class:expanded={expandedWorkspaces.has(ws.id)}>
+                    {expandedWorkspaces.has(ws.id) ? '\u25BE' : '\u25B8'}
+                  </button>
+                  <span class="ws-name">{ws.name}</span>
+                  <span class="ws-meta">
+                    {ws.tab_count} tab{ws.tab_count === 1 ? '' : 's'}
+                    {#if ws.note_count > 0}, {ws.note_count} note{ws.note_count === 1 ? '' : 's'}{/if}
+                    {#if ws.archived_count > 0}, {ws.archived_count} archived{/if}
+                  </span>
                 </div>
-              {/if}
-            </div>
+                {#if expandedWorkspaces.has(ws.id)}
+                  <div class="tab-list">
+                    {#each ws.tabs as tab (tab.id)}
+                      <div class="tab-item">
+                        <span class="tab-type">{tabTypeIcon(tab.tab_type)}</span>
+                        <span class="tab-name">{tab.name}</span>
+                        {#if tab.editor_file_path}
+                          <span class="tab-detail">{tab.editor_file_path}</span>
+                        {/if}
+                        <span class="tab-badges">
+                          {#if tab.has_auto_resume}<span class="badge">resume</span>{/if}
+                          {#if tab.has_notes}<span class="badge">notes</span>{/if}
+                        </span>
+                      </div>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
+            {/each}
           {/each}
         </div>
       </div>
@@ -359,8 +364,19 @@
     display: flex;
     flex-direction: column;
     gap: 2px;
-    max-height: 300px;
-    overflow-y: auto;
+  }
+
+  .window-header {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--fg-dim);
+    padding: 8px 4px 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .window-header:first-child {
+    padding-top: 0;
   }
 
   .workspace-item {

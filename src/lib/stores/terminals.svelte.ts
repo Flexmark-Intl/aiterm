@@ -51,6 +51,8 @@ function createTerminalsStore() {
   let webglTabs = $state(new Set<string>());
   let _shuttingDown = false;
   const splitContexts = new Map<string, SplitContext>();
+  // PTY IDs that should NOT be killed on component destroy (e.g. tab moving between workspaces)
+  const preservedPtyIds = new Set<string>();
   // Listeners notified when any terminal's OSC state changes
   const oscListeners = new Set<(tabId: string, osc: OscState) => void>();
 
@@ -65,6 +67,14 @@ function createTerminalsStore() {
     isWebgl(tabId: string) { return webglTabs.has(tabId); },
     webglLoaded(tabId: string) { webglTabs = new Set(webglTabs).add(tabId); },
     webglUnloaded(tabId: string) { const s = new Set(webglTabs); s.delete(tabId); webglTabs = s; },
+
+    preservePty(ptyId: string) {
+      preservedPtyIds.add(ptyId);
+    },
+
+    consumePreserve(ptyId: string): boolean {
+      return preservedPtyIds.delete(ptyId);
+    },
 
     setSplitContext(tabId: string, ctx: SplitContext) {
       splitContexts.set(tabId, ctx);
@@ -96,6 +106,14 @@ function createTerminalsStore() {
     unregister(tabId: string) {
       instances = new Map(instances);
       instances.delete(tabId);
+    },
+
+    updateTabLocation(tabId: string, workspaceId: string, paneId: string) {
+      const instance = instances.get(tabId);
+      if (!instance) return;
+      instance.workspaceId = workspaceId;
+      instance.paneId = paneId;
+      instances = new Map(instances);
     },
 
     get(tabId: string): TerminalInstance | undefined {

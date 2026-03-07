@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { workspacesStore } from '$lib/stores/workspaces.svelte';
+  import { terminalsStore } from '$lib/stores/terminals.svelte';
   import WorkspaceSidebar from '$lib/components/workspace/WorkspaceSidebar.svelte';
   import SplitContainer from '$lib/components/pane/SplitContainer.svelte';
   import TerminalPane from '$lib/components/terminal/TerminalPane.svelte';
@@ -121,6 +122,7 @@
                     workspaceId={ws.id}
                     paneId={pane.id}
                     tabId={tab.id}
+                    existingPtyId={terminalsStore.get(tab.id) ? tab.pty_id : null}
                     visible={tab.id === pane.active_tab_id && ws.id === workspacesStore.activeWorkspaceId}
                     initialScrollback={tab.scrollback}
                     restoreCwd={tab.restore_cwd}

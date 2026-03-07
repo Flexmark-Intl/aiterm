@@ -150,6 +150,10 @@ export async function deleteTab(workspaceId: string, paneId: string, tabId: stri
   return invoke('delete_tab', { workspaceId, paneId, tabId });
 }
 
+export async function moveTabToWorkspaceCmd(sourceWorkspaceId: string, sourcePaneId: string, tabId: string, targetWorkspaceId: string): Promise<void> {
+  return invoke('move_tab_to_workspace', { sourceWorkspaceId, sourcePaneId, tabId, targetWorkspaceId });
+}
+
 export async function renameTab(workspaceId: string, paneId: string, tabId: string, name: string, customName?: boolean): Promise<void> {
   return invoke('rename_tab', { workspaceId, paneId, tabId, name, customName: customName ?? null });
 }

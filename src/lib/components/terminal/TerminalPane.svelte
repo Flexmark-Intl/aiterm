@@ -34,6 +34,7 @@
     workspaceId: string;
     paneId: string;
     tabId: string;
+    existingPtyId?: string | null;
     visible: boolean;
     initialScrollback?: string | null;
     restoreCwd?: string | null;
@@ -49,7 +50,7 @@
     triggerVariables?: Record<string, string>;
   }
 
-  let { workspaceId, paneId, tabId, visible, initialScrollback, restoreCwd, restoreSshCommand, restoreRemoteCwd, autoResumeCwd, autoResumeSshCommand, autoResumeRemoteCwd, autoResumeCommand, autoResumeRememberedCommand, autoResumePinned, autoResumeEnabled, triggerVariables }: Props = $props();
+  let { workspaceId, paneId, tabId, existingPtyId, visible, initialScrollback, restoreCwd, restoreSshCommand, restoreRemoteCwd, autoResumeCwd, autoResumeSshCommand, autoResumeRemoteCwd, autoResumeCommand, autoResumeRememberedCommand, autoResumePinned, autoResumeEnabled, triggerVariables }: Props = $props();
 
   let containerRef: HTMLDivElement;
   let terminal: Terminal;
@@ -157,7 +158,10 @@
   }
 
   onMount(async () => {
-    ptyId = crypto.randomUUID();
+    // If the tab already has a running PTY (e.g. moved between workspaces),
+    // reattach to it instead of spawning a new one.
+    const reattaching = !!existingPtyId;
+    ptyId = existingPtyId || crypto.randomUUID();
 
     terminal = new Terminal({
       theme: getTheme(preferencesStore.theme, preferencesStore.customThemes).terminal,
@@ -429,42 +433,57 @@
       : null;
     const ctx = splitCtx ?? autoResumeCtx ?? restoreCtx;
 
-    // Spawn PTY with tab-specific history, optionally inheriting cwd
-    try {
-      await spawnTerminal(ptyId, tabId, cols, rows, ctx?.cwd);
-    } catch (e) {
-      logError(`Failed to spawn PTY: ${e}`);
+    // Spawn PTY (or skip if reattaching to an existing one)
+    if (!reattaching) {
+      try {
+        await spawnTerminal(ptyId, tabId, cols, rows, ctx?.cwd);
+      } catch (e) {
+        logError(`Failed to spawn PTY: ${e}`);
+      }
+      await workspacesStore.setTabPtyId(workspaceId, paneId, tabId, ptyId);
+    } else {
+      // Reattaching: force a PTY resize after container is laid out so TUI apps
+      // redraw at the correct terminal dimensions.
+      // TODO: TUI apps (Claude Code/Ink) may still render at wrong size after
+      // a tab move — the resize signal doesn't always trigger a full redraw.
+      setTimeout(() => {
+        if (destroyed) return;
+        fitWithPadding();
+        resizeTerminal(ptyId, terminal.cols, terminal.rows).catch(e => logError(String(e)));
+      }, 300);
     }
-    await workspacesStore.setTabPtyId(workspaceId, paneId, tabId, ptyId);
 
     // If the source pane was running SSH (or last session had SSH), replay the command.
     // The auto-resume command (if any) is sent immediately after — the TTY buffers it
     // until SSH connects and the remote shell reads from forwarded stdin.
-    if (ctx?.sshCommand) {
-      // Small delay to let the local shell prompt initialize before sending
-      setTimeout(async () => {
-        try {
-          const cmd = buildSshCommand(ctx.sshCommand, ctx.remoteCwd);
-          let payload = cmd + '\n';
-          if (autoResumeCommand) {
-            payload += interpolateVariables(tabId, autoResumeCommand, true) + '\n';
+    // Skip all of this when reattaching to an existing PTY (e.g. tab moved between workspaces).
+    if (!reattaching) {
+      if (ctx?.sshCommand) {
+        // Small delay to let the local shell prompt initialize before sending
+        setTimeout(async () => {
+          try {
+            const cmd = buildSshCommand(ctx.sshCommand, ctx.remoteCwd);
+            let payload = cmd + '\n';
+            if (autoResumeCommand) {
+              payload += interpolateVariables(tabId, autoResumeCommand, true) + '\n';
+            }
+            const bytes = Array.from(new TextEncoder().encode(payload));
+            await writeTerminal(ptyId, bytes);
+          } catch (e) {
+            logError(`Failed to replay SSH command: ${e}`);
           }
-          const bytes = Array.from(new TextEncoder().encode(payload));
-          await writeTerminal(ptyId, bytes);
-        } catch (e) {
-          logError(`Failed to replay SSH command: ${e}`);
-        }
-      }, 500);
-    } else if ((autoResumeEnabled ?? true) && autoResumeCommand && (!splitCtx || splitCtx.fireAutoResume)) {
-      // Local auto-resume: send command after shell starts (also fires on reload)
-      setTimeout(async () => {
-        try {
-          const bytes = Array.from(new TextEncoder().encode(interpolateVariables(tabId, autoResumeCommand, true) + '\n'));
-          await writeTerminal(ptyId, bytes);
-        } catch (e) {
-          logError(`Failed to replay auto-resume command: ${e}`);
-        }
-      }, 500);
+        }, 500);
+      } else if ((autoResumeEnabled ?? true) && autoResumeCommand && (!splitCtx || splitCtx.fireAutoResume)) {
+        // Local auto-resume: send command after shell starts (also fires on reload)
+        setTimeout(async () => {
+          try {
+            const bytes = Array.from(new TextEncoder().encode(interpolateVariables(tabId, autoResumeCommand, true) + '\n'));
+            await writeTerminal(ptyId, bytes);
+          } catch (e) {
+            logError(`Failed to replay auto-resume command: ${e}`);
+          }
+        }, 500);
+      }
     }
 
     // Load persisted trigger variables into runtime map
@@ -598,12 +617,18 @@
     clearTimeout(resizePtyTimeout);
     if (resizeObserver) resizeObserver.disconnect();
     if (filePathLinkDisposable) filePathLinkDisposable.dispose();
-    if (terminal) terminal.dispose();
-    if (ptyId) {
-      killTerminal(ptyId).catch(e => logError(String(e)));
+    if (ptyId && terminalsStore.consumePreserve(ptyId)) {
+      // PTY is being preserved (e.g. tab moving between workspaces).
+      // Don't kill the PTY — the new TerminalPane will reattach.
+      if (terminal) terminal.dispose();
+    } else {
+      if (terminal) terminal.dispose();
+      if (ptyId) {
+        killTerminal(ptyId).catch(e => logError(String(e)));
+      }
+      terminalsStore.unregister(tabId);
+      cleanupTab(tabId);
     }
-    terminalsStore.unregister(tabId);
-    cleanupTab(tabId);
   });
 
   // Suppress false activity when terminal transitions to hidden —

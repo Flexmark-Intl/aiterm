@@ -279,6 +279,52 @@ pub fn delete_tab(
 }
 
 #[tauri::command]
+pub fn move_tab_to_workspace(
+    window: tauri::Window,
+    state: State<'_, Arc<AppState>>,
+    source_workspace_id: String,
+    source_pane_id: String,
+    tab_id: String,
+    target_workspace_id: String,
+) -> Result<(), String> {
+    let label = window.label().to_string();
+    let data_clone = {
+        let mut app_data = state.app_data.write();
+        let win = app_data.window_mut(&label).ok_or("Window not found")?;
+
+        // Extract the tab from source pane
+        let source_ws = win.workspaces.iter_mut().find(|w| w.id == source_workspace_id)
+            .ok_or("Source workspace not found")?;
+        let source_pane = source_ws.panes.iter_mut().find(|p| p.id == source_pane_id)
+            .ok_or("Source pane not found")?;
+        let tab_pos = source_pane.tabs.iter().position(|t| t.id == tab_id)
+            .ok_or("Tab not found")?;
+        let tab = source_pane.tabs.remove(tab_pos);
+
+        // Fix source pane's active tab if we removed the active one
+        if source_pane.active_tab_id.as_ref() == Some(&tab_id) {
+            source_pane.active_tab_id = if source_pane.tabs.is_empty() {
+                None
+            } else {
+                let new_index = if tab_pos > 0 { tab_pos - 1 } else { 0 };
+                Some(source_pane.tabs[new_index].id.clone())
+            };
+        }
+
+        // Insert into target workspace's first pane and make it the active tab
+        let target_ws = win.workspaces.iter_mut().find(|w| w.id == target_workspace_id)
+            .ok_or("Target workspace not found")?;
+        let target_pane = target_ws.panes.first_mut()
+            .ok_or("Target workspace has no panes")?;
+        target_pane.active_tab_id = Some(tab.id.clone());
+        target_pane.tabs.push(tab);
+
+        app_data.clone()
+    };
+    save_state(&data_clone)
+}
+
+#[tauri::command]
 pub fn rename_tab(
     window: tauri::Window,
     state: State<'_, Arc<AppState>>,
