@@ -6,7 +6,7 @@ use std::thread;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
-use crate::state::{AppState, PtyCommand, PtyHandle};
+use crate::state::{AppState, PtyCommand, PtyHandle, PtyStats};
 use crate::state::persistence::app_data_slug;
 
 pub fn spawn_pty(
@@ -19,6 +19,22 @@ pub fn spawn_pty(
     cwd: Option<String>,
 ) -> Result<(), String> {
     log::info!("spawn_pty: pty_id={}, tab_id={}, cols={}, rows={}", pty_id, tab_id, cols, rows);
+
+    // Auto-kill any previous PTY for this tab (handles HMR remount, frontend crash, etc.)
+    {
+        let mut tab_map = state.tab_pty_map.write();
+        if let Some(old_pty_id) = tab_map.remove(tab_id) {
+            if old_pty_id != pty_id {
+                log::info!("spawn_pty: replacing PTY old={}, new={}, tab_id={}", old_pty_id, pty_id, tab_id);
+                if let Some(old_handle) = state.pty_registry.write().remove(&old_pty_id) {
+                    let _ = old_handle.sender.send(PtyCommand::Kill);
+                }
+                state.pty_stats.write().remove(&old_pty_id);
+            }
+        }
+        tab_map.insert(tab_id.to_string(), pty_id.to_string());
+    }
+
     let pty_system = native_pty_system();
 
     let pair = pty_system
@@ -223,10 +239,21 @@ pub fn spawn_pty(
         registry.insert(pty_id.to_string(), PtyHandle { sender: tx, child_pid });
     }
 
+    // Initialize per-PTY stats
+    {
+        use std::sync::atomic::AtomicU64;
+        let mut stats = state.pty_stats.write();
+        stats.insert(pty_id.to_string(), PtyStats {
+            bytes_written: AtomicU64::new(0),
+            bytes_read: AtomicU64::new(0),
+        });
+    }
+
     // Spawn writer thread (with PTY registry cleanup on exit)
     let master = pair.master;
     let state_clone = Arc::clone(state);
     let pty_id_owned = pty_id.to_string();
+    let tab_id_owned = tab_id.to_string();
     thread::spawn(move || {
         loop {
             match rx.recv_timeout(Duration::from_millis(100)) {
@@ -267,13 +294,22 @@ pub fn spawn_pty(
         // master handle isn't closed after the child exits.
         drop(writer);
         drop(master);
-        // Cleanup: remove PTY handle from registry on exit
+        // Cleanup: remove PTY handle and tab mapping on exit
         state_clone.pty_registry.write().remove(&pty_id_owned);
+        // Only remove tab mapping if it still points to this PTY (a new spawn may have already replaced it)
+        {
+            let mut tab_map = state_clone.tab_pty_map.write();
+            if tab_map.get(&tab_id_owned).map(|id| id == &pty_id_owned).unwrap_or(false) {
+                tab_map.remove(&tab_id_owned);
+            }
+        }
     });
 
     // Spawn reader thread
     let pty_id_clone = pty_id.to_string();
+    let tab_id_reader = tab_id.to_string();
     let app_handle_clone = app_handle.clone();
+    let state_reader = Arc::clone(state);
 
     thread::spawn(move || {
         let mut buf = [0u8; 4096];
@@ -283,6 +319,14 @@ pub fn spawn_pty(
                     break;
                 }
                 Ok(n) => {
+                    // Track bytes read for diagnostics
+                    {
+                        use std::sync::atomic::Ordering;
+                        let stats = state_reader.pty_stats.read();
+                        if let Some(s) = stats.get(&pty_id_clone) {
+                            s.bytes_read.fetch_add(n as u64, Ordering::Relaxed);
+                        }
+                    }
                     let data = buf[..n].to_vec();
                     let event_name = format!("pty-output-{}", pty_id_clone);
                     let _ = app_handle_clone.emit(&event_name, data);
@@ -292,15 +336,33 @@ pub fn spawn_pty(
                 }
             }
         }
-        // Emit close event
-        let event_name = format!("pty-close-{}", pty_id_clone);
-        let _ = app_handle_clone.emit(&event_name, ());
+        // Only emit close event if this PTY wasn't replaced by a new spawn for the same tab.
+        // During HMR, a new spawn kills the old PTY — emitting pty-close would cause the
+        // frontend to delete the tab even though the new PTY is taking over.
+        let was_replaced = {
+            let tab_map = state_reader.tab_pty_map.read();
+            tab_map.get(&tab_id_reader).map(|id| id != &pty_id_clone).unwrap_or(false)
+        };
+        if !was_replaced {
+            let event_name = format!("pty-close-{}", pty_id_clone);
+            let _ = app_handle_clone.emit(&event_name, ());
+        } else {
+            log::info!("spawn_pty: suppressing pty-close for replaced PTY {}, tab_id={}", pty_id_clone, tab_id_reader);
+        }
     });
 
     Ok(())
 }
 
 pub fn write_pty(state: &Arc<AppState>, pty_id: &str, data: &[u8]) -> Result<(), String> {
+    // Track bytes written for diagnostics
+    {
+        use std::sync::atomic::Ordering;
+        let stats = state.pty_stats.read();
+        if let Some(s) = stats.get(pty_id) {
+            s.bytes_written.fetch_add(data.len() as u64, Ordering::Relaxed);
+        }
+    }
     let registry = state.pty_registry.read();
     let handle = registry.get(pty_id).ok_or("PTY not found")?;
     handle
@@ -323,6 +385,12 @@ pub fn kill_pty(state: &Arc<AppState>, pty_id: &str) -> Result<(), String> {
 
     if let Some(handle) = registry.remove(pty_id) {
         let _ = handle.sender.send(PtyCommand::Kill);
+    }
+
+    // Clean up tab → pty mapping (reverse lookup)
+    {
+        let mut tab_map = state.tab_pty_map.write();
+        tab_map.retain(|_, v| v != pty_id);
     }
 
     Ok(())

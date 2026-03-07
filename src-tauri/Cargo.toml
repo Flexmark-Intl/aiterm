@@ -39,6 +39,7 @@ rand = "0.8"
 libc = "0.2"
 notify = { version = "7", default-features = false, features = ["macos_kqueue"] }
 notify-debouncer-mini = "0.5"
+sysinfo = "0.33"
 
 [features]
 mcp-bridge = ["dep:tauri-plugin-mcp-bridge"]
