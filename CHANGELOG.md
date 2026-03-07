@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.6.1
+
+- Add app diagnostics MCP tools (getDiagnostics, readLogs) with PTY stats, memory tracking, and trigger counters
+- Add import preview modal with workspace selection, overwrite/merge modes, and gz backup support
+- Improve backup import with deep merge, visual highlights for merged items, and ordering preservation
+- Add PTY diagnostics and fix PTY leak on HMR remount
+- Fix Cmd+Shift+R reloading wrong window's tab in multi-window
+- Fix notes panel input reset by untracking local state in sync effects
+
 ## v1.6.0
 
 - Add state backup/import with automatic daily backups and manual export
