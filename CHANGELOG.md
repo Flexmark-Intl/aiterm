@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.6.2
+
+- Preserve PTY when moving tabs between workspaces (drag to another workspace keeps the running session)
+- Add multi-window MCP awareness with AITERM_TAB_ID env var and per-window event routing
+- Add listWindows MCP tool and windowId parameter to listWorkspaces
+- Graceful MCP server shutdown on app exit to release TCP port
+- Improve import preview grouping for multi-window backups
+
 ## v1.6.1
 
 - Add app diagnostics MCP tools (getDiagnostics, readLogs) with PTY stats, memory tracking, and trigger counters
