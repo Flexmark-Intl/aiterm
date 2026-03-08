@@ -162,6 +162,14 @@ export async function setActiveWorkspace(workspaceId: string): Promise<void> {
   return invoke('set_active_workspace', { workspaceId });
 }
 
+export async function suspendWorkspace(workspaceId: string): Promise<void> {
+  return invoke('suspend_workspace', { workspaceId });
+}
+
+export async function resumeWorkspace(workspaceId: string): Promise<void> {
+  return invoke('resume_workspace', { workspaceId });
+}
+
 export async function setActivePane(workspaceId: string, paneId: string): Promise<void> {
   return invoke('set_active_pane', { workspaceId, paneId });
 }

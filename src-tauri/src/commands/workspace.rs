@@ -364,6 +364,28 @@ pub fn set_active_workspace(window: tauri::Window, state: State<'_, Arc<AppState
 }
 
 #[tauri::command]
+pub fn suspend_workspace(window: tauri::Window, state: State<'_, Arc<AppState>>, workspace_id: String) -> Result<(), String> {
+    let label = window.label().to_string();
+    let mut app_data = state.app_data.write();
+    let win = app_data.window_mut(&label).ok_or("Window not found")?;
+    let ws = win.workspaces.iter_mut().find(|w| w.id == workspace_id).ok_or("Workspace not found")?;
+    ws.suspended = true;
+    save_state(&app_data)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn resume_workspace(window: tauri::Window, state: State<'_, Arc<AppState>>, workspace_id: String) -> Result<(), String> {
+    let label = window.label().to_string();
+    let mut app_data = state.app_data.write();
+    let win = app_data.window_mut(&label).ok_or("Window not found")?;
+    let ws = win.workspaces.iter_mut().find(|w| w.id == workspace_id).ok_or("Workspace not found")?;
+    ws.suspended = false;
+    save_state(&app_data)?;
+    Ok(())
+}
+
+#[tauri::command]
 pub fn set_active_pane(
     window: tauri::Window,
     state: State<'_, Arc<AppState>>,
@@ -1639,14 +1661,10 @@ pub fn get_app_diagnostics(state: State<'_, Arc<AppState>>) -> serde_json::Value
     let mut total_workspaces = 0usize;
     // All terminal tab PTY IDs (for orphaned PTY detection)
     let mut all_tab_pty_ids: Vec<Option<String>> = Vec::new();
-    // PTY IDs from active workspaces only (tabs that should have live PTYs)
-    let mut active_tab_pty_ids: Vec<Option<String>> = Vec::new();
 
     for window in &app_data.windows {
-        let active_ws_id = window.active_workspace_id.as_deref();
         for ws in &window.workspaces {
             total_workspaces += 1;
-            let is_active = active_ws_id == Some(ws.id.as_str());
             for pane in &ws.panes {
                 total_panes += 1;
                 for tab in &pane.tabs {
@@ -1657,9 +1675,6 @@ pub fn get_app_diagnostics(state: State<'_, Arc<AppState>>) -> serde_json::Value
                         crate::state::workspace::TabType::Terminal => {
                             terminal_tabs += 1;
                             all_tab_pty_ids.push(tab.pty_id.clone());
-                            if is_active {
-                                active_tab_pty_ids.push(tab.pty_id.clone());
-                            }
                         }
                     }
                 }
@@ -1670,16 +1685,48 @@ pub fn get_app_diagnostics(state: State<'_, Arc<AppState>>) -> serde_json::Value
     let pty_count = state.pty_registry.read().len();
     let file_watcher_count = state.file_watchers.read().len();
 
-    // Tabs in active workspaces with pty_id set but no matching PTY in registry
-    // (truly orphaned — these should have running PTYs)
-    let orphaned_pty_refs: Vec<String> = {
+    // Classify terminal tabs by checking pty_id against the live PTY registry.
+    // - active: pty_id exists in registry (live PTY running)
+    // - suspended: pty_id set but not in registry (stale from previous session, awaiting re-init)
+    // - uninitialized: no pty_id at all (never had a PTY spawned)
+    let (mut active_terminal_tabs, mut suspended_tabs, mut uninitialized_tabs) = (0usize, 0usize, 0usize);
+    // Orphaned refs: tabs that are the active tab in their pane of the active workspace,
+    // have a pty_id, but no matching PTY — these should definitely be running.
+    let mut orphaned_pty_refs: Vec<String> = Vec::new();
+    {
         let registry = state.pty_registry.read();
-        active_tab_pty_ids.iter()
-            .filter_map(|id| id.as_ref())
-            .filter(|id| !registry.contains_key(id.as_str()))
-            .cloned()
-            .collect()
-    };
+        for window in &app_data.windows {
+            let active_ws_id = window.active_workspace_id.as_deref();
+            for ws in &window.workspaces {
+                let is_active_ws = active_ws_id == Some(ws.id.as_str());
+                for pane in &ws.panes {
+                    for tab in &pane.tabs {
+                        if tab.tab_type != crate::state::workspace::TabType::Terminal {
+                            continue;
+                        }
+                        match &tab.pty_id {
+                            Some(pty_id) if registry.contains_key(pty_id.as_str()) => {
+                                active_terminal_tabs += 1;
+                            }
+                            Some(pty_id) => {
+                                // Stale pty_id — but if this is the visible tab, it's an orphan
+                                let is_visible = is_active_ws
+                                    && pane.active_tab_id.as_deref() == Some(tab.id.as_str());
+                                if is_visible {
+                                    orphaned_pty_refs.push(pty_id.clone());
+                                } else {
+                                    suspended_tabs += 1;
+                                }
+                            }
+                            None => {
+                                uninitialized_tabs += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     // PTYs in registry with no matching tab in any workspace (leaked processes)
     let orphaned_ptys: Vec<String> = {
@@ -1692,9 +1739,6 @@ pub fn get_app_diagnostics(state: State<'_, Arc<AppState>>) -> serde_json::Value
             .cloned()
             .collect()
     };
-
-    // Tabs in inactive workspaces waiting to be initialized
-    let uninitialized_tabs = terminal_tabs.saturating_sub(pty_count + orphaned_pty_refs.len());
 
     // State file info
     let state_path = crate::state::persistence::get_state_path();
@@ -1807,6 +1851,8 @@ pub fn get_app_diagnostics(state: State<'_, Arc<AppState>>) -> serde_json::Value
             "diff": diff_tabs,
         },
         "pty_registry_count": pty_count,
+        "active_terminal_tabs": active_terminal_tabs,
+        "suspended_terminal_tabs": suspended_tabs,
         "uninitialized_terminal_tabs": uninitialized_tabs,
         "file_watcher_count": file_watcher_count,
         "orphaned_pty_refs": orphaned_pty_refs,

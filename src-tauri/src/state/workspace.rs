@@ -293,6 +293,9 @@ pub struct Workspace {
     /// Transient flag set after merge import — cleared on workspace activation.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub import_highlight: bool,
+    /// Whether this workspace is suspended (PTYs killed, resources freed).
+    #[serde(default)]
+    pub suspended: bool,
     // Old field kept for migration deserialization only
     #[serde(default, alias = "window_sizes", skip_serializing)]
     #[allow(dead_code)]
@@ -678,6 +681,9 @@ pub struct Preferences {
     /// Max age for auto-trim: "1h", "1d", "1w", "1m", "1y"
     #[serde(default = "default_backup_trim_age")]
     pub backup_trim_age: String,
+    /// Auto-suspend inactive workspaces after N minutes (0 = disabled)
+    #[serde(default)]
+    pub auto_suspend_minutes: u32,
 }
 
 impl Default for Preferences {
@@ -734,6 +740,7 @@ impl Default for Preferences {
             backup_exclude_scrollback: true,
             backup_trim_enabled: false,
             backup_trim_age: default_backup_trim_age(),
+            auto_suspend_minutes: 0,
         }
     }
 }
@@ -859,6 +866,7 @@ impl Workspace {
             workspace_notes: Vec::new(),
             archived_tabs: Vec::new(),
             import_highlight: false,
+            suspended: false,
             pane_sizes: None,
         }
     }

@@ -97,6 +97,7 @@ function createWorkspacesStore() {
     const now = Date.now();
     return workspaces.filter(w => {
       if (w.id === activeWorkspaceId) return false;
+      if (w.suspended) return false;
       const ts = lastSwitchedAt.get(w.id);
       return ts != null && (now - ts) < RECENT_WINDOW_MS;
     });
@@ -203,6 +204,15 @@ function createWorkspacesStore() {
         }
       }
 
+      // On restart, non-active workspaces have no PTYs — mark them as suspended
+      // so the UI is consistent (dimmed, click to resume).
+      for (const ws of workspaces) {
+        if (ws.id !== activeWorkspaceId && !ws.suspended) {
+          ws.suspended = true;
+          commands.suspendWorkspace(ws.id).catch(() => {});
+        }
+      }
+
       // Create default workspace if none exist
       if (workspaces.length === 0) {
         await this.createWorkspace('Default');
@@ -268,6 +278,148 @@ function createWorkspacesStore() {
         // Activate adjacent: prefer previous, fall back to next
         const adjacentIndex = Math.min(oldIndex, workspaces.length - 1);
         activeWorkspaceId = workspaces[adjacentIndex]?.id ?? null;
+      }
+    },
+
+    async suspendWorkspace(workspaceId: string) {
+      const ws = workspaces.find(w => w.id === workspaceId);
+      if (!ws || ws.suspended) return;
+
+      // 1. Save scrollback and snapshot restore context for all terminal tabs
+      for (const pane of ws.panes) {
+        for (const tab of pane.tabs) {
+          if (tab.tab_type !== 'terminal') continue;
+          const instance = terminalsStore.get(tab.id);
+          if (!instance) continue;
+
+          // Save scrollback (skip alternate screen — TUI content isn't useful)
+          try {
+            if (instance.terminal.buffer.active.type !== 'alternate') {
+              const scrollback = instance.serializeAddon.serialize();
+              await commands.setTabScrollback(ws.id, pane.id, tab.id, scrollback);
+            }
+          } catch (e) {
+            logError(`suspend: scrollback save failed for ${tab.id}: ${e}`);
+          }
+
+          // Snapshot CWD/SSH for restore
+          if (tab.pty_id) {
+            try {
+              const info = await commands.getPtyInfo(tab.pty_id);
+              await commands.setTabRestoreContext(
+                ws.id, pane.id, tab.id,
+                info.cwd ?? null,
+                info.foreground_command ?? null,
+                null, // remote_cwd — extracted on resume from prompt patterns
+              );
+            } catch {
+              // PTY may already be dead
+            }
+          }
+        }
+      }
+
+      // 2. Kill all PTYs in this workspace
+      for (const pane of ws.panes) {
+        for (const tab of pane.tabs) {
+          if (tab.tab_type !== 'terminal') continue;
+          const instance = terminalsStore.get(tab.id);
+          if (instance) {
+            try { await commands.killTerminal(instance.ptyId); } catch { /* already dead */ }
+            terminalsStore.unregister(tab.id);
+          }
+        }
+      }
+
+      // 3. Set suspended flag (persisted to backend)
+      await commands.suspendWorkspace(workspaceId);
+      workspaces = workspaces.map(w =>
+        w.id === workspaceId ? { ...w, suspended: true } : w
+      );
+
+      // 4. If this was the active workspace, switch to next non-suspended
+      if (activeWorkspaceId === workspaceId) {
+        const next = workspaces.find(w => !w.suspended && w.id !== workspaceId);
+        if (next) {
+          await this.setActiveWorkspace(next.id);
+        } else {
+          activeWorkspaceId = null;
+        }
+      }
+    },
+
+    async resumeWorkspace(workspaceId: string) {
+      const ws = workspaces.find(w => w.id === workspaceId);
+      if (!ws || !ws.suspended) return;
+
+      // Clear suspended flag
+      await commands.resumeWorkspace(workspaceId);
+      workspaces = workspaces.map(w =>
+        w.id === workspaceId ? { ...w, suspended: false } : w
+      );
+
+      // Switch to this workspace — lazy init handles PTY spawning
+      await this.setActiveWorkspace(workspaceId);
+    },
+
+    /**
+     * Tear down all terminal tabs in the active workspace except the currently
+     * active tab.  Saves scrollback, snapshots CWD/SSH, kills PTYs.
+     * Returns the tab IDs that were torn down so the caller can remove them
+     * from activatedTabIds.
+     */
+    async suspendOtherTabs(): Promise<string[]> {
+      const ws = workspaces.find(w => w.id === activeWorkspaceId);
+      if (!ws) return [];
+
+      const activeTabId = ws.panes.find(p => p.id === ws.active_pane_id)?.active_tab_id;
+      const tornDown: string[] = [];
+
+      for (const pane of ws.panes) {
+        for (const tab of pane.tabs) {
+          if (tab.tab_type !== 'terminal') continue;
+          if (tab.id === activeTabId) continue;
+
+          const instance = terminalsStore.get(tab.id);
+          if (!instance) continue;
+
+          // Save scrollback
+          try {
+            if (instance.terminal.buffer.active.type !== 'alternate') {
+              const scrollback = instance.serializeAddon.serialize();
+              await commands.setTabScrollback(ws.id, pane.id, tab.id, scrollback);
+            }
+          } catch (e) {
+            logError(`suspendOtherTabs: scrollback save failed for ${tab.id}: ${e}`);
+          }
+
+          // Snapshot CWD/SSH
+          if (tab.pty_id) {
+            try {
+              const info = await commands.getPtyInfo(tab.pty_id);
+              await commands.setTabRestoreContext(
+                ws.id, pane.id, tab.id,
+                info.cwd ?? null,
+                info.foreground_command ?? null,
+                null,
+              );
+            } catch { /* PTY may already be dead */ }
+          }
+
+          // Kill PTY
+          try { await commands.killTerminal(instance.ptyId); } catch { /* already dead */ }
+          terminalsStore.unregister(tab.id);
+          tornDown.push(tab.id);
+        }
+      }
+
+      return tornDown;
+    },
+
+    async suspendAllOtherWorkspaces() {
+      const others = workspaces.filter(w => w.id !== activeWorkspaceId && !w.suspended);
+      for (const ws of others) {
+        await this.suspendWorkspace(ws.id);
       }
     },
 

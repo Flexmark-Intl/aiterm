@@ -990,6 +990,20 @@
           action: () => { claudeSetupModal = true; },
         },
       ]),
+      { label: '', separator: true, action: () => {} },
+      {
+        label: 'Suspend Other Tabs',
+        action: async () => {
+          const tornDown = await workspacesStore.suspendOtherTabs();
+          if (tornDown.length) {
+            window.dispatchEvent(new CustomEvent('deactivate-tabs', { detail: tornDown }));
+          }
+        },
+      },
+      {
+        label: 'Suspend Other Workspaces',
+        action: () => workspacesStore.suspendAllOtherWorkspaces(),
+      },
       ...(preferencesStore.shellTitleIntegration || preferencesStore.shellIntegration ? [
         { label: '', separator: true, action: () => {} },
         {

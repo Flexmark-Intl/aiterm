@@ -59,7 +59,7 @@ pub fn tool_list_response() -> Value {
             },
             {
                 "name": "getDiagnostics",
-                "description": "Get app diagnostics: version, tab/PTY counts, orphaned PTYs, WebGL status, buffer sizes, state file size, PTY throughput, state save timing, trigger engine stats, render FPS, process memory/CPU, memory trend. Use this to investigate performance issues or health of the running aiTerm instance. Note: FPS probe takes ~1 second to measure.",
+                "description": "Get app diagnostics: version, tab/PTY counts, suspended tabs (inactive workspaces with stale pty_ids — normal, not a bug), uninitialized tabs (never had a PTY), orphaned PTYs (actual leaks), WebGL status, buffer sizes, state file size, PTY throughput, state save timing, trigger engine stats, render FPS, process memory/CPU, memory trend. Use this to investigate performance issues or health of the running aiTerm instance. Note: FPS probe takes ~1 second to measure.",
                 "inputSchema": { "type": "object", "properties": {}, "required": [] }
             },
             {

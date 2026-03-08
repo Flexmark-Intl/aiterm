@@ -429,6 +429,7 @@ function createClaudeCodeStore() {
         id: ws.id,
         name: ws.name,
         isActive: ws.id === workspacesStore.activeWorkspaceId,
+        suspended: ws.suspended ?? false,
         noteCount: ws.workspace_notes.length,
         panes: ws.panes.map(pane => ({
           id: pane.id,

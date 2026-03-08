@@ -86,6 +86,7 @@ export interface Workspace {
   workspace_notes: WorkspaceNote[];
   archived_tabs: Tab[];
   import_highlight?: boolean;
+  suspended?: boolean;
 }
 
 export type CursorStyle = 'block' | 'underline' | 'bar';
@@ -179,6 +180,7 @@ export interface Preferences {
   backup_exclude_scrollback: boolean;
   backup_trim_enabled: boolean;
   backup_trim_age: string;
+  auto_suspend_minutes: number;
 }
 
 export interface WindowData {

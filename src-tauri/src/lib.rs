@@ -311,6 +311,8 @@ pub fn run() {
             commands::workspace::move_tab_to_workspace,
             commands::workspace::rename_tab,
             commands::workspace::set_active_workspace,
+            commands::workspace::suspend_workspace,
+            commands::workspace::resume_workspace,
             commands::workspace::set_active_pane,
             commands::workspace::set_active_tab,
             commands::workspace::set_tab_pty_id,

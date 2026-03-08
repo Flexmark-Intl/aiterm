@@ -3,6 +3,7 @@
   import { SvelteSet } from 'svelte/reactivity';
   import { workspacesStore } from '$lib/stores/workspaces.svelte';
   import { terminalsStore } from '$lib/stores/terminals.svelte';
+  import { preferencesStore } from '$lib/stores/preferences.svelte';
   import WorkspaceSidebar from '$lib/components/workspace/WorkspaceSidebar.svelte';
   import SplitContainer from '$lib/components/pane/SplitContainer.svelte';
   import TerminalPane from '$lib/components/terminal/TerminalPane.svelte';
@@ -42,11 +43,52 @@
         if (pane.active_tab_id) activatedTabIds.add(pane.active_tab_id);
       }
     }
+
+    // Clean up suspended workspaces — remove from activated sets so their
+    // TerminalPane/EditorPane/DiffPane components get destroyed, freeing resources.
+    for (const wsId of activatedWorkspaceIds) {
+      const w = workspacesStore.workspaces.find(x => x.id === wsId);
+      if (w?.suspended) {
+        activatedWorkspaceIds.delete(wsId);
+        for (const pane of w.panes) {
+          for (const tab of pane.tabs) {
+            activatedTabIds.delete(tab.id);
+          }
+        }
+      }
+    }
   });
 
-  onMount(async () => {
-    await workspacesStore.load();
-    loading = false;
+  // Auto-suspend: periodically check for inactive workspaces
+  $effect(() => {
+    const minutes = preferencesStore.autoSuspendMinutes;
+    if (!minutes) return;
+
+    const interval = setInterval(() => {
+      const cutoff = Date.now() - minutes * 60 * 1000;
+      for (const ws of workspacesStore.workspaces) {
+        if (ws.suspended) continue;
+        if (ws.id === workspacesStore.activeWorkspaceId) continue;
+        const lastActive = workspacesStore.lastSwitchedAt.get(ws.id);
+        if (lastActive && lastActive < cutoff) {
+          workspacesStore.suspendWorkspace(ws.id);
+        }
+      }
+    }, 60_000); // check every minute
+
+    return () => clearInterval(interval);
+  });
+
+  onMount(() => {
+    workspacesStore.load().then(() => { loading = false; });
+
+    // Listen for tab deactivation requests (e.g. "Suspend Other Tabs")
+    function handleDeactivateTabs(e: Event) {
+      const tabIds = (e as CustomEvent<string[]>).detail;
+      for (const id of tabIds) activatedTabIds.delete(id);
+    }
+    window.addEventListener('deactivate-tabs', handleDeactivateTabs);
+    return () => window.removeEventListener('deactivate-tabs', handleDeactivateTabs);
   });
 
   function handleSidebarResize(delta: number) {

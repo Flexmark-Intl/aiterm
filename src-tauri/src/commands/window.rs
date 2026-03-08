@@ -365,6 +365,7 @@ pub(crate) fn clone_workspace_with_id_mapping(
         workspace_notes: ws.workspace_notes.clone(),
         archived_tabs: Vec::new(),
         import_highlight: false,
+        suspended: false,
         pane_sizes: None,
     };
 

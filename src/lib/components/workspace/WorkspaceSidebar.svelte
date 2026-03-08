@@ -94,6 +94,16 @@
     }
   }
 
+  async function handleSuspendWorkspace(id: string, e: MouseEvent) {
+    e.stopPropagation();
+    await workspacesStore.suspendWorkspace(id);
+  }
+
+  async function handleSuspendAllOthers(e: MouseEvent) {
+    e.stopPropagation();
+    await workspacesStore.suspendAllOtherWorkspaces();
+  }
+
   // Pointer-based drag reordering (same pattern as TerminalTabs)
   let dragWorkspaceId = $state<string | null>(null);
   let dropTargetIndex = $state<number | null>(null);
@@ -288,7 +298,12 @@
       didDrag = false;
       return;
     }
-    workspacesStore.setActiveWorkspace(workspaceId);
+    const ws = workspacesStore.workspaces.find(w => w.id === workspaceId);
+    if (ws?.suspended) {
+      workspacesStore.resumeWorkspace(workspaceId);
+    } else {
+      workspacesStore.setActiveWorkspace(workspaceId);
+    }
   }
 </script>
 
@@ -310,6 +325,7 @@
   </div>
   <div class="sidebar-header">
     <span class="title">WORKSPACES</span>
+    <IconButton tooltip="Suspend all other workspaces" size={20} style="font-size: 0.769rem" onclick={handleSuspendAllOthers}><Icon name="pause" size={10} /></IconButton>
     <IconButton tooltip="New workspace ({modSymbol}N)" size={20} style="font-size: 1.231rem" onclick={handleNewWorkspace}>+</IconButton>
   </div>
 
@@ -335,6 +351,7 @@
       <div
         class="workspace-item"
         class:active={workspace.id === workspacesStore.activeWorkspaceId}
+        class:suspended={workspace.suspended}
         class:import-highlight={workspace.import_highlight}
         class:dragging={dragWorkspaceId === workspace.id}
         class:drop-before={dropTargetIndex === index && dropSide === 'before' && dragWorkspaceId !== workspace.id}
@@ -381,14 +398,25 @@
             <button class="confirm-cancel" onclick={(e) => { e.stopPropagation(); confirmingDeleteId = null; }}>Cancel</button>
           {:else}
             <span class="workspace-name">{workspace.name}</span>
-            <IconButton
-              tooltip="Close workspace"
-              class="workspace-close-btn"
-              style="--icon-btn-hover: var(--bg-dark)"
-              onclick={(e) => handleDeleteWorkspace(workspace.id, e)}
-            >
-              &times;
-            </IconButton>
+            {#if workspace.suspended}
+              <IconButton
+                tooltip="Delete workspace"
+                class="workspace-close-btn"
+                style="--icon-btn-hover: var(--bg-dark)"
+                onclick={(e) => handleDeleteWorkspace(workspace.id, e)}
+              >
+                &times;
+              </IconButton>
+            {:else}
+              <IconButton
+                tooltip="Suspend workspace"
+                class="workspace-close-btn"
+                style="--icon-btn-hover: var(--bg-dark)"
+                onclick={(e) => handleSuspendWorkspace(workspace.id, e)}
+              >
+                <Icon name="pause" size={10} />
+              </IconButton>
+            {/if}
           {/if}
         {/if}
       </div>
@@ -545,6 +573,10 @@
 
   .workspace-item.import-highlight {
     box-shadow: inset 3px 0 0 var(--yellow, #e0af68);
+  }
+
+  .workspace-item.suspended .workspace-name {
+    color: var(--fg-dim);
   }
 
   .workspace-item.dragging {

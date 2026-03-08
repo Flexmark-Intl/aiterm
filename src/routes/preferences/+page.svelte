@@ -822,6 +822,26 @@
           </select>
         </div>
 
+        <h3 class="section-heading">Suspend</h3>
+        <p class="section-desc">Suspended workspaces save terminal state and kill PTYs, freeing resources. Click a suspended workspace in the sidebar to resume it.</p>
+
+        <div class="setting">
+          <div>
+            <label for="auto-suspend">Auto-suspend inactive workspaces</label>
+            <p class="setting-hint">Automatically suspend workspaces that haven't been visited within the selected time. The active workspace is never auto-suspended.</p>
+          </div>
+          <select
+            id="auto-suspend"
+            value={preferencesStore.autoSuspendMinutes}
+            onchange={(e) => preferencesStore.setAutoSuspendMinutes(Number(e.currentTarget.value))}
+          >
+            <option value={0}>Disabled</option>
+            <option value={15}>15 minutes</option>
+            <option value={30}>30 minutes</option>
+            <option value={60}>1 hour</option>
+          </select>
+        </div>
+
       {:else if activeSection === 'notes'}
         <h3 class="section-heading">Preview</h3>
 
