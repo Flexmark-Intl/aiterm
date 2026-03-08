@@ -502,7 +502,15 @@ fn get_foreground_command(shell_pid: u32) -> Option<String> {
 
     loop {
         if let Some(kids) = children.get(&current_pid) {
-            if let Some((kid_pid, kid_cmd)) = kids.first() {
+            if kids.is_empty() {
+                break;
+            }
+            // Prefer the SSH child if one exists (shell may have background jobs)
+            let chosen = kids
+                .iter()
+                .find(|(_, cmd)| is_ssh_command(cmd))
+                .or_else(|| kids.first());
+            if let Some((kid_pid, kid_cmd)) = chosen {
                 if is_ssh_command(kid_cmd) {
                     ssh_cmd = Some(kid_cmd.clone());
                 }

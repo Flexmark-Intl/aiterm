@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { SvelteSet } from 'svelte/reactivity';
   import { workspacesStore } from '$lib/stores/workspaces.svelte';
   import { terminalsStore } from '$lib/stores/terminals.svelte';
   import WorkspaceSidebar from '$lib/components/workspace/WorkspaceSidebar.svelte';
@@ -21,12 +22,25 @@
 
   // Track which workspaces have been visited so we lazily mount terminals
   // on first activation but keep them alive across workspace switches.
-  let activatedWorkspaceIds = $state(new Set<string>());
+  const activatedWorkspaceIds = new SvelteSet<string>();
 
-  $effect(() => {
+  // Track which terminal tabs have been activated (became the active tab
+  // while their workspace was visible). PTYs only spawn on first activation,
+  // preventing idle tabs from accumulating bash processes and reader threads.
+  const activatedTabIds = new SvelteSet<string>();
+
+  $effect.pre(() => {
     const id = workspacesStore.activeWorkspaceId;
-    if (id && !activatedWorkspaceIds.has(id)) {
-      activatedWorkspaceIds = new Set(activatedWorkspaceIds).add(id);
+    if (id) activatedWorkspaceIds.add(id);
+
+    // Activate the current active tab in each pane of the active workspace.
+    // Uses $effect.pre so activatedTabIds is updated before DOM render,
+    // avoiding a frame where the tab slot is empty.
+    const ws = workspacesStore.workspaces.find(w => w.id === id);
+    if (ws) {
+      for (const pane of ws.panes) {
+        if (pane.active_tab_id) activatedTabIds.add(pane.active_tab_id);
+      }
     }
   });
 
@@ -52,7 +66,7 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="titlebar" onmousedown={handleTitlebarMouseDown}>
     <span class="titlebar-text">
-      aiTerm{#if workspacesStore.activeWorkspace}{' '}| {workspacesStore.activeWorkspace.name}{/if}
+      aiTerm{#if workspacesStore.activeWorkspace} | {workspacesStore.activeWorkspace.name}{/if}
     </span>
   </div>
   <div class="app-body">
@@ -117,7 +131,7 @@
                     visible={tab.id === pane.active_tab_id && ws.id === workspacesStore.activeWorkspaceId}
                     editorFile={tab.editor_file}
                   />
-                {:else if tab.tab_type === 'terminal'}
+                {:else if tab.tab_type === 'terminal' && activatedTabIds.has(tab.id)}
                   <TerminalPane
                     workspaceId={ws.id}
                     paneId={pane.id}

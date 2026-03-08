@@ -6,6 +6,25 @@ import { getPtyInfo } from '$lib/tauri/commands';
 import { error as logError } from '@tauri-apps/plugin-log';
 
 /**
+ * Detect SSH command for a terminal tab.
+ * Primary: process tree via getPtyInfo (detects live SSH sessions).
+ * Fallback: tab's persisted restore_ssh_command (covers cases where
+ * process tree walk fails, e.g. background jobs confuse child ordering).
+ */
+function detectSshCommand(ptyInfo: { foreground_command: string | null }, tabId: string): string | null {
+  if (ptyInfo.foreground_command) return ptyInfo.foreground_command;
+
+  // Fallback: check persisted SSH command on the tab
+  for (const ws of workspacesStore.workspaces) {
+    for (const pane of ws.panes) {
+      const tab = pane.tabs.find(t => t.id === tabId);
+      if (tab) return tab.restore_ssh_command ?? tab.auto_resume_ssh_command ?? null;
+    }
+  }
+  return null;
+}
+
+/**
  * Open a file from a terminal context.
  * Creates the editor tab immediately — EditorPane handles loading and errors.
  */
@@ -21,7 +40,7 @@ export async function openFileFromTerminal(
 
     // Get PTY info for SSH detection and local cwd
     const ptyInfo = await getPtyInfo(instance.ptyId);
-    const sshCommand = ptyInfo.foreground_command;
+    const sshCommand = detectSshCommand(ptyInfo, tabId);
     const isRemote = !!sshCommand;
 
     // Resolve relative paths
