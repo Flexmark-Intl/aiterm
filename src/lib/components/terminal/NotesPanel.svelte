@@ -380,7 +380,7 @@
       {/if}
       <IconButton
         tooltip="Close notes"
-        style="font-size:14px"
+        style="font-size: 1.077rem"
         onclick={() => {
           if (saveTimer) clearTimeout(saveTimer);
           if (wsSaveTimer) clearTimeout(wsSaveTimer);
@@ -429,7 +429,7 @@
                 <button class="confirm-no" onclick={() => deletingNoteId = null}>No</button>
               </span>
             {:else}
-              <IconButton tooltip="Delete note" danger onclick={() => deletingNoteId = note.id} style="font-size:14px">&times;</IconButton>
+              <IconButton tooltip="Delete note" danger onclick={() => deletingNoteId = note.id} style="font-size: 1.077rem">&times;</IconButton>
             {/if}
           </div>
         </div>
@@ -500,7 +500,7 @@
   }
 
   .scope-btn {
-    font-size: 11px;
+    font-size: 0.846rem;
     padding: 2px 8px;
     border-radius: 3px;
     color: var(--fg-dim);
@@ -693,7 +693,7 @@
     color: var(--accent);
     border: 1px dashed var(--bg-light);
     border-radius: 6px;
-    font-size: 12px;
+    font-size: 0.923rem;
     cursor: pointer;
     transition: background 0.1s;
   }
@@ -731,7 +731,7 @@
   }
 
   .ws-note-title {
-    font-size: 12px;
+    font-size: 0.923rem;
     color: var(--fg);
     white-space: nowrap;
     overflow: hidden;
@@ -739,7 +739,7 @@
   }
 
   .ws-note-date {
-    font-size: 10px;
+    font-size: 0.769rem;
     color: var(--fg-dim);
   }
 
@@ -750,7 +750,7 @@
 
 
   .delete-confirm {
-    font-size: 11px;
+    font-size: 0.846rem;
     color: var(--fg-dim);
     display: flex;
     align-items: center;
@@ -758,7 +758,7 @@
   }
 
   .confirm-yes, .confirm-no {
-    font-size: 11px;
+    font-size: 0.846rem;
     padding: 1px 6px;
     border-radius: 3px;
     border: none;

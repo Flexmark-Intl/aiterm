@@ -31,7 +31,7 @@ html, body {
   height: 100%;
   overflow: hidden;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  font-size: 13px;
+  font-size: var(--ui-font-size, 13px);
   background: var(--bg-dark);
   color: var(--fg);
   -webkit-user-select: none;

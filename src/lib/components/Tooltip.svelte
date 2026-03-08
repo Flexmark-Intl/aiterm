@@ -75,7 +75,7 @@
     background: var(--bg-dark);
     border: 1px solid var(--bg-light);
     color: var(--fg);
-    font-size: 11px;
+    font-size: 0.846rem;
     line-height: 1.45;
     white-space: pre-line;
     padding: 6px 10px;

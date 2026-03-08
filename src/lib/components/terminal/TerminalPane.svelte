@@ -1083,11 +1083,11 @@
       <div class="auto-resume-prompt-actions">
         <div class="auto-resume-presets">
           <span class="auto-resume-presets-label">Presets</span>
-          <Button variant="secondary" onclick={() => { autoResumePromptValue = CLAUDE_RESUME_COMMAND; }} style="padding:6px 14px;border-radius:4px;font-size:12px;background:var(--bg-dark);border-color:var(--bg-light)" title="Uses trigger variables %claudeSessionId and %claudeResumeCommand">Claude Resume</Button>
+          <Button variant="secondary" onclick={() => { autoResumePromptValue = CLAUDE_RESUME_COMMAND; }} style="padding:6px 14px;border-radius:4px;font-size: 0.923rem;background:var(--bg-dark);border-color:var(--bg-light)" title="Uses trigger variables %claudeSessionId and %claudeResumeCommand">Claude Resume</Button>
         </div>
         <span style="flex: 1;"></span>
-        <Button variant="secondary" onclick={cancelAutoResumePrompt} style="padding:6px 14px;border-radius:4px;font-size:12px">Cancel</Button>
-        <Button variant="primary" onclick={submitAutoResumePrompt} style="padding:6px 14px;border-radius:4px;font-size:12px">Save</Button>
+        <Button variant="secondary" onclick={cancelAutoResumePrompt} style="padding:6px 14px;border-radius:4px;font-size: 0.923rem">Cancel</Button>
+        <Button variant="primary" onclick={submitAutoResumePrompt} style="padding:6px 14px;border-radius:4px;font-size: 0.923rem">Save</Button>
       </div>
     </div>
   </div>
@@ -1115,7 +1115,7 @@
           <p class="claude-setup-note">Triggers are global (configurable in Preferences &gt; Triggers) &mdash; they'll capture Claude session info in any tab. The auto-resume command is specific to this tab.</p>
         </div>
         <div class="claude-setup-actions">
-          <Button variant="secondary" onclick={() => { claudeSetupModal = false; }} style="padding:6px 18px;border-radius:4px;font-size:13px;font-weight:500">Cancel</Button>
+          <Button variant="secondary" onclick={() => { claudeSetupModal = false; }} style="padding:6px 18px;border-radius:4px;font-size: 1rem;font-weight:500">Cancel</Button>
           <Button variant="primary" onclick={async () => {
             try {
               const triggers = preferencesStore.triggers;
@@ -1137,7 +1137,7 @@
               logError(`Auto-resume + Claude setup failed: ${e}`);
             }
             claudeSetupModal = false;
-          }} style="padding:6px 18px;border-radius:4px;font-size:13px;font-weight:500">Activate</Button>
+          }} style="padding:6px 18px;border-radius:4px;font-size: 1rem;font-weight:500">Activate</Button>
         </div>
       </div>
     </div>
@@ -1171,7 +1171,7 @@
     padding: 8px 16px;
     border-radius: 6px;
     color: var(--accent);
-    font-size: 13px;
+    font-size: 1rem;
     font-weight: 500;
   }
 
@@ -1224,7 +1224,7 @@
 
   .auto-resume-prompt-label {
     color: var(--fg);
-    font-size: 13px;
+    font-size: 1rem;
     font-weight: 500;
   }
 
@@ -1238,7 +1238,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    font-size: 12px;
+    font-size: 0.923rem;
     background: var(--bg-dark);
     border: 1px solid var(--bg-light);
     border-radius: 4px;
@@ -1247,7 +1247,7 @@
 
   .auto-resume-context-label {
     color: var(--fg-dim);
-    font-size: 11px;
+    font-size: 0.846rem;
     min-width: 85px;
     flex-shrink: 0;
   }
@@ -1256,7 +1256,7 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    font-size: 11px;
+    font-size: 0.846rem;
     color: var(--fg-dim);
     cursor: pointer;
     margin-top: 2px;
@@ -1283,7 +1283,7 @@
     border: none;
     box-shadow: none;
     font-family: inherit;
-    font-size: 12px;
+    font-size: 0.923rem;
     padding: 0;
     flex: 1;
     min-width: 0;
@@ -1293,7 +1293,7 @@
 
   .auto-resume-prompt-hint {
     color: var(--fg-dim);
-    font-size: 11px;
+    font-size: 0.846rem;
   }
 
   .auto-resume-prompt-actions {
@@ -1310,7 +1310,7 @@
   }
 
   .auto-resume-presets-label {
-    font-size: 11px;
+    font-size: 0.846rem;
     color: var(--fg-dim);
   }
 
@@ -1336,14 +1336,14 @@
   }
 
   .claude-setup-title {
-    font-size: 15px;
+    font-size: 1.154rem;
     font-weight: 600;
     color: var(--fg);
     margin: 0 0 12px 0;
   }
 
   .claude-setup-body {
-    font-size: 13px;
+    font-size: 1rem;
     color: var(--fg);
     line-height: 1.5;
   }
@@ -1353,7 +1353,7 @@
   }
 
   .claude-setup-body h4 {
-    font-size: 12px;
+    font-size: 0.923rem;
     font-weight: 600;
     color: var(--fg-dim);
     text-transform: uppercase;
@@ -1375,12 +1375,12 @@
     background: var(--bg-dark);
     padding: 1px 4px;
     border-radius: 3px;
-    font-size: 12px;
+    font-size: 0.923rem;
     font-family: 'Menlo', Monaco, monospace;
   }
 
   .claude-setup-note {
-    font-size: 12px;
+    font-size: 0.923rem;
     color: var(--fg-dim);
     font-style: italic;
   }

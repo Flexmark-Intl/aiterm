@@ -134,10 +134,10 @@
   <div class="diff-toolbar">
     <span class="diff-file-path">{diffContext.file_path}</span>
     <div class="diff-actions">
-      <Button variant="secondary" onclick={handleReject} disabled={accepting || rejecting} style="padding:4px 12px;border-radius:4px;font-size:12px;font-weight:500">
+      <Button variant="secondary" onclick={handleReject} disabled={accepting || rejecting} style="padding:4px 12px;border-radius:4px;font-size: 0.923rem;font-weight:500">
         {rejecting ? 'Rejecting...' : 'Reject'}
       </Button>
-      <Button variant="primary" onclick={handleAccept} disabled={accepting || rejecting} style="padding:4px 12px;border-radius:4px;font-size:12px;font-weight:500">
+      <Button variant="primary" onclick={handleAccept} disabled={accepting || rejecting} style="padding:4px 12px;border-radius:4px;font-size: 0.923rem;font-weight:500">
         {accepting ? 'Saving...' : 'Accept'}
       </Button>
     </div>
@@ -178,7 +178,7 @@
   }
 
   .diff-file-path {
-    font-size: 12px;
+    font-size: 0.923rem;
     color: var(--fg-dim);
     font-family: Menlo, monospace;
     overflow: hidden;

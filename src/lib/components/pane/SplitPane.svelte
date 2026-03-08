@@ -201,7 +201,7 @@
     padding: 0;
     color: var(--fg-dim);
     border-radius: 4px;
-    font-size: 14px;
+    font-size: 1.077rem;
     transition: background 0.1s, color 0.1s;
   }
 
@@ -269,7 +269,7 @@
     border-radius: 6px;
     background: var(--accent);
     color: var(--bg-dark);
-    font-size: 13px;
+    font-size: 1rem;
     font-weight: 600;
     cursor: pointer;
     transition: opacity 0.15s;
@@ -280,7 +280,7 @@
   }
 
   .empty-hint {
-    font-size: 12px;
+    font-size: 0.923rem;
     color: var(--fg-dim);
   }
 
@@ -289,6 +289,6 @@
     background: var(--bg-medium);
     border-radius: 3px;
     font-family: inherit;
-    font-size: 11px;
+    font-size: 0.846rem;
   }
 </style>

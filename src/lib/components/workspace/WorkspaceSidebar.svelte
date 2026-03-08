@@ -306,11 +306,11 @@
         <StatusDot color="green" tooltip="IDE Connected" />
       </span>
     {/if}
-    <span style="margin-left:auto"><IconButton tooltip="Collapse sidebar ({modSymbol}B)" size={20} style="font-size:16px" onclick={() => workspacesStore.toggleSidebar()}>&#x2039;</IconButton></span>
+    <span style="margin-left:auto"><IconButton tooltip="Collapse sidebar ({modSymbol}B)" size={20} style="font-size: 1.231rem" onclick={() => workspacesStore.toggleSidebar()}>&#x2039;</IconButton></span>
   </div>
   <div class="sidebar-header">
     <span class="title">WORKSPACES</span>
-    <IconButton tooltip="New workspace ({modSymbol}N)" size={20} style="font-size:16px" onclick={handleNewWorkspace}>+</IconButton>
+    <IconButton tooltip="New workspace ({modSymbol}N)" size={20} style="font-size: 1.231rem" onclick={handleNewWorkspace}>+</IconButton>
   </div>
 
   {#if preferencesStore.showRecentWorkspaces && workspacesStore.recentWorkspaces.length > 0}
@@ -431,7 +431,7 @@
 
   .dev-badge {
     margin-left: 6px;
-    font-size: 10px;
+    font-size: 0.769rem;
     font-weight: 600;
     color: var(--bg-dark);
     background: var(--accent);
@@ -443,7 +443,7 @@
 
   .version-badge {
     margin-left: 6px;
-    font-size: 10px;
+    font-size: 0.769rem;
     color: var(--fg-dim);
     cursor: pointer;
     -webkit-app-region: no-drag;
@@ -469,7 +469,7 @@
   }
 
   .title {
-    font-size: 11px;
+    font-size: 0.846rem;
     font-weight: 600;
     letter-spacing: 0.5px;
     color: var(--fg-dim);
@@ -482,7 +482,7 @@
   }
 
   .recent-title {
-    font-size: 10px;
+    font-size: 0.769rem;
     font-weight: 600;
     letter-spacing: 0.5px;
     color: var(--fg-dim);
@@ -496,7 +496,7 @@
   }
 
   .recent-item {
-    font-size: 11px;
+    font-size: 0.846rem;
     padding: 2px 8px;
     border-radius: 3px;
     background: var(--bg-light);
@@ -570,7 +570,7 @@
 
 
   .state-emoji {
-    font-size: 10px;
+    font-size: 0.769rem;
     line-height: 1;
   }
 
@@ -583,7 +583,7 @@
 
   .tab-count-badge {
     flex-shrink: 0;
-    font-size: 10px;
+    font-size: 0.769rem;
     font-weight: 600;
     line-height: 1;
     min-width: 16px;
@@ -601,7 +601,7 @@
   }
 
   .confirm-delete, .confirm-cancel {
-    font-size: 11px;
+    font-size: 0.846rem;
     padding: 2px 8px;
     border: none;
     border-radius: 3px;

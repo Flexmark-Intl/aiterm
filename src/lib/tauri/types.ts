@@ -128,6 +128,7 @@ export interface Trigger {
 }
 
 export interface Preferences {
+  ui_font_size: number;
   font_size: number;
   font_family: string;
   cursor_style: CursorStyle;

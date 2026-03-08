@@ -61,7 +61,7 @@
     <div class="modal">
       <div class="header">
         <h2>Changelog</h2>
-        <IconButton tooltip="Close" style="font-size:20px;padding:4px 8px;width:auto;height:auto" onclick={onclose}>&times;</IconButton>
+        <IconButton tooltip="Close" style="font-size: 1.538rem;padding:4px 8px;width:auto;height:auto" onclick={onclose}>&times;</IconButton>
       </div>
 
       <div class="content">
@@ -111,7 +111,7 @@
 
   h2 {
     margin: 0;
-    font-size: 16px;
+    font-size: 1.231rem;
     font-weight: 600;
     color: var(--fg);
   }
@@ -130,7 +130,7 @@
 
   h3 {
     margin: 0 0 8px 0;
-    font-size: 12px;
+    font-size: 0.923rem;
     font-weight: 600;
     color: var(--fg-dim);
     letter-spacing: 0.5px;
@@ -147,7 +147,7 @@
   }
 
   li {
-    font-size: 13px;
+    font-size: 1rem;
     color: var(--fg-dim);
     line-height: 1.5;
     margin-bottom: 4px;

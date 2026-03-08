@@ -7,6 +7,7 @@ function createPreferencesStore() {
   let _resolveReady: () => void;
   const ready = new Promise<void>(r => { _resolveReady = r; });
 
+  let uiFontSize = $state(13);
   let fontSize = $state(13);
   let fontFamily = $state('Menlo');
   let cursorStyle = $state<CursorStyle>('block');
@@ -60,6 +61,7 @@ function createPreferencesStore() {
   return {
     /** Resolves once the initial load() has completed. */
     get ready() { return ready; },
+    get uiFontSize() { return uiFontSize; },
     get fontSize() { return fontSize; },
     get fontFamily() { return fontFamily; },
     get cursorStyle() { return cursorStyle; },
@@ -112,6 +114,7 @@ function createPreferencesStore() {
 
     async load() {
       const prefs = await commands.getPreferences();
+      uiFontSize = prefs.ui_font_size ?? 13;
       fontSize = prefs.font_size;
       fontFamily = prefs.font_family;
       cursorStyle = prefs.cursor_style;
@@ -173,6 +176,11 @@ function createPreferencesStore() {
       backupTrimEnabled = prefs.backup_trim_enabled ?? false;
       backupTrimAge = prefs.backup_trim_age || '1m';
       _resolveReady();
+    },
+
+    async setUiFontSize(value: number) {
+      uiFontSize = Math.max(10, Math.min(20, value));
+      await this.save();
     },
 
     async setFontSize(value: number) {
@@ -434,6 +442,7 @@ function createPreferencesStore() {
     },
 
     applyFromBackend(prefs: Preferences) {
+      uiFontSize = prefs.ui_font_size ?? 13;
       fontSize = prefs.font_size;
       fontFamily = prefs.font_family;
       cursorStyle = prefs.cursor_style;
@@ -491,6 +500,7 @@ function createPreferencesStore() {
 
     async save() {
       const prefs: Preferences = {
+        ui_font_size: uiFontSize,
         font_size: fontSize,
         font_family: fontFamily,
         cursor_style: cursorStyle,

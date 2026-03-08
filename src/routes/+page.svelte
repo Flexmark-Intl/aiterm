@@ -168,7 +168,7 @@
   }
 
   .titlebar-text {
-    font-size: 12px;
+    font-size: 0.923rem;
     color: var(--fg);
     pointer-events: none;
   }
@@ -254,7 +254,7 @@
 
   .expand-icon {
     color: var(--fg-dim);
-    font-size: 16px;
+    font-size: 1.231rem;
     line-height: 1;
   }
 

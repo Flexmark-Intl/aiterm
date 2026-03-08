@@ -368,6 +368,19 @@ pub fn tool_list_response() -> Value {
                     },
                     "required": ["key", "value"]
                 }
+            },
+            {
+                "name": "createBackup",
+                "description": "Create a backup of the entire aiTerm state (workspaces, tabs, notes, preferences). Returns the path to the created backup file. Uses configured backup settings by default, but all options can be overridden.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "directory": { "type": "string", "description": "Directory to save the backup. Defaults to the configured backup_directory preference." },
+                        "compress": { "type": "boolean", "description": "Compress with gzip. Defaults to the backup_compress preference." },
+                        "excludeScrollback": { "type": "boolean", "description": "Exclude terminal scrollback buffers. Defaults to the backup_exclude_scrollback preference." }
+                    },
+                    "required": []
+                }
             }
         ]
     })

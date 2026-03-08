@@ -165,9 +165,71 @@ fn resolve_target_window(state: &Arc<AppState>, arguments: &Value) -> Option<Str
     app_data.windows.first().map(|w| w.label.clone())
 }
 
+/// Preference metadata: description, type, category, default value.
+/// Read-only preferences cannot be set via the setPreference tool.
+struct PrefMeta {
+    description: &'static str,
+    ptype: &'static str,
+    category: &'static str,
+    read_only: bool,
+}
+
+fn preference_meta() -> Vec<(&'static str, PrefMeta)> {
+    vec![
+        ("ui_font_size", PrefMeta { description: "UI font size in pixels (non-terminal elements)", ptype: "number", category: "Appearance", read_only: false }),
+        ("font_size", PrefMeta { description: "Terminal font size in pixels", ptype: "number", category: "Terminal", read_only: false }),
+        ("font_family", PrefMeta { description: "Terminal font family", ptype: "string", category: "Terminal", read_only: false }),
+        ("cursor_style", PrefMeta { description: "Terminal cursor shape (block, underline, bar)", ptype: "string", category: "Terminal", read_only: false }),
+        ("cursor_blink", PrefMeta { description: "Whether the cursor blinks", ptype: "boolean", category: "Terminal", read_only: false }),
+        ("scrollback_limit", PrefMeta { description: "Maximum scrollback lines per terminal", ptype: "number", category: "Terminal", read_only: false }),
+        ("shell_title_integration", PrefMeta { description: "Allow shell to set tab titles via OSC escape sequences", ptype: "boolean", category: "Terminal", read_only: false }),
+        ("shell_integration", PrefMeta { description: "Enable OSC 133 shell integration for command detection", ptype: "boolean", category: "Terminal", read_only: false }),
+        ("file_link_action", PrefMeta { description: "How file links in the terminal are activated", ptype: "string", category: "Terminal", read_only: false }),
+        ("windows_shell", PrefMeta { description: "Default shell on Windows", ptype: "string", category: "Terminal", read_only: false }),
+        ("theme", PrefMeta { description: "Color theme ID (built-in or custom)", ptype: "string", category: "Appearance", read_only: false }),
+        ("auto_save_interval", PrefMeta { description: "Auto-save interval in seconds (0 to disable)", ptype: "number", category: "General", read_only: false }),
+        ("restore_session", PrefMeta { description: "Restore tabs and workspaces on app restart", ptype: "boolean", category: "General", read_only: false }),
+        ("number_duplicated_tabs", PrefMeta { description: "Prefix duplicated tab names with numbers", ptype: "boolean", category: "Tabs", read_only: false }),
+        ("tab_button_style", PrefMeta { description: "Tab close button visibility (hover, always)", ptype: "string", category: "Tabs", read_only: false }),
+        ("clone_cwd", PrefMeta { description: "Copy working directory when duplicating tabs", ptype: "boolean", category: "Tabs", read_only: false }),
+        ("clone_scrollback", PrefMeta { description: "Copy scrollback buffer when duplicating tabs", ptype: "boolean", category: "Tabs", read_only: false }),
+        ("clone_ssh", PrefMeta { description: "Copy SSH session when duplicating tabs", ptype: "boolean", category: "Tabs", read_only: false }),
+        ("clone_history", PrefMeta { description: "Copy shell history when duplicating tabs", ptype: "boolean", category: "Tabs", read_only: false }),
+        ("clone_notes", PrefMeta { description: "Copy notes when duplicating tabs", ptype: "boolean", category: "Tabs", read_only: false }),
+        ("clone_auto_resume", PrefMeta { description: "Copy auto-resume config when duplicating tabs", ptype: "boolean", category: "Tabs", read_only: false }),
+        ("clone_variables", PrefMeta { description: "Copy trigger variables when duplicating tabs", ptype: "boolean", category: "Tabs", read_only: false }),
+        ("notification_mode", PrefMeta { description: "Notification delivery mode (auto, in_app, native, disabled)", ptype: "string", category: "Notifications", read_only: false }),
+        ("notify_min_duration", PrefMeta { description: "Minimum command duration (seconds) before notifying on completion", ptype: "number", category: "Notifications", read_only: false }),
+        ("notification_sound", PrefMeta { description: "Notification sound (default, system, none)", ptype: "string", category: "Notifications", read_only: false }),
+        ("notification_volume", PrefMeta { description: "Notification volume percentage", ptype: "number", category: "Notifications", read_only: false }),
+        ("toast_font_size", PrefMeta { description: "Toast notification font size", ptype: "number", category: "Notifications", read_only: false }),
+        ("toast_width", PrefMeta { description: "Toast notification width in pixels", ptype: "number", category: "Notifications", read_only: false }),
+        ("toast_duration", PrefMeta { description: "Toast auto-dismiss duration in seconds", ptype: "number", category: "Notifications", read_only: false }),
+        ("notes_font_size", PrefMeta { description: "Notes panel font size", ptype: "number", category: "Notes", read_only: false }),
+        ("notes_font_family", PrefMeta { description: "Notes panel font family", ptype: "string", category: "Notes", read_only: false }),
+        ("notes_width", PrefMeta { description: "Notes panel width in pixels", ptype: "number", category: "Notes", read_only: false }),
+        ("notes_word_wrap", PrefMeta { description: "Wrap long lines in notes panel", ptype: "boolean", category: "Notes", read_only: false }),
+        ("notes_scope", PrefMeta { description: "Default notes panel view (tab, workspace)", ptype: "string", category: "Notes", read_only: false }),
+        ("show_recent_workspaces", PrefMeta { description: "Show recently used workspaces section in sidebar", ptype: "boolean", category: "Workspace", read_only: false }),
+        ("workspace_sort_order", PrefMeta { description: "Workspace list sort order (default, alphabetical, recent)", ptype: "string", category: "Workspace", read_only: false }),
+        ("show_workspace_tab_count", PrefMeta { description: "Show tab count badges on workspace items", ptype: "boolean", category: "Workspace", read_only: false }),
+        ("claude_code_ide", PrefMeta { description: "Enable Claude Code IDE integration (MCP server)", ptype: "boolean", category: "Integration", read_only: false }),
+        ("backup_directory", PrefMeta { description: "Backup directory path (null = scheduled backups disabled)", ptype: "string", category: "Backup", read_only: false }),
+        ("backup_interval", PrefMeta { description: "Scheduled backup interval (off, hourly, daily, weekly, monthly)", ptype: "string", category: "Backup", read_only: false }),
+        ("backup_compress", PrefMeta { description: "Compress backups with gzip", ptype: "boolean", category: "Backup", read_only: false }),
+        ("backup_exclude_scrollback", PrefMeta { description: "Exclude terminal scrollback from backups", ptype: "boolean", category: "Backup", read_only: false }),
+        ("backup_trim_enabled", PrefMeta { description: "Auto-delete old backups", ptype: "boolean", category: "Backup", read_only: false }),
+        ("backup_trim_age", PrefMeta { description: "Max age for auto-trim (1h, 1d, 1w, 1m, 1y)", ptype: "string", category: "Backup", read_only: false }),
+        ("prompt_patterns", PrefMeta { description: "Regex patterns for remote prompt/CWD detection", ptype: "string[]", category: "Terminal", read_only: true }),
+        ("custom_themes", PrefMeta { description: "User-created custom color themes", ptype: "object[]", category: "Appearance", read_only: true }),
+        ("triggers", PrefMeta { description: "Trigger rules for terminal pattern matching", ptype: "object[]", category: "Triggers", read_only: true }),
+        ("hidden_default_triggers", PrefMeta { description: "IDs of deleted default trigger templates", ptype: "string[]", category: "Triggers", read_only: true }),
+    ]
+}
+
 /// Handle tools that can be resolved entirely on the backend without frontend involvement.
 /// Returns Some(result) if handled, None if the tool should be forwarded to the frontend.
-fn handle_backend_tool(tool_name: &str, _arguments: &Value, state: &Arc<AppState>) -> Option<Value> {
+fn handle_backend_tool(tool_name: &str, arguments: &Value, state: &Arc<AppState>, app_handle: &AppHandle) -> Option<Value> {
     match tool_name {
         "listWindows" => {
             let app_data = state.app_data.read();
@@ -193,6 +255,155 @@ fn handle_backend_tool(tool_name: &str, _arguments: &Value, state: &Arc<AppState
                 })
                 .collect();
             Some(serde_json::json!({ "windows": windows }))
+        }
+        "getPreferences" => {
+            let query = arguments.get("query").and_then(|v| v.as_str()).unwrap_or("");
+            let app_data = state.app_data.read();
+            let prefs_json = serde_json::to_value(&app_data.preferences).unwrap_or(Value::Null);
+
+            let entries: Vec<Value> = preference_meta().into_iter()
+                .filter(|(key, meta)| {
+                    if query.is_empty() { return true; }
+                    let q = query.to_lowercase();
+                    key.to_lowercase().contains(&q) || meta.description.to_lowercase().contains(&q)
+                })
+                .map(|(key, meta)| {
+                    let value = prefs_json.get(key).cloned().unwrap_or(Value::Null);
+                    let mut entry = serde_json::json!({
+                        "key": key,
+                        "value": value,
+                        "description": meta.description,
+                        "type": meta.ptype,
+                        "category": meta.category,
+                    });
+                    if meta.read_only {
+                        entry["readOnly"] = Value::Bool(true);
+                    }
+                    entry
+                })
+                .collect();
+
+            Some(serde_json::json!({ "preferences": entries }))
+        }
+        "setPreference" => {
+            let key = match arguments.get("key").and_then(|v| v.as_str()) {
+                Some(k) => k,
+                None => return Some(serde_json::json!({ "error": "Missing required parameter: key" })),
+            };
+            let value = match arguments.get("value") {
+                Some(v) => v.clone(),
+                None => return Some(serde_json::json!({ "error": "Missing required parameter: value" })),
+            };
+
+            // Verify key exists and is not read-only
+            let meta_list = preference_meta();
+            let meta = match meta_list.iter().find(|(k, _)| *k == key) {
+                Some((_, m)) => m,
+                None => return Some(serde_json::json!({ "error": format!("Unknown preference key: '{}'. Use getPreferences to discover available keys.", key) })),
+            };
+            if meta.read_only {
+                return Some(serde_json::json!({ "error": format!("Preference '{}' is read-only and cannot be set via this tool.", key) }));
+            }
+
+            // Serialize current preferences to JSON, update the key, deserialize back
+            let data_clone = {
+                let mut app_data = state.app_data.write();
+                let mut prefs_json = serde_json::to_value(&app_data.preferences).unwrap_or(Value::Null);
+                if let Some(obj) = prefs_json.as_object_mut() {
+                    obj.insert(key.to_string(), value.clone());
+                }
+                match serde_json::from_value::<crate::state::Preferences>(prefs_json) {
+                    Ok(updated) => {
+                        app_data.preferences = updated;
+                        app_data.clone()
+                    }
+                    Err(e) => return Some(serde_json::json!({ "error": format!("Invalid value for '{}': {}", key, e) })),
+                }
+            };
+
+            if let Err(e) = crate::state::save_state(&data_clone) {
+                return Some(serde_json::json!({ "error": format!("Failed to save: {}", e) }));
+            }
+
+            // Broadcast change to all windows
+            let _ = app_handle.emit("preferences-changed", &data_clone.preferences);
+
+            Some(serde_json::json!({ "success": true, "key": key, "value": value }))
+        }
+        "createBackup" => {
+            let app_data = state.app_data.read();
+            let prefs = &app_data.preferences;
+
+            // Determine backup directory — use argument override or configured default
+            let dir = arguments.get("directory").and_then(|v| v.as_str())
+                .or(prefs.backup_directory.as_deref());
+            let dir = match dir {
+                Some(d) => d.to_string(),
+                None => return Some(serde_json::json!({ "error": "No backup directory configured. Pass 'directory' or set backup_directory in preferences." })),
+            };
+
+            let exclude_scrollback = arguments.get("excludeScrollback")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(prefs.backup_exclude_scrollback);
+            let compress = arguments.get("compress")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(prefs.backup_compress);
+
+            let dir_path = std::path::PathBuf::from(&dir);
+            if !dir_path.exists() {
+                if let Err(e) = std::fs::create_dir_all(&dir_path) {
+                    return Some(serde_json::json!({ "error": format!("Failed to create backup directory: {}", e) }));
+                }
+            }
+
+            let filtered = crate::commands::workspace::prepare_export(&app_data, exclude_scrollback);
+            let json = match serde_json::to_string_pretty(&filtered) {
+                Ok(j) => j,
+                Err(e) => return Some(serde_json::json!({ "error": format!("Serialization failed: {}", e) })),
+            };
+
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default();
+            let secs = now.as_secs();
+            // Simple UTC timestamp from epoch seconds
+            let (s, m, h) = (secs % 60, (secs / 60) % 60, (secs / 3600) % 24);
+            let days = secs / 86400;
+            // Approximate date — good enough for filename uniqueness
+            let y = 1970 + days / 365;
+            let remainder = days % 365;
+            let mo = remainder / 30 + 1;
+            let da = remainder % 30 + 1;
+            let timestamp = format!("{:04}{:02}{:02}_{:02}{:02}{:02}", y, mo, da, h, m, s);
+
+            let ext = if compress { "json.gz" } else { "json" };
+            let filename = format!("aiterm_backup_{}.{}", timestamp, ext);
+            let file_path = dir_path.join(&filename);
+
+            if compress {
+                use flate2::write::GzEncoder;
+                use flate2::Compression;
+                use std::io::Write;
+                let file = match std::fs::File::create(&file_path) {
+                    Ok(f) => f,
+                    Err(e) => return Some(serde_json::json!({ "error": format!("Failed to create file: {}", e) })),
+                };
+                let mut encoder = GzEncoder::new(file, Compression::default());
+                if let Err(e) = encoder.write_all(json.as_bytes()) {
+                    return Some(serde_json::json!({ "error": format!("Compression failed: {}", e) }));
+                }
+                if let Err(e) = encoder.finish() {
+                    return Some(serde_json::json!({ "error": format!("Compression finalize failed: {}", e) }));
+                }
+            } else {
+                if let Err(e) = std::fs::write(&file_path, &json) {
+                    return Some(serde_json::json!({ "error": format!("Failed to write file: {}", e) }));
+                }
+            }
+
+            let path_str = file_path.to_string_lossy().to_string();
+            log::info!("MCP backup created: {}", path_str);
+            Some(serde_json::json!({ "success": true, "path": path_str, "compressed": compress, "excludedScrollback": exclude_scrollback }))
         }
         _ => None,
     }
@@ -440,7 +651,7 @@ async fn handle_message(
                     .unwrap_or(Value::Object(serde_json::Map::new()));
 
                 // Backend-only tools: handle directly without emitting to frontend
-                if let Some(result) = handle_backend_tool(&tool_name, &arguments, state) {
+                if let Some(result) = handle_backend_tool(&tool_name, &arguments, state, app_handle) {
                     let content_text = serde_json::to_string(&result).unwrap_or_default();
                     let resp = JsonRpcResponse::success(
                         id,

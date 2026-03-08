@@ -114,7 +114,7 @@
     padding: 8px;
     color: var(--fg);
     font-family: inherit;
-    font-size: 13px;
+    font-size: 1rem;
     line-height: 1.4;
     outline: none;
     resize: none;

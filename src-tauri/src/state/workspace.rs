@@ -561,6 +561,9 @@ pub enum CursorStyle {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Preferences {
+    /// UI font size (non-terminal elements)
+    #[serde(default = "default_font_size")]
+    pub ui_font_size: u32,
     #[serde(default = "default_font_size")]
     pub font_size: u32,
     #[serde(default = "default_font_family")]
@@ -664,7 +667,7 @@ pub struct Preferences {
     #[serde(default)]
     pub backup_interval: String,
     /// Compress backups with gzip
-    #[serde(default)]
+    #[serde(default = "default_true")]
     pub backup_compress: bool,
     /// Exclude terminal scrollback from backups
     #[serde(default = "default_backup_exclude_scrollback")]
@@ -680,6 +683,7 @@ pub struct Preferences {
 impl Default for Preferences {
     fn default() -> Self {
         Self {
+            ui_font_size: default_font_size(),
             font_size: default_font_size(),
             font_family: default_font_family(),
             cursor_style: default_cursor_style(),
@@ -726,7 +730,7 @@ impl Default for Preferences {
             file_link_action: default_file_link_action(),
             backup_directory: None,
             backup_interval: String::new(),
-            backup_compress: false,
+            backup_compress: true,
             backup_exclude_scrollback: true,
             backup_trim_enabled: false,
             backup_trim_age: default_backup_trim_age(),

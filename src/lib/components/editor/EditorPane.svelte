@@ -818,8 +818,8 @@
         <span class="error-text">{errorMsg}</span>
       </div>
       <div class="error-actions">
-        <Button variant="secondary" onclick={() => { navigator.clipboard.writeText(errorMsg ?? ''); }} style="padding:4px 12px;border-radius:4px;font-size:12px">Copy error</Button>
-        <Button variant="secondary" onclick={() => workspacesStore.deleteTab(workspaceId, paneId, tabId)} style="padding:4px 12px;border-radius:4px;font-size:12px">Close tab</Button>
+        <Button variant="secondary" onclick={() => { navigator.clipboard.writeText(errorMsg ?? ''); }} style="padding:4px 12px;border-radius:4px;font-size: 0.923rem">Copy error</Button>
+        <Button variant="secondary" onclick={() => workspacesStore.deleteTab(workspaceId, paneId, tabId)} style="padding:4px 12px;border-radius:4px;font-size: 0.923rem">Close tab</Button>
       </div>
     </div>
   {:else if imageDataUrl}
@@ -834,9 +834,9 @@
           <span class="info-sep"></span>
         {/if}
         <div class="zoom-controls">
-          <IconButton tooltip="Zoom out" style="width:22px;height:20px;border-radius:3px;font-size:14px" onclick={() => zoomOut()} disabled={displayZoom <= ZOOM_STEPS[0]}>&minus;</IconButton>
+          <IconButton tooltip="Zoom out" style="width:22px;height:20px;border-radius:3px;font-size: 1.077rem" onclick={() => zoomOut()} disabled={displayZoom <= ZOOM_STEPS[0]}>&minus;</IconButton>
           <button class="zoom-label" class:zoom-fit={imageZoom === 0} onclick={zoomFit} title="Fit to window">{displayZoom}%</button>
-          <IconButton tooltip="Zoom in" style="width:22px;height:20px;border-radius:3px;font-size:14px" onclick={() => zoomIn()} disabled={displayZoom >= ZOOM_STEPS[ZOOM_STEPS.length - 1]}>+</IconButton>
+          <IconButton tooltip="Zoom in" style="width:22px;height:20px;border-radius:3px;font-size: 1.077rem" onclick={() => zoomIn()} disabled={displayZoom >= ZOOM_STEPS[ZOOM_STEPS.length - 1]}>+</IconButton>
         </div>
       </div>
       <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -871,7 +871,7 @@
     <div class="pdf-preview">
       <div class="image-info-bar">
         <div class="pdf-page-nav">
-          <IconButton tooltip="Previous page" style="width:22px;height:20px;border-radius:3px;font-size:14px" onclick={() => pdfGoToPage(pdfCurrentPage - 1)} disabled={pdfCurrentPage <= 1}>&#x25C0;</IconButton>
+          <IconButton tooltip="Previous page" style="width:22px;height:20px;border-radius:3px;font-size: 1.077rem" onclick={() => pdfGoToPage(pdfCurrentPage - 1)} disabled={pdfCurrentPage <= 1}>&#x25C0;</IconButton>
           <span class="info-item">
             <input
               type="number"
@@ -882,7 +882,7 @@
               onchange={(e) => pdfGoToPage(parseInt((e.target as HTMLInputElement).value) || 1)}
             /> / {pdfPageCount}
           </span>
-          <IconButton tooltip="Next page" style="width:22px;height:20px;border-radius:3px;font-size:14px" onclick={() => pdfGoToPage(pdfCurrentPage + 1)} disabled={pdfCurrentPage >= pdfPageCount}>&#x25B6;</IconButton>
+          <IconButton tooltip="Next page" style="width:22px;height:20px;border-radius:3px;font-size: 1.077rem" onclick={() => pdfGoToPage(pdfCurrentPage + 1)} disabled={pdfCurrentPage >= pdfPageCount}>&#x25B6;</IconButton>
         </div>
         <span class="info-sep"></span>
         {#if pdfFileSize > 0}
@@ -890,9 +890,9 @@
           <span class="info-sep"></span>
         {/if}
         <div class="zoom-controls">
-          <IconButton tooltip="Zoom out" style="width:22px;height:20px;border-radius:3px;font-size:14px" onclick={pdfZoomOut} disabled={pdfZoom <= PDF_ZOOM_STEPS[0]}>&minus;</IconButton>
+          <IconButton tooltip="Zoom out" style="width:22px;height:20px;border-radius:3px;font-size: 1.077rem" onclick={pdfZoomOut} disabled={pdfZoom <= PDF_ZOOM_STEPS[0]}>&minus;</IconButton>
           <span class="zoom-label">{pdfZoom}%</span>
-          <IconButton tooltip="Zoom in" style="width:22px;height:20px;border-radius:3px;font-size:14px" onclick={pdfZoomIn} disabled={pdfZoom >= PDF_ZOOM_STEPS[PDF_ZOOM_STEPS.length - 1]}>+</IconButton>
+          <IconButton tooltip="Zoom in" style="width:22px;height:20px;border-radius:3px;font-size: 1.077rem" onclick={pdfZoomIn} disabled={pdfZoom >= PDF_ZOOM_STEPS[PDF_ZOOM_STEPS.length - 1]}>+</IconButton>
         </div>
       </div>
       <div class="pdf-scroll" bind:this={pdfScrollEl} onscroll={handlePdfScroll}>
@@ -967,14 +967,14 @@
   /* Search panel styling */
   .editor-container :global(.cm-panel.cm-search) {
     padding: 6px 10px;
-    font-size: 13px;
+    font-size: 1rem;
     background: var(--bg-medium);
     border-bottom: 1px solid var(--bg-light);
   }
 
   .editor-container :global(.cm-panel.cm-search input),
   .editor-container :global(.cm-panel.cm-search button) {
-    font-size: 13px;
+    font-size: 1rem;
   }
 
   .editor-container :global(.cm-panel.cm-search input[type="text"]) {
@@ -1011,7 +1011,7 @@
   }
 
   .editor-container :global(.cm-panel.cm-search label) {
-    font-size: 13px;
+    font-size: 1rem;
     color: var(--fg-dim);
   }
 
@@ -1036,7 +1036,7 @@
     justify-content: center;
     height: 100%;
     color: var(--fg-dim);
-    font-size: 13px;
+    font-size: 1rem;
   }
 
   .editor-error {
@@ -1047,7 +1047,7 @@
     gap: 12px;
     height: 100%;
     color: var(--fg-dim);
-    font-size: 13px;
+    font-size: 1rem;
   }
 
   .error-content {
@@ -1057,7 +1057,7 @@
   }
 
   .error-icon {
-    font-size: 16px;
+    font-size: 1.231rem;
     color: var(--yellow, #e0af68);
   }
 
@@ -1111,7 +1111,7 @@
   }
 
   .info-item {
-    font-size: 11px;
+    font-size: 0.846rem;
     color: var(--fg-dim);
     white-space: nowrap;
   }
@@ -1130,7 +1130,7 @@
   }
 
   .zoom-label {
-    font-size: 11px;
+    font-size: 0.846rem;
     color: var(--fg-dim);
     min-width: 36px;
     text-align: center;
@@ -1230,7 +1230,7 @@
     border-radius: 3px;
     background: var(--bg-dark);
     color: var(--fg);
-    font-size: 11px;
+    font-size: 0.846rem;
     -moz-appearance: textfield;
     appearance: textfield;
   }
@@ -1253,7 +1253,7 @@
     padding: 6px 12px;
     background: color-mix(in srgb, var(--yellow, #e0af68) 15%, var(--bg-dark));
     border-left: 3px solid var(--yellow, #e0af68);
-    font-size: 12px;
+    font-size: 0.923rem;
     color: var(--yellow, #e0af68);
   }
 
@@ -1264,7 +1264,7 @@
   .conflict-btn {
     padding: 3px 10px;
     border-radius: 4px;
-    font-size: 12px;
+    font-size: 0.923rem;
     border: 1px solid var(--yellow, #e0af68);
     background: transparent;
     color: var(--yellow, #e0af68);

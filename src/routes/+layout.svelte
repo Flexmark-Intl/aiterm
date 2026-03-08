@@ -69,6 +69,11 @@
     applyUiTheme(t.ui);
   });
 
+  // Apply UI font size reactively
+  $effect(() => {
+    document.documentElement.style.setProperty('--ui-font-size', `${preferencesStore.uiFontSize}px`);
+  });
+
   // Update OS-level window title (Mission Control, Cmd+Tab, etc.)
   $effect(() => {
     const ws = workspacesStore.activeWorkspace;

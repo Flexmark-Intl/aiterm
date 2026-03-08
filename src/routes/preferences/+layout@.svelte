@@ -20,6 +20,11 @@
     applyUiTheme(t.ui);
   });
 
+  // Apply UI font size reactively
+  $effect(() => {
+    document.documentElement.style.setProperty('--ui-font-size', `${preferencesStore.uiFontSize}px`);
+  });
+
   onMount(() => {
     let detachConsole: (() => void) | undefined;
     attachConsole().then(detach => { detachConsole = detach; });

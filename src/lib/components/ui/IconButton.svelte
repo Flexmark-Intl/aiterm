@@ -43,7 +43,7 @@
     background: none;
     border: none;
     border-radius: 4px;
-    font-size: 13px;
+    font-size: 1rem;
     line-height: 1;
     cursor: pointer;
     transition: background 0.1s, color 0.1s;

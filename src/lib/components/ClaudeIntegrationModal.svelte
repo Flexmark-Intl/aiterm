@@ -32,7 +32,7 @@
     <div class="modal">
       <div class="header">
         <h2>Enable Claude Code Integrations?</h2>
-        <IconButton tooltip="Close" style="font-size:20px;padding:4px 8px;width:auto;height:auto" onclick={onclose}>&times;</IconButton>
+        <IconButton tooltip="Close" style="font-size: 1.538rem;padding:4px 8px;width:auto;height:auto" onclick={onclose}>&times;</IconButton>
       </div>
 
       <div class="content">
@@ -90,7 +90,7 @@
 
   h2 {
     margin: 0;
-    font-size: 15px;
+    font-size: 1.154rem;
     font-weight: 600;
     color: var(--fg);
   }
@@ -101,7 +101,7 @@
 
   p {
     margin: 0 0 12px 0;
-    font-size: 13px;
+    font-size: 1rem;
     color: var(--fg);
     line-height: 1.5;
   }
@@ -113,7 +113,7 @@
   }
 
   li {
-    font-size: 13px;
+    font-size: 1rem;
     color: var(--fg-dim);
     line-height: 1.6;
     margin-bottom: 4px;
@@ -124,7 +124,7 @@
   }
 
   .hint {
-    font-size: 12px;
+    font-size: 0.923rem;
     color: var(--fg-dim);
     margin-bottom: 0;
   }

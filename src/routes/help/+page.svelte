@@ -417,7 +417,7 @@
   }
 
   .title {
-    font-size: 13px;
+    font-size: 1rem;
     font-weight: 600;
     color: var(--fg);
   }
@@ -441,7 +441,7 @@
   .sidebar-item {
     padding: 8px 12px;
     border-radius: 4px;
-    font-size: 13px;
+    font-size: 1rem;
     color: var(--fg-dim);
     text-align: left;
     cursor: pointer;
@@ -475,7 +475,7 @@
     gap: 6px;
     width: 100%;
     padding: 10px 8px;
-    font-size: 13px;
+    font-size: 1rem;
     font-weight: 600;
     color: var(--fg);
     text-align: left;
@@ -491,7 +491,7 @@
 
   .chevron {
     display: inline-block;
-    font-size: 14px;
+    font-size: 1.077rem;
     color: var(--fg-dim);
     transition: transform 0.15s;
   }
@@ -507,7 +507,7 @@
   /* Section headings (flat, no accordion) */
 
   .section-heading {
-    font-size: 12px;
+    font-size: 0.923rem;
     font-weight: 600;
     color: var(--fg-dim);
     text-transform: uppercase;
@@ -532,7 +532,7 @@
     align-items: center;
     gap: 6px;
     margin-bottom: 8px;
-    font-size: 13px;
+    font-size: 1rem;
   }
 
   .shortcut:last-child {
@@ -559,14 +559,14 @@
     border-radius: 4px;
     padding: 2px 6px;
     font-family: inherit;
-    font-size: 12px;
+    font-size: 0.923rem;
     color: var(--fg);
   }
 
   /* Claude Code */
 
   .description {
-    font-size: 13px;
+    font-size: 1rem;
     color: var(--fg-dim);
     line-height: 1.6;
     margin: 0 0 12px 0;
@@ -583,7 +583,7 @@
 
   h4 {
     margin: 16px 0 8px 0;
-    font-size: 12px;
+    font-size: 0.923rem;
     font-weight: 600;
     color: var(--fg-dim);
     text-transform: uppercase;
@@ -597,7 +597,7 @@
   }
 
   .steps li {
-    font-size: 13px;
+    font-size: 1rem;
     color: var(--fg-dim);
     line-height: 1.6;
     margin-bottom: 6px;
@@ -617,7 +617,7 @@
     display: flex;
     align-items: baseline;
     gap: 10px;
-    font-size: 13px;
+    font-size: 1rem;
   }
 
   .tool code {
@@ -625,7 +625,7 @@
     border: 1px solid var(--bg-light);
     border-radius: 3px;
     padding: 1px 6px;
-    font-size: 12px;
+    font-size: 0.923rem;
     color: var(--accent);
     white-space: nowrap;
     flex-shrink: 0;
@@ -640,7 +640,7 @@
     border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
     border-radius: 6px;
     padding: 10px 14px;
-    font-size: 13px;
+    font-size: 1rem;
     color: var(--fg-dim);
     line-height: 1.6;
     margin-bottom: 16px;
@@ -665,7 +665,7 @@
   .tip-command {
     flex: 1;
     padding: 6px 10px;
-    font-size: 12px;
+    font-size: 0.923rem;
     color: var(--fg);
     background: none;
     border: none;
@@ -675,7 +675,7 @@
   .copy-btn {
     padding: 4px 10px;
     margin-right: 4px;
-    font-size: 11px;
+    font-size: 0.846rem;
     color: var(--accent);
     background: var(--bg-medium);
     border: 1px solid var(--bg-light);
@@ -696,7 +696,7 @@
   }
 
   .example-list li {
-    font-size: 13px;
+    font-size: 1rem;
     color: var(--fg-dim);
     line-height: 1.8;
   }
@@ -719,7 +719,7 @@
   }
 
   .trigger-item {
-    font-size: 13px;
+    font-size: 1rem;
     line-height: 1.5;
   }
 
@@ -741,7 +741,7 @@
   }
 
   .tips li {
-    font-size: 13px;
+    font-size: 1rem;
     color: var(--fg-dim);
     line-height: 1.6;
     margin-bottom: 8px;
@@ -756,7 +756,7 @@
     border: 1px solid var(--bg-light);
     border-radius: 3px;
     padding: 1px 5px;
-    font-size: 12px;
+    font-size: 0.923rem;
     color: var(--fg);
   }
 </style>

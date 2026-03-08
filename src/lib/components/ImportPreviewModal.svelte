@@ -129,7 +129,7 @@
     <div class="modal">
       <div class="header">
         <h2>Import Backup</h2>
-        <IconButton tooltip="Close" style="font-size:20px;padding:4px 8px;width:auto;height:auto" onclick={onclose}>&times;</IconButton>
+        <IconButton tooltip="Close" style="font-size: 1.538rem;padding:4px 8px;width:auto;height:auto" onclick={onclose}>&times;</IconButton>
       </div>
 
       <div class="content">
@@ -266,7 +266,7 @@
   }
 
   .header h2 {
-    font-size: 15px;
+    font-size: 1.154rem;
     font-weight: 600;
     color: var(--fg);
     margin: 0;
@@ -290,7 +290,7 @@
   }
 
   .file-name {
-    font-size: 12px;
+    font-size: 0.923rem;
     color: var(--fg);
     font-family: monospace;
     flex: 1;
@@ -300,7 +300,7 @@
   }
 
   .file-size {
-    font-size: 11px;
+    font-size: 0.846rem;
     color: var(--fg-dim);
     white-space: nowrap;
   }
@@ -319,12 +319,12 @@
   }
 
   .mode-label {
-    font-size: 12px;
+    font-size: 0.923rem;
     color: var(--fg-dim);
   }
 
   .mode-select select {
-    font-size: 12px;
+    font-size: 0.923rem;
     padding: 3px 8px;
     border-radius: 4px;
     border: 1px solid var(--bg-light);
@@ -333,7 +333,7 @@
   }
 
   .checkbox-option {
-    font-size: 12px;
+    font-size: 0.923rem;
     color: var(--fg);
     display: flex;
     align-items: center;
@@ -346,7 +346,7 @@
   }
 
   .mode-hint {
-    font-size: 11px;
+    font-size: 0.846rem;
     color: var(--fg-dim);
     margin: 0 0 14px;
   }
@@ -357,7 +357,7 @@
 
   .select-all {
     font-weight: 600;
-    font-size: 12px;
+    font-size: 0.923rem;
   }
 
   .workspace-list {
@@ -367,7 +367,7 @@
   }
 
   .window-header {
-    font-size: 11px;
+    font-size: 0.846rem;
     font-weight: 600;
     color: var(--fg-dim);
     padding: 8px 4px 4px;
@@ -410,13 +410,13 @@
     border: none;
     color: var(--fg-dim);
     cursor: pointer;
-    font-size: 11px;
+    font-size: 0.846rem;
     padding: 0 2px;
     line-height: 1;
   }
 
   .ws-name {
-    font-size: 12px;
+    font-size: 0.923rem;
     color: var(--fg);
     font-weight: 500;
     flex: 1;
@@ -426,7 +426,7 @@
   }
 
   .ws-meta {
-    font-size: 11px;
+    font-size: 0.846rem;
     color: var(--fg-dim);
     white-space: nowrap;
   }
@@ -443,7 +443,7 @@
     align-items: center;
     gap: 6px;
     padding: 2px 4px;
-    font-size: 11px;
+    font-size: 0.846rem;
   }
 
   .tab-type {
@@ -462,7 +462,7 @@
 
   .tab-detail {
     color: var(--fg-dim);
-    font-size: 10px;
+    font-size: 0.769rem;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -476,7 +476,7 @@
   }
 
   .badge {
-    font-size: 9px;
+    font-size: 0.692rem;
     padding: 1px 4px;
     border-radius: 3px;
     background: var(--bg-light);

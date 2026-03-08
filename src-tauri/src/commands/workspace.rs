@@ -1217,7 +1217,7 @@ pub fn delete_archived_tab(
 }
 
 /// Clone app_data and filter out ephemeral diff tabs + optionally strip scrollback.
-fn prepare_export(data: &crate::state::AppData, exclude_scrollback: bool) -> crate::state::AppData {
+pub fn prepare_export(data: &crate::state::AppData, exclude_scrollback: bool) -> crate::state::AppData {
     let mut filtered = data.clone();
     for win in &mut filtered.windows {
         for ws in &mut win.workspaces {
@@ -1245,12 +1245,27 @@ fn prepare_export(data: &crate::state::AppData, exclude_scrollback: bool) -> cra
 }
 
 #[tauri::command]
-pub fn export_state(state: State<'_, Arc<AppState>>, path: String, exclude_scrollback: bool) -> Result<(), String> {
+pub fn export_state(state: State<'_, Arc<AppState>>, path: String, exclude_scrollback: bool, compress: bool) -> Result<(), String> {
     let app_data = state.app_data.read();
     let filtered = prepare_export(&app_data, exclude_scrollback);
 
     let json = serde_json::to_string_pretty(&filtered).map_err(|e| e.to_string())?;
-    std::fs::write(&path, json).map_err(|e| format!("Failed to write export file: {}", e))?;
+
+    if compress {
+        use flate2::write::GzEncoder;
+        use flate2::Compression;
+        use std::io::Write;
+        let file = std::fs::File::create(&path)
+            .map_err(|e| format!("Failed to create export file: {}", e))?;
+        let mut encoder = GzEncoder::new(file, Compression::default());
+        encoder.write_all(json.as_bytes())
+            .map_err(|e| format!("Failed to write compressed export: {}", e))?;
+        encoder.finish()
+            .map_err(|e| format!("Failed to finish compression: {}", e))?;
+    } else {
+        std::fs::write(&path, json).map_err(|e| format!("Failed to write export file: {}", e))?;
+    }
+
     log::info!("State exported to {}", path);
     Ok(())
 }

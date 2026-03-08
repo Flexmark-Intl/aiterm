@@ -98,24 +98,22 @@
   ];
 
   let backupStatus = $state<string | null>(null);
-  let excludeScrollbackExport = $state(false);
   let importPreview = $state<ImportPreview | null>(null);
   let importFilePath = $state('');
   let showImportPreview = $state(false);
 
-  // Sync the per-export checkbox with the preference on load
-  $effect(() => {
-    excludeScrollbackExport = preferencesStore.backupExcludeScrollback;
-  });
-
   async function handleExportState() {
     try {
+      const compress = preferencesStore.backupCompress;
+      const excludeScrollback = preferencesStore.backupExcludeScrollback;
+      const ext = compress ? 'gz' : 'json';
+      const filterName = compress ? 'Compressed JSON' : 'JSON';
       const path = await dialogSave({
-        defaultPath: backupFilename(),
-        filters: [{ name: 'JSON', extensions: ['json'] }],
+        defaultPath: backupFilename(compress),
+        filters: [{ name: filterName, extensions: [ext] }],
       });
       if (path) {
-        await exportState(path, excludeScrollbackExport);
+        await exportState(path, excludeScrollback, compress);
         backupStatus = 'State exported successfully.';
         setTimeout(() => { backupStatus = null; }, 3000);
       }
@@ -338,6 +336,25 @@
 
     <div class="section-content">
       {#if activeSection === 'appearance'}
+        <h3 class="section-heading">UI Font Size</h3>
+
+        <div class="setting">
+          <label for="ui-font-size">Size</label>
+          <div class="number-input-wrapper">
+            <button class="number-btn" onclick={() => preferencesStore.setUiFontSize(preferencesStore.uiFontSize - 1)}>−</button>
+            <input
+              type="number"
+              id="ui-font-size"
+              class="number-input"
+              min="10"
+              max="20"
+              value={preferencesStore.uiFontSize}
+              onchange={(e) => preferencesStore.setUiFontSize(parseInt(e.currentTarget.value) || 13)}
+            />
+            <button class="number-btn" onclick={() => preferencesStore.setUiFontSize(preferencesStore.uiFontSize + 1)}>+</button>
+          </div>
+        </div>
+
         <h3 class="section-heading">Theme</h3>
         <div class="theme-grid">
           {#each allThemes as t (t.id)}
@@ -1549,6 +1566,43 @@
           </button>
         </div>
       {:else if activeSection === 'backup'}
+        <h3 class="section-heading">Backup Options</h3>
+        <p class="section-desc">
+          These settings apply to both manual exports and scheduled backups.
+        </p>
+
+        <div class="setting">
+          <div>
+            <label for="backup-compress">Compress</label>
+            <p class="setting-hint">Save as .json.gz instead of .json</p>
+          </div>
+          <button
+            class="toggle"
+            class:active={preferencesStore.backupCompress}
+            onclick={() => preferencesStore.setBackupCompress(!preferencesStore.backupCompress)}
+            aria-pressed={preferencesStore.backupCompress}
+            aria-label="Toggle backup compression"
+          >
+            <span class="toggle-knob"></span>
+          </button>
+        </div>
+
+        <div class="setting">
+          <div>
+            <label for="backup-exclude-scrollback">Exclude Scrollback</label>
+            <p class="setting-hint">Omit terminal scrollback buffers from backup files</p>
+          </div>
+          <button
+            class="toggle"
+            class:active={preferencesStore.backupExcludeScrollback}
+            onclick={() => preferencesStore.setBackupExcludeScrollback(!preferencesStore.backupExcludeScrollback)}
+            aria-pressed={preferencesStore.backupExcludeScrollback}
+            aria-label="Toggle exclude scrollback"
+          >
+            <span class="toggle-knob"></span>
+          </button>
+        </div>
+
         <h3 class="section-heading">Manual Export / Import</h3>
         <p class="section-desc">
           Export your entire aiTerm configuration — all workspaces, tabs, preferences, triggers,
@@ -1558,19 +1612,8 @@
         <div class="setting" style="flex-direction: column; align-items: flex-start; gap: 12px;">
           <div style="display: flex; gap: 10px; align-items: center;">
             <button class="backup-btn" onclick={handleExportState}>Export State</button>
-            <button class="backup-btn backup-btn-warn" onclick={handleImportState}>Import State</button>
-            <label class="checkbox-label" style="margin-left: 8px;">
-              <input
-                type="checkbox"
-                checked={excludeScrollbackExport}
-                onchange={() => { excludeScrollbackExport = !excludeScrollbackExport; }}
-              />
-              Exclude scrollback
-            </label>
+            <button class="backup-btn backup-btn-warn" onclick={handleImportState} title="Opens a preview where you can select workspaces and choose overwrite or merge">Import State</button>
           </div>
-          <p class="setting-hint" style="max-width: none;">
-            Import opens a preview where you can select workspaces and choose overwrite or merge.
-          </p>
           {#if backupStatus}
             <p class="backup-status">{backupStatus}</p>
           {/if}
@@ -1611,40 +1654,6 @@
             <option value="weekly">Weekly</option>
             <option value="monthly">Monthly</option>
           </select>
-        </div>
-
-        <div class="setting">
-          <div>
-            <label for="backup-compress">Compress Backups</label>
-            <p class="setting-hint">Save as .json.gz instead of .json</p>
-          </div>
-          <button
-            class="toggle"
-            class:active={preferencesStore.backupCompress}
-            onclick={() => preferencesStore.setBackupCompress(!preferencesStore.backupCompress)}
-            disabled={!preferencesStore.backupDirectory}
-            aria-pressed={preferencesStore.backupCompress}
-            aria-label="Toggle backup compression"
-          >
-            <span class="toggle-knob"></span>
-          </button>
-        </div>
-
-        <div class="setting">
-          <div>
-            <label for="backup-exclude-scrollback">Exclude Scrollback</label>
-            <p class="setting-hint">Omit terminal scrollback from scheduled backups</p>
-          </div>
-          <button
-            class="toggle"
-            class:active={preferencesStore.backupExcludeScrollback}
-            onclick={() => preferencesStore.setBackupExcludeScrollback(!preferencesStore.backupExcludeScrollback)}
-            disabled={!preferencesStore.backupDirectory}
-            aria-pressed={preferencesStore.backupExcludeScrollback}
-            aria-label="Toggle exclude scrollback"
-          >
-            <span class="toggle-knob"></span>
-          </button>
         </div>
 
         <div class="setting" style="align-items: flex-start;">
@@ -1714,7 +1723,7 @@
   }
 
   .title {
-    font-size: 13px;
+    font-size: 1rem;
     font-weight: 600;
     color: var(--fg);
   }
@@ -1738,7 +1747,7 @@
   .sidebar-item {
     padding: 8px 12px;
     border-radius: 4px;
-    font-size: 13px;
+    font-size: 1rem;
     color: var(--fg-dim);
     text-align: left;
     cursor: pointer;
@@ -1774,7 +1783,7 @@
   }
 
   .setting-hint {
-    font-size: 11px;
+    font-size: 0.846rem;
     color: var(--fg-dim);
     margin: 2px 0 0 0;
     line-height: 1.4;
@@ -1783,7 +1792,7 @@
 
   .setting > label,
   .setting > .label-text {
-    font-size: 13px;
+    font-size: 1rem;
     color: var(--fg);
   }
 
@@ -1804,7 +1813,7 @@
     border-left: 1px solid var(--bg-light);
     border-right: 1px solid var(--bg-light);
     padding: 6px 4px;
-    font-size: 13px;
+    font-size: 1rem;
     color: var(--fg);
     appearance: textfield;
     -moz-appearance: textfield;
@@ -1825,7 +1834,7 @@
     padding: 0;
     background: var(--bg-dark);
     color: var(--fg-dim);
-    font-size: 14px;
+    font-size: 1.077rem;
     cursor: pointer;
     border: none;
     border-radius: 0;
@@ -1841,7 +1850,7 @@
     border: 1px solid var(--bg-light);
     border-radius: 4px;
     padding: 6px 10px;
-    font-size: 13px;
+    font-size: 1rem;
     color: var(--fg);
     cursor: pointer;
     min-width: 140px;
@@ -1860,7 +1869,7 @@
     display: flex;
     align-items: center;
     gap: 4px;
-    font-size: 13px;
+    font-size: 1rem;
     color: var(--fg);
     cursor: pointer;
   }
@@ -1900,20 +1909,27 @@
   }
 
   .section-heading {
-    font-size: 12px;
+    font-size: 0.846rem;
     font-weight: 600;
     color: var(--fg-dim);
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.08em;
     margin: 0 0 8px 0;
+    padding: 6px 0 6px 10px;
+    border-left: 2px solid var(--accent);
   }
 
   .section-heading:not(:first-child) {
-    margin-top: 24px;
+    margin-top: 28px;
+  }
+
+  .section-heading ~ .setting,
+  .section-heading ~ .section-desc {
+    margin-left: 12px;
   }
 
   .section-desc {
-    font-size: 12px;
+    font-size: 0.923rem;
     color: var(--fg-dim);
     margin: 0 0 16px 0;
     line-height: 1.5;
@@ -1923,7 +1939,7 @@
     background: var(--bg-dark);
     padding: 1px 4px;
     border-radius: 3px;
-    font-size: 11px;
+    font-size: 0.846rem;
     font-family: inherit;
   }
 
@@ -1931,7 +1947,7 @@
     background: var(--bg-dark);
     padding: 1px 4px;
     border-radius: 3px;
-    font-size: 11px;
+    font-size: 0.846rem;
   }
 
   .pattern-row {
@@ -1947,7 +1963,7 @@
     border: 1px solid var(--bg-light);
     border-radius: 4px;
     padding: 6px 10px;
-    font-size: 13px;
+    font-size: 1rem;
     font-family: 'Menlo', Monaco, monospace;
     color: var(--fg);
   }
@@ -1966,7 +1982,7 @@
     padding: 0;
     color: var(--fg-dim);
     border-radius: 4px;
-    font-size: 14px;
+    font-size: 1.077rem;
   }
 
   .pattern-delete:hover {
@@ -1977,7 +1993,7 @@
     color: var(--red, #f7768e);
   }
   .restore-default-btn {
-    font-size: 11px;
+    font-size: 0.846rem;
     color: var(--fg);
     padding: 2px 8px;
     border-radius: 4px;
@@ -1999,7 +2015,7 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    font-size: 12px;
+    font-size: 0.923rem;
   }
   .confirm-delete-label {
     color: var(--red, #f7768e);
@@ -2007,7 +2023,7 @@
   .confirm-delete-btn {
     padding: 2px 8px;
     border-radius: 4px;
-    font-size: 11px;
+    font-size: 0.846rem;
     cursor: pointer;
   }
   .confirm-yes {
@@ -2032,7 +2048,7 @@
   }
 
   .add-pattern-btn {
-    font-size: 12px;
+    font-size: 0.923rem;
     color: var(--fg-dim);
     padding: 4px 8px;
     border-radius: 4px;
@@ -2083,7 +2099,7 @@
   }
 
   .swatch-label {
-    font-size: 11px;
+    font-size: 0.846rem;
     color: var(--fg-dim);
     text-align: center;
   }
@@ -2102,7 +2118,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 12px;
+    font-size: 0.923rem;
     color: var(--fg-dim);
     background: var(--bg-medium);
     border: 1px solid var(--bg-light);
@@ -2133,7 +2149,7 @@
   }
 
   .new-theme-icon {
-    font-size: 24px;
+    font-size: 1.846rem;
     color: var(--fg-dim);
     height: 20px;
     display: flex;
@@ -2188,7 +2204,7 @@
   .trigger-name-btn {
     flex: 1;
     text-align: left;
-    font-size: 13px;
+    font-size: 1rem;
     color: var(--fg);
     padding: 4px 0;
     cursor: pointer;
@@ -2228,7 +2244,7 @@
   }
 
   .trigger-section-heading {
-    font-size: 11px;
+    font-size: 0.846rem;
     font-weight: 600;
     color: var(--fg-dim);
     text-transform: uppercase;
@@ -2249,12 +2265,12 @@
   }
 
   .trigger-field > label {
-    font-size: 12px;
+    font-size: 0.923rem;
     color: var(--fg-dim);
   }
 
   .field-hint {
-    font-size: 11px;
+    font-size: 0.846rem;
     color: var(--fg-dim);
     opacity: 0.7;
   }
@@ -2266,7 +2282,7 @@
   }
 
   .match-mode-select {
-    font-size: 11px;
+    font-size: 0.846rem;
     padding: 2px 6px;
     min-width: auto;
     background: var(--bg-dark);
@@ -2307,7 +2323,7 @@
     border: 1px solid var(--bg-light);
     border-radius: 3px;
     color: var(--fg);
-    font-size: 12px;
+    font-size: 0.923rem;
     padding: 3px 6px;
     outline: none;
   }
@@ -2326,7 +2342,7 @@
     flex: none;
     padding: 2px 8px;
     border-radius: 3px;
-    font-size: 11px;
+    font-size: 0.846rem;
     color: var(--accent);
     border: 1px solid var(--accent);
     background: transparent;
@@ -2349,7 +2365,7 @@
     align-items: center;
     gap: 6px;
     padding: 3px 8px;
-    font-size: 12px;
+    font-size: 0.923rem;
     color: var(--fg-dim);
     cursor: pointer;
     user-select: none;
@@ -2378,7 +2394,7 @@
 
   .tab-active-badge {
     flex: none;
-    font-size: 10px;
+    font-size: 0.769rem;
     color: var(--accent);
     padding: 0 4px;
     border: 1px solid var(--accent);
@@ -2390,7 +2406,7 @@
     display: block;
     width: 100%;
     padding: 3px 8px;
-    font-size: 11px;
+    font-size: 0.846rem;
     color: var(--fg-dim);
     background: none;
     border: none;
@@ -2438,7 +2454,7 @@
     border-radius: 50%;
     background: var(--bg-light);
     color: var(--fg-dim);
-    font-size: 11px;
+    font-size: 0.846rem;
     font-weight: 600;
     cursor: help;
     flex-shrink: 0;
@@ -2457,7 +2473,7 @@
   }
 
   .var-arrow {
-    font-size: 11px;
+    font-size: 0.846rem;
     color: var(--fg-dim);
     white-space: nowrap;
   }
@@ -2487,7 +2503,7 @@
     display: contents;
   }
   .var-error {
-    font-size: 11px;
+    font-size: 0.846rem;
     color: var(--red, #f7768e);
     margin: -2px 0 4px 0;
   }
@@ -2501,7 +2517,7 @@
     display: flex;
     align-items: center;
     gap: 4px;
-    font-size: 12px;
+    font-size: 0.923rem;
     color: var(--fg-dim);
     cursor: pointer;
     user-select: none;
@@ -2515,7 +2531,7 @@
   .backup-btn {
     padding: 8px 16px;
     border-radius: 4px;
-    font-size: 13px;
+    font-size: 1rem;
     color: var(--fg);
     background: var(--bg-dark);
     border: 1px solid var(--bg-light);
@@ -2533,7 +2549,7 @@
   }
 
   .backup-status {
-    font-size: 12px;
+    font-size: 0.923rem;
     color: var(--fg-dim);
     margin: 0;
   }
@@ -2555,7 +2571,7 @@
     border: 1px solid var(--bg-light);
     border-radius: 4px;
     color: var(--fg-dim);
-    font-size: 12px;
+    font-size: 0.923rem;
     cursor: pointer;
   }
 
@@ -2577,7 +2593,7 @@
   }
 
   .volume-label {
-    font-size: 12px;
+    font-size: 0.923rem;
     color: var(--fg-dim);
     min-width: 32px;
     text-align: right;

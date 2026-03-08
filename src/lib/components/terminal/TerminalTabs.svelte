@@ -826,7 +826,7 @@
     padding: 5px 10px;
     display: flex;
     align-items: center;
-    font-size: 12px;
+    font-size: 0.923rem;
     color: var(--fg);
     white-space: nowrap;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
@@ -841,7 +841,7 @@
     border-radius: 50%;
     background: var(--green, #9ece6a);
     color: #1a1b26;
-    font-size: 13px;
+    font-size: 1rem;
     font-weight: 800;
     display: flex;
     align-items: center;
@@ -853,7 +853,7 @@
 
   .auto-resume-indicator {
     flex-shrink: 0;
-    font-size: 10px;
+    font-size: 0.769rem;
     margin-right: 3px;
     opacity: 0.6;
     line-height: 1;
@@ -882,7 +882,7 @@
   .indicator {
     flex-shrink: 0;
     margin-right: 4px;
-    font-size: 10px;
+    font-size: 0.769rem;
     font-weight: bold;
     line-height: 1;
   }
@@ -896,18 +896,18 @@
   }
 
   .alert-indicator {
-    font-size: 11px;
+    font-size: 0.846rem;
   }
 
   .question-indicator {
-    font-size: 11px;
+    font-size: 0.846rem;
   }
 
   .tab-name {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 12px;
+    font-size: 0.923rem;
   }
 
   .tab-actions {
@@ -978,7 +978,7 @@
 
   .edit-wrapper > * {
     grid-area: 1 / 1;
-    font-size: 12px;
+    font-size: 0.923rem;
     padding: 0 4px;
     font-family: inherit;
   }
@@ -1008,7 +1008,7 @@
     margin-left: 5px;
     border-radius: 4px;
     color: var(--fg-dim);
-    font-size: 14px;
+    font-size: 1.077rem;
     -webkit-app-region: no-drag;
   }
 
@@ -1038,7 +1038,7 @@
     margin-left: 4px;
     border-radius: 4px;
     color: var(--fg-dim);
-    font-size: 11px;
+    font-size: 0.846rem;
     white-space: nowrap;
     -webkit-app-region: no-drag;
   }
@@ -1081,7 +1081,7 @@
     align-items: baseline;
     gap: 6px;
     overflow: hidden;
-    font-size: 12px;
+    font-size: 0.923rem;
     color: var(--fg);
     text-align: left;
     padding: 2px 0;
@@ -1100,13 +1100,13 @@
 
   .archive-item-date {
     flex-shrink: 0;
-    font-size: 10px;
+    font-size: 0.769rem;
     color: var(--fg-dim);
     white-space: nowrap;
   }
 
   .archive-section-header {
-    font-size: 10px;
+    font-size: 0.769rem;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -1127,7 +1127,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 10px;
+    font-size: 0.769rem;
     opacity: 0.6;
     color: var(--fg-dim);
   }

@@ -113,7 +113,7 @@
     width: 100%;
     padding: 6px 12px;
     border-radius: 4px;
-    font-size: 13px;
+    font-size: 1rem;
     color: var(--fg);
     text-align: left;
     cursor: pointer;
@@ -135,7 +135,7 @@
   .menu-shortcut {
     margin-left: 24px;
     color: var(--fg-dim);
-    font-size: 12px;
+    font-size: 0.923rem;
   }
 
   .separator {

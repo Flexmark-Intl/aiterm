@@ -52,17 +52,17 @@
     />
     <IconButton
       tooltip="Previous match (Shift+Enter)"
-      style="font-size:12px;line-height:1"
+      style="font-size: 0.923rem;line-height:1"
       onclick={() => terminalsStore.findPrevious(tabId, query)}
     >&#x25B2;</IconButton>
     <IconButton
       tooltip="Next match (Enter)"
-      style="font-size:12px;line-height:1"
+      style="font-size: 0.923rem;line-height:1"
       onclick={() => terminalsStore.findNext(tabId, query)}
     >&#x25BC;</IconButton>
     <IconButton
       tooltip="Close (Escape)"
-      style="font-size:16px"
+      style="font-size: 1.231rem"
       onclick={close}
     >&times;</IconButton>
   </div>
@@ -91,7 +91,7 @@
     border: 1px solid var(--bg-light);
     border-radius: 4px;
     color: var(--fg);
-    font-size: 13px;
+    font-size: 1rem;
     font-family: inherit;
     outline: none;
   }
