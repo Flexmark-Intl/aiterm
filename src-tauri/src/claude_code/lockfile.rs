@@ -93,8 +93,8 @@ fn write_mcp_settings(port: u16, auth: &str) -> Result<(), String> {
         .or_insert(serde_json::json!({}));
 
     mcp_servers[mcp_server_key()] = serde_json::json!({
-        "type": "sse",
-        "url": format!("http://127.0.0.1:{}/sse", port),
+        "type": "http",
+        "url": format!("http://127.0.0.1:{}/mcp", port),
         "headers": {
             "x-claude-code-ide-authorization": auth
         }

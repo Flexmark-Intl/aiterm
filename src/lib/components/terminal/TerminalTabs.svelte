@@ -10,6 +10,7 @@
   import { getCompiledTitlePatterns, extractDirFromTitle } from '$lib/utils/promptPattern';
   import { onVariablesChange, interpolateVariables } from '$lib/stores/triggers.svelte';
   import { isEditorDirty } from '$lib/stores/editorRegistry.svelte';
+  import { getBridgeStatus } from '$lib/stores/sshMcpBridge.svelte';
   import { isImageFile, isPdfFile } from '$lib/utils/languageDetect';
   import Icon from '$lib/components/Icon.svelte';
   import StatusDot from '$lib/components/ui/StatusDot.svelte';
@@ -283,10 +284,13 @@
   let cursorBadge: HTMLElement | null = null;
   let tabsBarEl: HTMLElement;
 
-  // Scroll active tab into view when it changes (e.g. Cmd+1-9 shortcuts)
+  // Scroll active tab into view when it changes (e.g. Cmd+1-9 shortcuts).
+  // Track previous ID so renames (which replace pane objects) don't re-trigger.
+  let prevActiveTabId: string | null = null;
   $effect(() => {
     const activeId = pane.active_tab_id;
-    if (activeId) scrollTabIntoView(activeId);
+    if (activeId && activeId !== prevActiveTabId) scrollTabIntoView(activeId);
+    prevActiveTabId = activeId ?? null;
   });
 
   function handlePointerDown(e: PointerEvent, tabId: string) {
@@ -662,7 +666,18 @@
             tab.auto_resume_ssh_command
               ? `Auto-resume: ${tab.auto_resume_ssh_command}${tab.auto_resume_remote_cwd ? ` (${tab.auto_resume_remote_cwd})` : ''}`
               : `Auto-resume: ${tab.auto_resume_cwd ?? 'enabled'}`
-          }>&#x21BB;</span>
+          }><Icon name="resume" size={12} /></span>
+        {/if}
+        {#if !isEditor && preferencesStore.claudeCodeIde && preferencesStore.claudeCodeIdeSsh}
+          {@const bridgeStatus = getBridgeStatus(tab.id)}
+          {#if bridgeStatus}
+            <span
+              class="bridge-indicator"
+              class:bridge-connected={bridgeStatus === 'connected'}
+              class:bridge-failed={bridgeStatus === 'failed'}
+              title={bridgeStatus === 'connected' ? 'MCP bridge active' : 'MCP bridge failed'}
+            ><Icon name="bolt" size={12} /></span>
+          {/if}
         {/if}
         <span class="tab-name">{displayName(tab)}</span>
         <div class="tab-actions" class:always-visible={preferencesStore.tabButtonStyle === 'always'} class:modifier-only={preferencesStore.tabButtonStyle === 'modifier'} class:modifier-active={preferencesStore.tabButtonStyle === 'modifier' && modHeld} class:never-visible={preferencesStore.tabButtonStyle === 'never'} class:single-action={false} class:double-action={isEditor || isDiff} class:triple-action={!isEditor && !isDiff}>
@@ -853,10 +868,27 @@
 
   .auto-resume-indicator {
     flex-shrink: 0;
-    font-size: 0.769rem;
     margin-right: 3px;
     opacity: 0.6;
     line-height: 1;
+    display: flex;
+    align-items: center;
+    transform: rotate(-45deg);
+  }
+
+  .bridge-indicator {
+    flex-shrink: 0;
+    margin-right: 3px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+  }
+  .bridge-connected {
+    color: var(--green, #9ece6a);
+    opacity: 0.8;
+  }
+  .bridge-failed {
+    opacity: 0.6;
   }
 
   .editor-icon {

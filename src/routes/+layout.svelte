@@ -19,6 +19,7 @@
   import type { ClaudeCodeToolRequest, Preferences } from '$lib/tauri/types';
   import type { ImportPreview } from '$lib/tauri/commands';
   import { claudeCodeStore } from '$lib/stores/claudeCode.svelte';
+  import { toastStore } from '$lib/stores/toasts.svelte';
   import { isModKey, isMac } from '$lib/utils/platform';
   import { open as dialogOpen, save as dialogSave } from '@tauri-apps/plugin-dialog';
   import { openFileFromTerminal } from '$lib/utils/openFile';
@@ -165,6 +166,12 @@
       }
       await invoke('exit_app');
     }).then(unlisten => { unlistenQuit = unlisten; });
+
+    // Pause toast timers when window loses focus, resume on focus
+    let unlistenFocus: (() => void) | undefined;
+    appWindow.onFocusChanged(({ payload: focused }) => {
+      toastStore.setWindowFocused(focused);
+    }).then(unlisten => { unlistenFocus = unlisten; });
 
     // Listen for reload-tab menu event — duplicate tab with same context, close old
     let unlistenReloadTab: (() => void) | undefined;
@@ -649,6 +656,7 @@
       unlistenClaudeTool?.();
       unlistenClaudeConnection?.();
       unlistenNotificationAction?.unregister();
+      unlistenFocus?.();
       unlistenPrefs?.();
       detachConsole?.();
     };

@@ -24,7 +24,17 @@ interface TimerState {
 
 function createToastStore() {
   let toasts = $state<Toast[]>([]);
+  let windowFocused = $state(true);
   const timers = new Map<string, TimerState>();
+  // Track which toasts are hovered (to avoid resuming on focus if still hovered)
+  const hoveredIds = new Set<string>();
+  // Reactive signal bumped on every timer state change so isActive() triggers re-renders
+  let timerVersion = $state(0);
+
+  /** Returns the active (index 0) toast id, or null. */
+  function activeId(): string | null {
+    return toasts.length > 0 ? toasts[0].id : null;
+  }
 
   function startTimer(id: string, ms: number) {
     const timer = setTimeout(() => {
@@ -32,49 +42,136 @@ function createToastStore() {
       removeToast(id);
     }, ms);
     timers.set(id, { timer, remaining: ms, pausedAt: null });
+    timerVersion++;
+  }
+
+  /** Create a timer entry in paused/waiting state (no setTimeout).
+   *  pausedAt = -1 signals "never started" — resume uses full remaining time. */
+  function createPausedTimer(id: string, ms: number) {
+    timers.set(id, { timer: undefined as unknown as ReturnType<typeof setTimeout>, remaining: ms, pausedAt: -1 });
+    timerVersion++;
+  }
+
+  /** Compute remaining ms, accounting for never-started timers (pausedAt === -1). */
+  function computeRemaining(ts: TimerState): number {
+    if (ts.pausedAt === null || ts.pausedAt === -1) return ts.remaining;
+    const elapsed = Date.now() - ts.pausedAt;
+    return Math.max(0, ts.remaining - elapsed);
+  }
+
+  /** Start a timer with the given remaining ms, updating the TimerState. */
+  function fireTimer(id: string, ts: TimerState, ms: number) {
+    ts.pausedAt = null;
+    ts.remaining = ms;
+    ts.timer = setTimeout(() => {
+      timers.delete(id);
+      removeToast(id);
+    }, ms);
+    timerVersion++;
+  }
+
+  /** Activate the next toast at index 0 after a removal, if conditions allow. */
+  function activateNext() {
+    const next = activeId();
+    if (!next) return;
+    const ts = timers.get(next);
+    if (!ts) return;
+    if (windowFocused && !hoveredIds.has(next) && ts.pausedAt !== null) {
+      fireTimer(next, ts, computeRemaining(ts));
+    }
   }
 
   function removeToast(id: string) {
+    const wasActive = activeId() === id;
     const ts = timers.get(id);
     if (ts) {
       clearTimeout(ts.timer);
       timers.delete(id);
     }
+    hoveredIds.delete(id);
     toasts = toasts.filter(t => t.id !== id);
+    if (wasActive) activateNext();
   }
 
   function pauseToast(id: string) {
+    hoveredIds.add(id);
+    // Only the active toast has a running timer to pause
+    if (id !== activeId()) return;
     const ts = timers.get(id);
     if (!ts || ts.pausedAt !== null) return;
     clearTimeout(ts.timer);
     ts.pausedAt = Date.now();
+    timerVersion++;
   }
 
   function resumeToast(id: string) {
+    hoveredIds.delete(id);
+    // Only resume the active toast, and only if window is focused
+    if (id !== activeId() || !windowFocused) return;
     const ts = timers.get(id);
     if (!ts || ts.pausedAt === null) return;
-    const elapsed = Date.now() - ts.pausedAt;
-    const remaining = Math.max(0, ts.remaining - elapsed);
-    ts.pausedAt = null;
-    ts.remaining = remaining;
-    ts.timer = setTimeout(() => {
-      timers.delete(id);
-      removeToast(id);
-    }, remaining);
+    fireTimer(id, ts, computeRemaining(ts));
   }
 
-  function addToast(title: string, body: string, type: Toast['type'] = 'info', source?: ToastSource) {
+  function addToast(title: string, body: string, type: Toast['type'] = 'info', source?: ToastSource, focused?: boolean) {
     const id = crypto.randomUUID();
     const durationMs = preferencesStore.toastDuration * 1000;
     const toast: Toast = { id, title, body, type, createdAt: Date.now(), duration: durationMs, source };
     toasts = [...toasts, toast];
 
-    startTimer(id, durationMs);
+    // If caller provides explicit focus state, trust it over our tracked state
+    // (dispatch() already queries isFocused() and may know better than the
+    // event-driven windowFocused flag, which can lag on startup)
+    if (focused !== undefined) windowFocused = focused;
+    const isFocused = windowFocused;
+
+    // Only the first toast (active) gets a running timer, and only if focused
+    const isFirst = toasts.length === 1;
+    if (isFirst && isFocused) {
+      startTimer(id, durationMs);
+    } else {
+      createPausedTimer(id, durationMs);
+    }
 
     // Evict oldest if over max
     while (toasts.length > MAX_VISIBLE) {
       removeToast(toasts[0].id);
     }
+  }
+
+  function setWindowFocused(focused: boolean) {
+    windowFocused = focused;
+    const active = activeId();
+    if (!active) return;
+
+    if (!focused) {
+      // Pause the active toast's timer
+      const ts = timers.get(active);
+      if (ts && ts.pausedAt === null) {
+        clearTimeout(ts.timer);
+        ts.pausedAt = Date.now();
+        timerVersion++;
+      }
+    } else {
+      // Resume the active toast if not hovered
+      if (!hoveredIds.has(active)) {
+        const ts = timers.get(active);
+        if (ts && ts.pausedAt !== null) {
+          fireTimer(active, ts, computeRemaining(ts));
+        }
+      }
+    }
+  }
+
+  /**
+   * Returns true if this toast's progress bar should be animating.
+   * True only when: it's the active toast (index 0), not paused by hover or window blur.
+   */
+  function isActive(id: string): boolean {
+    void timerVersion; // reactive dependency — re-evaluate when timer state changes
+    if (id !== activeId()) return false;
+    const ts = timers.get(id);
+    return !!ts && ts.pausedAt === null;
   }
 
   return {
@@ -83,6 +180,8 @@ function createToastStore() {
     removeToast,
     pauseToast,
     resumeToast,
+    setWindowFocused,
+    isActive,
   };
 }
 

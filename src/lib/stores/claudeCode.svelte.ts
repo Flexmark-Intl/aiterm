@@ -7,6 +7,7 @@ import { interpolateVariables, getVariables, setVariable, handleEnableAutoResume
 import { CLAUDE_RESUME_COMMAND } from '$lib/triggers/defaults';
 import { preferencesStore } from '$lib/stores/preferences.svelte';
 import { stripAnsi } from '$lib/utils/ansi';
+import { dispatch as dispatchNotification } from '$lib/stores/notificationDispatch';
 import { error as logError, info as logInfo } from '@tauri-apps/plugin-log';
 
 export interface PendingSelection {
@@ -133,6 +134,9 @@ function createClaudeCodeStore() {
           break;
         case 'findNotes':
           result = handleFindNotes();
+          break;
+        case 'sendNotification':
+          result = await handleSendNotification(args as { title: string; body?: string; type?: string });
           break;
         // getPreferences, setPreference, createBackup, listWindows handled directly on backend
         default:
@@ -908,6 +912,12 @@ function createClaudeCodeStore() {
     }
 
     return { tabNotes, workspaceNotes };
+  }
+
+  async function handleSendNotification(args: { title: string; body?: string; type?: string }) {
+    const type = (['success', 'error', 'info'].includes(args.type ?? '') ? args.type : 'info') as 'success' | 'error' | 'info';
+    await dispatchNotification(args.title, args.body ?? '', type);
+    return { sent: true };
   }
 
   /** Resolve a tab by ID or fall back to the active tab. Returns { workspace, pane, tab } or { error }. */

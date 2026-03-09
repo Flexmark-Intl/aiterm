@@ -127,14 +127,14 @@ export async function dispatch(
     return;
   }
 
-  // mode === 'auto': toast when focused, OS when unfocused
+  // mode === 'auto': always toast, additionally OS notification when unfocused
   try {
     const focused = await getCurrentWindow().isFocused();
+    toastStore.addToast(title, body, type, source, focused);
     if (focused) {
       logInfo(`Notification (auto/in-app): ${body}`);
-      toastStore.addToast(title, body, type, source);
     } else {
-      logInfo(`Notification (auto/native): ${body}`);
+      logInfo(`Notification (auto/both): ${body}`);
       await sendOsNotification(title, body, source);
     }
   } catch {

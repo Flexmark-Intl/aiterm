@@ -309,6 +309,30 @@ Claude Code CLI ←→ WebSocket/SSE ←→ axum server (Rust) ←→ Tauri even
 | getAutoResume | Get current auto-resume configuration for a tab |
 | findNotes | Search all tabs and workspaces for notes, returns previews |
 
+### SSH MCP Bridge (Remote IDE Tools)
+
+Exposes local MCP tools to Claude Code running on remote servers via SSH reverse tunnels.
+
+**Architecture:**
+```
+Local aiTerm → SSH reverse tunnel (-R 0:127.0.0.1:{mcp_port}) → Remote :allocated_port
+Remote Claude Code → discovers ~/.claude/ide/{port}.lock → connects through tunnel → local MCP server
+```
+
+**Key files:**
+- `src-tauri/src/commands/ssh_tunnel.rs` — tunnel lifecycle (start, detach, kill), port parsing
+- `src/lib/stores/sshMcpBridge.svelte.ts` — bridge orchestration, lockfile injection, ref counting
+
+**Preference:** `claude_code_ide_ssh` (default true, requires `claude_code_ide`). Controls auto-enable on SSH detection.
+
+**Tunnel sharing:** One tunnel per `host_key` (user@host), ref-counted by tab IDs. Last tab detaches → tunnel killed.
+
+**Auto-enable:** SSH sessions detected via `getPtyInfo()` foreground_command. For restore/clone SSH: 5s delay after SSH replay. For ad-hoc SSH: 10s delayed check. Manual via context menu.
+
+**Remote cleanup:** EXIT/HUP/TERM trap removes lockfile. Stale lockfile detection on reconnect tests dead ports via `/dev/tcp/localhost/{port}`.
+
+**Port allocation:** `ssh -R 0:...` lets SSH pick a free remote port. Parsed from stderr: `"Allocated port NNNNN for remote forward"`.
+
 ### Editor Registry
 
 `editorRegistry.svelte.ts` maintains a map of open editor views, used by Claude Code tools to query editor state (dirty tabs, file paths, selections) and by DiffPane for tracking.

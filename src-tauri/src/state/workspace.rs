@@ -657,6 +657,9 @@ pub struct Preferences {
     /// Enable Claude Code IDE WebSocket integration server.
     #[serde(default = "default_true")]
     pub claude_code_ide: bool,
+    /// Enable MCP bridge over SSH (reverse tunnel to expose local MCP tools to remote Claude Code).
+    #[serde(default = "default_true")]
+    pub claude_code_ide_ssh: bool,
     /// Windows shell preference: "powershell", "pwsh", "cmd", "gitbash", "wsl"
     #[serde(default = "default_windows_shell")]
     pub windows_shell: String,
@@ -732,6 +735,7 @@ impl Default for Preferences {
             hidden_default_triggers: Vec::new(),
             claude_triggers_prompted: false,
             claude_code_ide: true,
+            claude_code_ide_ssh: true,
             windows_shell: default_windows_shell(),
             file_link_action: default_file_link_action(),
             backup_directory: None,

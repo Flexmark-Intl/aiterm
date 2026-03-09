@@ -22,6 +22,9 @@ pub fn exit_app(app: tauri::AppHandle, state: State<'_, Arc<AppState>>) {
         crate::claude_code::lockfile::delete_lockfile(port);
     }
 
+    // Kill all SSH MCP tunnels
+    crate::commands::ssh_tunnel::kill_all_tunnels(&state);
+
     // Kill all remaining PTYs so their threads can exit cleanly
     let pty_ids: Vec<String> = state.pty_registry.read().keys().cloned().collect();
     for id in &pty_ids {
@@ -1838,6 +1841,20 @@ pub fn get_app_diagnostics(state: State<'_, Arc<AppState>>) -> serde_json::Value
     let memory_trend: Vec<crate::state::app_state::MemorySample> =
         state.memory_samples.read().clone();
 
+    let ssh_mcp_tunnel_info: Vec<serde_json::Value> = {
+        let tunnels = state.ssh_tunnels.read();
+        tunnels.values().map(|t| {
+            let tab_ids: Vec<&str> = t.tab_ids.iter().map(|s| s.as_str()).collect();
+            serde_json::json!({
+                "host_key": t.host_key,
+                "remote_port": t.remote_port,
+                "pid": t.pid,
+                "alive": crate::commands::ssh_tunnel::is_tunnel_alive(t.pid),
+                "tab_ids": tab_ids,
+            })
+        }).collect()
+    };
+
     serde_json::json!({
         "version": crate::APP_VERSION,
         "mode": if cfg!(debug_assertions) { "dev" } else { "production" },
@@ -1868,6 +1885,7 @@ pub fn get_app_diagnostics(state: State<'_, Arc<AppState>>) -> serde_json::Value
         "state_file_bytes": state_file_size,
         "process": process_info,
         "pty_processes": child_info,
+        "ssh_mcp_tunnels": ssh_mcp_tunnel_info,
         "system": {
             "total_memory_bytes": total_sys.total_memory(),
             "used_memory_bytes": total_sys.used_memory(),

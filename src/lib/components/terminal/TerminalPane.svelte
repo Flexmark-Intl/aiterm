@@ -28,6 +28,7 @@
   import { CLAUDE_RESUME_COMMAND } from '$lib/triggers/defaults';
   import { createFilePathLinkProvider } from '$lib/utils/filePathDetector';
   import { openFileFromTerminal } from '$lib/utils/openFile';
+  import { enableBridge, disableBridge, hasBridge } from '$lib/stores/sshMcpBridge.svelte';
   import Button from '$lib/components/ui/Button.svelte';
 
   interface Props {
@@ -464,7 +465,7 @@
           try {
             const cmd = buildSshCommand(ctx.sshCommand, ctx.remoteCwd);
             let payload = cmd + '\n';
-            if (autoResumeCommand) {
+            if ((autoResumeEnabled ?? true) && autoResumeCommand) {
               payload += interpolateVariables(tabId, autoResumeCommand, true) + '\n';
             }
             const bytes = Array.from(new TextEncoder().encode(payload));
@@ -473,6 +474,13 @@
             logError(`Failed to replay SSH command: ${e}`);
           }
         }, 500);
+
+        // Enable SSH MCP bridge after SSH connection establishes (~5s)
+        if (ctx.sshCommand) {
+          setTimeout(() => {
+            if (!destroyed) enableBridge(tabId, ctx.sshCommand!).catch(() => {});
+          }, 5000);
+        }
       } else if ((autoResumeEnabled ?? true) && autoResumeCommand && (!splitCtx || splitCtx.fireAutoResume)) {
         // Local auto-resume: send command after shell starts (also fires on reload)
         setTimeout(async () => {
@@ -483,6 +491,17 @@
             logError(`Failed to replay auto-resume command: ${e}`);
           }
         }, 500);
+      } else {
+        // For ad-hoc SSH sessions: check after 10s if SSH started
+        setTimeout(async () => {
+          if (destroyed || hasBridge(tabId)) return;
+          try {
+            const info = await getPtyInfo(ptyId);
+            if (info.foreground_command) {
+              enableBridge(tabId, info.foreground_command).catch(() => {});
+            }
+          } catch { /* tab may be gone */ }
+        }, 10000);
       }
     }
 
@@ -606,6 +625,9 @@
     // destroy is called, and async onDestroy is not awaited by Svelte,
     // which causes race conditions with terminal.dispose() below.
     destroyed = true;
+
+    // Detach SSH MCP bridge (fire-and-forget, non-blocking)
+    disableBridge(tabId).catch(() => {});
 
     window.removeEventListener('terminal-slot-ready', handleSlotReady);
 
@@ -1027,6 +1049,33 @@
             await writeTerminal(ptyId, bytes);
           },
         },
+      ] : []),
+      ...(preferencesStore.claudeCodeIde && preferencesStore.claudeCodeIdeSsh ? [
+        { label: '', separator: true, action: () => {} },
+        ...(hasBridge(tabId) ? [
+          {
+            label: 'Disable Remote MCP Bridge',
+            action: async () => {
+              await disableBridge(tabId);
+            },
+          },
+        ] : [
+          {
+            label: 'Enable Remote MCP Bridge',
+            action: async () => {
+              try {
+                const info = await getPtyInfo(ptyId);
+                if (info.foreground_command) {
+                  await enableBridge(tabId, info.foreground_command);
+                } else {
+                  dispatch('MCP Bridge', 'No SSH session detected — connect via SSH first', 'info');
+                }
+              } catch (e) {
+                logError(`MCP bridge failed: ${e}`);
+              }
+            },
+          },
+        ]),
       ] : []),
     ];
   }

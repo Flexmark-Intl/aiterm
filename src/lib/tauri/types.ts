@@ -172,6 +172,7 @@ export interface Preferences {
   hidden_default_triggers: string[];
   claude_triggers_prompted: boolean;
   claude_code_ide: boolean;
+  claude_code_ide_ssh: boolean;
   windows_shell: string;
   file_link_action: string;
   backup_directory: string | null;

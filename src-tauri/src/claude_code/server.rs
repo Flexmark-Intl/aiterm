@@ -109,7 +109,9 @@ pub async fn start_server(app_handle: AppHandle, state: Arc<AppState>) {
     let app = Router::new()
         // WebSocket — IDE integration (discovered via lock file)
         .route("/", get(ws_upgrade_handler))
-        // SSE — MCP server registration (via ~/.claude/settings.json)
+        // Streamable HTTP — modern MCP transport (POST returns JSON or SSE)
+        .route("/mcp", post(streamable_http_handler))
+        // Legacy SSE — older MCP clients (GET /sse + POST /message)
         .route("/sse", get(sse_get_handler))
         .route("/message", post(sse_message_handler))
         .with_state(server_state);
@@ -214,6 +216,7 @@ fn preference_meta() -> Vec<(&'static str, PrefMeta)> {
         ("workspace_sort_order", PrefMeta { description: "Workspace list sort order (default, alphabetical, recent)", ptype: "string", category: "Workspace", read_only: false }),
         ("show_workspace_tab_count", PrefMeta { description: "Show tab count badges on workspace items", ptype: "boolean", category: "Workspace", read_only: false }),
         ("claude_code_ide", PrefMeta { description: "Enable Claude Code IDE integration (MCP server)", ptype: "boolean", category: "Integration", read_only: false }),
+        ("claude_code_ide_ssh", PrefMeta { description: "Enable MCP bridge over SSH (reverse tunnel for remote Claude Code)", ptype: "boolean", category: "Integration", read_only: false }),
         ("backup_directory", PrefMeta { description: "Backup directory path (null = scheduled backups disabled)", ptype: "string", category: "Backup", read_only: false }),
         ("backup_interval", PrefMeta { description: "Scheduled backup interval (off, hourly, daily, weekly, monthly)", ptype: "string", category: "Backup", read_only: false }),
         ("backup_compress", PrefMeta { description: "Compress backups with gzip", ptype: "boolean", category: "Backup", read_only: false }),
@@ -499,6 +502,47 @@ async fn handle_ws_connection(socket: WebSocket, srv: ServerState) {
     log::info!("Claude Code WS connection cleaned up");
 }
 
+// ─── Streamable HTTP handler (modern MCP transport) ────────────────────────
+
+/// Handles POST /mcp — the Streamable HTTP MCP transport.
+/// Each request is a JSON-RPC message. The response is returned as JSON
+/// with an SSE wrapper (text/event-stream) so the client can handle
+/// both synchronous and streaming responses uniformly.
+async fn streamable_http_handler(
+    State(srv): State<ServerState>,
+    headers: HeaderMap,
+    body: String,
+) -> Response {
+    let auth = headers
+        .get("x-claude-code-ide-authorization")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    if auth != srv.expected_auth {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+
+    // Process the JSON-RPC message and get the response
+    let response_json = process_message(&body, &srv.app_handle, &srv.state).await;
+
+    match response_json {
+        Some(json) => {
+            // Return as SSE event stream (single event then close)
+            let sse_body = format!("event: message\ndata: {}\n\n", json);
+            Response::builder()
+                .status(200)
+                .header(header::CONTENT_TYPE, "text/event-stream")
+                .header(header::CACHE_CONTROL, "no-cache")
+                .body(Body::from(sse_body))
+                .unwrap()
+        }
+        None => {
+            // Notification — no response needed
+            StatusCode::ACCEPTED.into_response()
+        }
+    }
+}
+
 // ─── SSE handlers (MCP server via ~/.claude/settings.json) ─────────────────
 
 async fn sse_get_handler(State(srv): State<ServerState>, headers: HeaderMap) -> Response {
@@ -609,26 +653,24 @@ async fn sse_message_handler(
 
 // ─── Shared JSON-RPC handler ────────────────────────────────────────────────
 
-/// Process one JSON-RPC message and send the response (raw JSON string) to `response_tx`.
-/// Used by both WebSocket (where main loop wraps in WsMessage::Text) and
-/// SSE (where stream wraps as `data: …\n\n`).
-async fn handle_message(
+/// Process one JSON-RPC message and return the response as a raw JSON string.
+/// Returns `None` for notifications (no id) that don't require a response.
+async fn process_message(
     text: &str,
     app_handle: &AppHandle,
     state: &Arc<AppState>,
-    response_tx: &mpsc::UnboundedSender<String>,
-) {
+) -> Option<String> {
     let req: JsonRpcRequest = match serde_json::from_str(text) {
         Ok(r) => r,
         Err(e) => {
             log::warn!("Invalid JSON-RPC: {}", e);
-            return;
+            return None;
         }
     };
 
     let id = req.id.clone().unwrap_or(Value::Null);
 
-    let response_json: Option<String> = match req.method.as_str() {
+    match req.method.as_str() {
         "initialize" => {
             let resp = JsonRpcResponse::success(id, initialize_response());
             Some(serde_json::to_string(&resp).unwrap())
@@ -731,9 +773,18 @@ async fn handle_message(
                 None
             }
         }
-    };
+    }
+}
 
-    if let Some(json) = response_json {
+/// Channel-based wrapper: process a message and send the response to a channel.
+/// Used by WebSocket and legacy SSE handlers.
+async fn handle_message(
+    text: &str,
+    app_handle: &AppHandle,
+    state: &Arc<AppState>,
+    response_tx: &mpsc::UnboundedSender<String>,
+) {
+    if let Some(json) = process_message(text, app_handle, state).await {
         let _ = response_tx.send(json);
     }
 }

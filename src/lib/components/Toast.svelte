@@ -36,7 +36,7 @@
           onclick={(e) => { e.stopPropagation(); toastStore.removeToast(toast.id); }}
           aria-label="Dismiss notification"
         >&times;</button>
-        <div class="toast-progress" style:animation-duration="{toast.duration}ms"></div>
+        <div class="toast-progress" style:animation-duration="{toast.duration}ms" style:animation-play-state={toastStore.isActive(toast.id) ? 'running' : 'paused'}></div>
       </div>
     {/each}
   </div>
@@ -131,15 +131,11 @@
     position: absolute;
     bottom: 0;
     left: 0;
-    height: 2px;
-    background: var(--fg-dim);
-    opacity: 0.3;
+    height: 3px;
+    background: var(--accent);
+    opacity: 0.5;
     animation: toast-timer linear forwards;
     /* duration set via inline style */
-  }
-
-  .toast:hover .toast-progress {
-    animation-play-state: paused;
   }
 
   @keyframes toast-timer {

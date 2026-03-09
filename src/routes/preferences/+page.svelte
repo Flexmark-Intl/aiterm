@@ -1585,6 +1585,35 @@
             <span class="toggle-knob"></span>
           </button>
         </div>
+
+        {#if preferencesStore.claudeCodeIde}
+          <div class="setting" style="align-items: flex-start;">
+            <div>
+              <label for="claude-code-ide-ssh">Enable IDE Integration over SSH</label>
+              <p class="setting-hint">
+                Automatically creates a secure reverse SSH tunnel when you connect to a remote server,
+                so Claude Code running remotely can access your local aiTerm MCP tools (workspace navigation,
+                notes, tab context, auto-resume, etc.).
+              </p>
+              <p class="setting-hint" style="margin-top: 6px; opacity: 0.7;">
+                This writes a small discovery file (<code>~/.claude/ide/*.lock</code>) and registers in
+                <code>~/.claude.json</code> on the remote server. No other software is installed.
+                All traffic is encrypted through your existing SSH connection. The discovery file is
+                automatically cleaned up when the session ends.
+              </p>
+            </div>
+            <button
+              id="claude-code-ide-ssh"
+              class="toggle"
+              class:active={preferencesStore.claudeCodeIdeSsh}
+              onclick={() => preferencesStore.setClaudeCodeIdeSsh(!preferencesStore.claudeCodeIdeSsh)}
+              aria-pressed={preferencesStore.claudeCodeIdeSsh}
+              aria-label="Toggle SSH IDE integration"
+            >
+              <span class="toggle-knob"></span>
+            </button>
+          </div>
+        {/if}
       {:else if activeSection === 'backup'}
         <h3 class="section-heading">Backup Options</h3>
         <p class="section-desc">

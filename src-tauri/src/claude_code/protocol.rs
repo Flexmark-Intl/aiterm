@@ -63,6 +63,19 @@ pub fn tool_list_response() -> Value {
                 "inputSchema": { "type": "object", "properties": {}, "required": [] }
             },
             {
+                "name": "sendNotification",
+                "description": "Send an in-app notification (toast) to the user. Use this to alert the user about important events, task completion, or questions that need attention. Respects the user's notification preferences (auto/in_app/native/disabled).",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "title": { "type": "string", "description": "Notification title (short, e.g. 'Task Complete')" },
+                        "body": { "type": "string", "description": "Notification body text with details" },
+                        "type": { "type": "string", "enum": ["info", "success", "error"], "description": "Notification type (default: info). Affects the visual style." }
+                    },
+                    "required": ["title"]
+                }
+            },
+            {
                 "name": "readLogs",
                 "description": "Read recent log entries from the aiTerm log file. Returns the last N lines, optionally filtered by log level or search string. Use this to investigate errors, warnings, or trace application behavior.",
                 "inputSchema": {
@@ -388,7 +401,7 @@ pub fn tool_list_response() -> Value {
 
 pub fn initialize_response() -> Value {
     serde_json::json!({
-        "protocolVersion": "2024-11-05",
+        "protocolVersion": "2025-03-26",
         "capabilities": { "tools": {} },
         "serverInfo": { "name": crate::APP_DISPLAY_NAME, "version": crate::APP_VERSION },
         "instructions": "You are running inside an aiTerm terminal tab. Your tab ID is available in the environment variable AITERM_TAB_ID. Always read $AITERM_TAB_ID and pass it as the 'tabId' parameter when calling tools that accept one (setTabNotes, getTabNotes, setTriggerVariable, getTriggerVariables, setAutoResume, getAutoResume, etc.). This ensures operations target YOUR terminal tab, not whichever tab the user happens to be looking at."

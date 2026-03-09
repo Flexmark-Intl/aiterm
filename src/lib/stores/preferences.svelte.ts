@@ -49,6 +49,7 @@ function createPreferencesStore() {
   let hiddenDefaultTriggers = $state<string[]>([]);
   let claudeTriggersPrompted = $state(false);
   let claudeCodeIde = $state(false);
+  let claudeCodeIdeSsh = $state(true);
   let windowsShell = $state('powershell');
   let fileLinkAction = $state('modifier_click');
   let backupDirectory = $state<string | null>(null);
@@ -104,6 +105,7 @@ function createPreferencesStore() {
     get hiddenDefaultTriggers() { return hiddenDefaultTriggers; },
     get claudeTriggersPrompted() { return claudeTriggersPrompted; },
     get claudeCodeIde() { return claudeCodeIde; },
+    get claudeCodeIdeSsh() { return claudeCodeIdeSsh; },
     get windowsShell() { return windowsShell; },
     get fileLinkAction() { return fileLinkAction; },
     get backupDirectory() { return backupDirectory; },
@@ -169,6 +171,7 @@ function createPreferencesStore() {
       hiddenDefaultTriggers = prefs.hidden_default_triggers ?? [];
       claudeTriggersPrompted = prefs.claude_triggers_prompted ?? false;
       claudeCodeIde = prefs.claude_code_ide ?? false;
+      claudeCodeIdeSsh = prefs.claude_code_ide_ssh ?? true;
       windowsShell = prefs.windows_shell ?? 'powershell';
       fileLinkAction = prefs.file_link_action ?? 'modifier_click';
       backupDirectory = prefs.backup_directory ?? null;
@@ -386,6 +389,11 @@ function createPreferencesStore() {
       await this.save();
     },
 
+    async setClaudeCodeIdeSsh(value: boolean) {
+      claudeCodeIdeSsh = value;
+      await this.save();
+    },
+
     async setWindowsShell(value: string) {
       windowsShell = value;
       await this.save();
@@ -496,6 +504,7 @@ function createPreferencesStore() {
       hiddenDefaultTriggers = prefs.hidden_default_triggers ?? [];
       claudeTriggersPrompted = prefs.claude_triggers_prompted ?? false;
       claudeCodeIde = prefs.claude_code_ide ?? false;
+      claudeCodeIdeSsh = prefs.claude_code_ide_ssh ?? true;
       windowsShell = prefs.windows_shell ?? 'powershell';
       fileLinkAction = prefs.file_link_action ?? 'modifier_click';
       backupDirectory = prefs.backup_directory ?? null;
@@ -551,6 +560,7 @@ function createPreferencesStore() {
         hidden_default_triggers: hiddenDefaultTriggers,
         claude_triggers_prompted: claudeTriggersPrompted,
         claude_code_ide: claudeCodeIde,
+        claude_code_ide_ssh: claudeCodeIdeSsh,
         windows_shell: windowsShell,
         file_link_action: fileLinkAction,
         backup_directory: backupDirectory,

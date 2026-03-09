@@ -540,3 +540,34 @@ export async function getAppDiagnostics(): Promise<Record<string, unknown>> {
 export async function readAppLogs(opts?: { lines?: number; level?: string; search?: string }): Promise<{ path: string; total_matching: number; lines: string[]; truncated: boolean }> {
   return invoke('read_app_logs', { lines: opts?.lines ?? null, level: opts?.level ?? null, search: opts?.search ?? null });
 }
+
+// SSH MCP tunnel commands
+export interface SshTunnelInfo {
+  tunnel_id: string;
+  remote_port: number;
+  host_key: string;
+}
+
+export async function startSshTunnel(sshArgs: string, hostKey: string, tabId: string, localPort: number): Promise<SshTunnelInfo> {
+  return invoke('start_ssh_tunnel', { sshArgs, hostKey, tabId, localPort });
+}
+
+export async function detachSshTunnel(hostKey: string, tabId: string): Promise<void> {
+  return invoke('detach_ssh_tunnel', { hostKey, tabId });
+}
+
+export async function getSshTunnel(hostKey: string): Promise<SshTunnelInfo | null> {
+  return invoke('get_ssh_tunnel', { hostKey });
+}
+
+export async function getMcpPort(): Promise<number | null> {
+  return invoke('get_mcp_port');
+}
+
+export async function getMcpAuth(): Promise<string | null> {
+  return invoke('get_mcp_auth');
+}
+
+export async function sshRunSetup(sshArgs: string, setupScript: string): Promise<void> {
+  return invoke('ssh_run_setup', { sshArgs, setupScript });
+}
