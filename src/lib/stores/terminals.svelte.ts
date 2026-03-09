@@ -55,6 +55,10 @@ function createTerminalsStore() {
   const preservedPtyIds = new Set<string>();
   // Listeners notified when any terminal's OSC state changes
   const oscListeners = new Set<(tabId: string, osc: OscState) => void>();
+  // Dirty tracking: tabs that have received PTY output since last auto-save.
+  // Prevents pointless serialization of idle terminals, which creates large
+  // temporary strings that pressure the GC (81 terminals × ~300KB = 24MB/cycle).
+  const dirtyTabs = new Set<string>();
 
   function emitOscChange(tabId: string, osc: OscState) {
     for (const fn of oscListeners) fn(tabId, osc);
@@ -65,6 +69,9 @@ function createTerminalsStore() {
     get shuttingDown() { return _shuttingDown; },
     get searchVisibleFor() { return searchVisibleFor; },
     isWebgl(tabId: string) { return webglTabs.has(tabId); },
+    markDirty(tabId: string) { dirtyTabs.add(tabId); },
+    isDirty(tabId: string) { return dirtyTabs.has(tabId); },
+    clearDirty(tabId: string) { dirtyTabs.delete(tabId); },
     webglLoaded(tabId: string) { webglTabs = new Set(webglTabs).add(tabId); },
     webglUnloaded(tabId: string) { const s = new Set(webglTabs); s.delete(tabId); webglTabs = s; },
 
@@ -165,6 +172,7 @@ function createTerminalsStore() {
       // and saveAllScrollback don't re-save stale content
       const scrollback = instance.serializeAddon.serialize();
       await setTabScrollback(instance.workspaceId, instance.paneId, instance.tabId, scrollback);
+      dirtyTabs.delete(tabId);
     },
 
     showSearch(tabId: string) {

@@ -391,6 +391,7 @@
       });
 
       processOutput(tabId, data);
+      terminalsStore.markDirty(tabId);
       // Mark tab as active for background tabs, but skip:
       // - tiny writes (spinner frames, cursor blinks)
       // - TUI redraws (cursor-up/reposition sequences that just repaint existing content)
@@ -510,6 +511,11 @@
 
     // Register terminal instance with serialize addon for scrollback saving
     terminalsStore.register(tabId, terminal, ptyId, serializeAddon, searchAddon, workspaceId, paneId);
+
+    // Release the initial scrollback string from the frontend store.
+    // It's now in xterm's buffer — no reason to keep the serialized copy
+    // in the reactive state where it gets duplicated through every mutation.
+    workspacesStore.releaseScrollback(tabId);
 
     // Cmd+C: copy if selection, SIGINT if not. Cmd+V: paste into PTY.
     terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
@@ -763,14 +769,26 @@
 
     const interval = preferencesStore.autoSaveInterval;
 
-    // Set up new interval if enabled
+    // Set up new interval if enabled.
+    // Stagger start by a random offset (0–interval) so 80+ terminals don't
+    // all serialize in the same tick, which creates massive GC pressure.
     let localInterval: ReturnType<typeof setInterval> | undefined;
+    let staggerTimeout: ReturnType<typeof setTimeout> | undefined;
     if (interval > 0) {
-      localInterval = setInterval(async () => {
+      // Stagger start by a random offset so 80+ terminals don't all
+      // serialize in the same tick, creating massive GC pressure bursts.
+      const staggerMs = Math.random() * interval * 1000;
+      staggerTimeout = setTimeout(() => {
+        localInterval = setInterval(async () => {
         // Skip auto-save during shutdown — saveAllScrollback handles it
         if (terminalsStore.shuttingDown) return;
+        // Skip terminals that haven't received output since last save.
+        // Claude TUI redraws constantly so this won't help there, but
+        // idle terminals (shell prompts) are completely skipped.
+        if (!terminalsStore.isDirty(tabId)) return;
         // Skip when alternate screen is active (nano, vim, less, etc.)
         if (terminal.buffer.active.type === 'alternate') return;
+        terminalsStore.clearDirty(tabId);
         try {
           const scrollback = serializeAddon.serialize();
           await setTabScrollback(workspaceId, paneId, tabId, scrollback);
@@ -820,13 +838,13 @@
           }
         }
       }, interval * 1000);
+      }, staggerMs);
     }
 
     // Cleanup when effect re-runs or component unmounts
     return () => {
-      if (localInterval) {
-        clearInterval(localInterval);
-      }
+      if (staggerTimeout) clearTimeout(staggerTimeout);
+      if (localInterval) clearInterval(localInterval);
     };
   });
 

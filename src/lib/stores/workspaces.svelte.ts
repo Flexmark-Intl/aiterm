@@ -78,6 +78,25 @@ function allTabNames(ws: Workspace): string[] {
 
 const RECENT_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
 
+/**
+ * Strip scrollback strings from workspace data for terminals that already have
+ * a live xterm instance.  The scrollback is only needed for initial restore —
+ * after that it's dead weight in the reactive state that gets duplicated through
+ * every `workspaces.map()` mutation and can add up to tens of MB.
+ */
+function stripMountedScrollback(wsList: Workspace[]): Workspace[] {
+  for (const ws of wsList) {
+    for (const pane of ws.panes) {
+      for (const tab of pane.tabs) {
+        if (tab.scrollback && terminalsStore.get(tab.id)) {
+          tab.scrollback = null;
+        }
+      }
+    }
+  }
+  return wsList;
+}
+
 function createWorkspacesStore() {
   let windowId = $state<string>('');
   let windowLabel = $state<string>('');
@@ -139,7 +158,7 @@ function createWorkspacesStore() {
       const data = await commands.getWindowData();
       windowId = data.id;
       windowLabel = data.label;
-      workspaces = data.workspaces;
+      workspaces = stripMountedScrollback(data.workspaces);
       activeWorkspaceId = data.active_workspace_id;
       sidebarWidth = data.sidebar_width || 180;
       sidebarCollapsed = data.sidebar_collapsed ?? false;
@@ -452,7 +471,7 @@ function createWorkspacesStore() {
       const data = await commands.getWindowData();
       const ws = data.workspaces.find(w => w.id === workspaceId);
       if (ws) {
-        workspaces = workspaces.map(w => w.id === workspaceId ? ws : w);
+        workspaces = workspaces.map(w => w.id === workspaceId ? (stripMountedScrollback([ws]), ws) : w);
       }
       return pane;
     },
@@ -482,7 +501,7 @@ function createWorkspacesStore() {
         const data = await commands.getWindowData();
         const ws = data.workspaces.find(w => w.id === workspaceId);
         if (ws) {
-          workspaces = workspaces.map(w => w.id === workspaceId ? ws : w);
+          workspaces = workspaces.map(w => w.id === workspaceId ? (stripMountedScrollback([ws]), ws) : w);
         }
         return newPane;
       }
@@ -600,7 +619,7 @@ function createWorkspacesStore() {
       const data = await commands.getWindowData();
       const ws = data.workspaces.find(w => w.id === workspaceId);
       if (ws) {
-        workspaces = workspaces.map(w => w.id === workspaceId ? ws : w);
+        workspaces = workspaces.map(w => w.id === workspaceId ? (stripMountedScrollback([ws]), ws) : w);
       }
       return newPane;
     },
@@ -611,7 +630,7 @@ function createWorkspacesStore() {
       const data = await commands.getWindowData();
       const ws = data.workspaces.find(w => w.id === workspaceId);
       if (ws) {
-        workspaces = workspaces.map(w => w.id === workspaceId ? ws : w);
+        workspaces = workspaces.map(w => w.id === workspaceId ? (stripMountedScrollback([ws]), ws) : w);
       }
     },
 
@@ -1027,6 +1046,25 @@ function createWorkspacesStore() {
       });
     },
 
+    /**
+     * Release the scrollback string from the frontend store after the terminal
+     * has consumed it for restore.  Backend state is untouched — it already holds
+     * a separate copy.  This frees ~100-500 KB per tab of dead strings from the
+     * reactive state, preventing them from being carried around (and duplicated)
+     * through every `workspaces.map()` mutation.
+     */
+    releaseScrollback(tabId: string) {
+      for (const ws of workspaces) {
+        for (const pane of ws.panes) {
+          const tab = pane.tabs.find(t => t.id === tabId);
+          if (tab && tab.scrollback) {
+            tab.scrollback = null;
+            return;
+          }
+        }
+      }
+    },
+
     async setTabPtyId(workspaceId: string, paneId: string, tabId: string, ptyId: string) {
       await commands.setTabPtyId(workspaceId, paneId, tabId, ptyId);
       workspaces = workspaces.map(w => {
@@ -1253,7 +1291,7 @@ function createWorkspacesStore() {
 
       // Reload all workspaces
       const data = await commands.getWindowData();
-      workspaces = data.workspaces;
+      workspaces = stripMountedScrollback(data.workspaces);
     },
 
     /**
@@ -1298,9 +1336,9 @@ function createWorkspacesStore() {
         }
         // Re-fetch after cleanup
         const data2 = await commands.getWindowData();
-        workspaces = data2.workspaces;
+        workspaces = stripMountedScrollback(data2.workspaces);
       } else {
-        workspaces = data.workspaces;
+        workspaces = stripMountedScrollback(data.workspaces);
       }
 
       // Update the terminal store's workspace/pane references for the moved tab
@@ -1369,7 +1407,7 @@ function createWorkspacesStore() {
 
       // 5. Reload all workspaces to get consistent state
       const data = await commands.getWindowData();
-      workspaces = data.workspaces;
+      workspaces = stripMountedScrollback(data.workspaces);
     },
 
     async duplicateTab(workspaceId: string, paneId: string, tabId: string, opts?: { shallow?: boolean }) {
@@ -1459,7 +1497,7 @@ function createWorkspacesStore() {
       const data = await commands.getWindowData();
       const updatedWs = data.workspaces.find(w => w.id === workspaceId);
       if (updatedWs) {
-        workspaces = workspaces.map(w => w.id === workspaceId ? updatedWs : w);
+        workspaces = workspaces.map(w => w.id === workspaceId ? (stripMountedScrollback([updatedWs]), updatedWs) : w);
       }
     },
 
@@ -1525,7 +1563,7 @@ function createWorkspacesStore() {
       const data = await commands.getWindowData();
       const updatedWs = data.workspaces.find(w => w.id === workspaceId);
       if (updatedWs) {
-        workspaces = workspaces.map(w => w.id === workspaceId ? updatedWs : w);
+        workspaces = workspaces.map(w => w.id === workspaceId ? (stripMountedScrollback([updatedWs]), updatedWs) : w);
       }
     },
 
