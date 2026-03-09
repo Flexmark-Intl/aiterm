@@ -8,7 +8,7 @@
   import { search, searchKeymap, highlightSelectionMatches, getSearchQuery } from '@codemirror/search';
   import { ViewPlugin } from '@codemirror/view';
   import type { EditorFileInfo } from '$lib/tauri/types';
-  import { readFile, readFileBase64, writeFile, scpReadFile, scpReadFileBase64, scpWriteFile, watchFile, unwatchFile, getFileMtime } from '$lib/tauri/commands';
+  import { readFile, readFileBase64, writeFile, scpReadFile, scpReadFileBase64, scpWriteFile, watchFile, unwatchFile, getFileMtime, watchRemoteFile, unwatchRemoteFile, getRemoteFileMtime } from '$lib/tauri/commands';
   import { loadLanguageExtension, detectLanguageFromContent, isImageFile, getImageMimeType, isPdfFile, isMarkdownFile } from '$lib/utils/languageDetect';
   import { marked } from 'marked';
   import { open as shellOpen } from '@tauri-apps/plugin-shell';
@@ -395,6 +395,8 @@
       setEditorDirty(tabId, false);
       if (isLocalFile) {
         try { lastKnownMtime = await getFileMtime(editorFile.file_path); } catch { /* ignore */ }
+      } else if (editorFile.remote_ssh_command && editorFile.remote_path) {
+        try { lastKnownMtime = await getRemoteFileMtime(editorFile.remote_ssh_command, editorFile.remote_path); } catch { /* ignore */ }
       }
       dispatch('File reloaded', filePath.split('/').pop() ?? 'file', 'info');
     } catch (e) {
@@ -404,29 +406,54 @@
   }
 
   async function startWatching() {
-    if (!isLocalFile) return;
-    try {
-      // Check mtime first — file may have changed while tab was hidden
-      const currentMtime = await getFileMtime(editorFile.file_path);
-      if (lastKnownMtime > 0 && currentMtime > lastKnownMtime) {
-        await handleExternalChange();
-      }
-      lastKnownMtime = currentMtime;
-
-      // Start fs watcher
-      await watchFile(tabId, editorFile.file_path);
-      unlistenFileChanged = await listen(`file-changed-${tabId}`, async () => {
-        try {
-          const newMtime = await getFileMtime(editorFile.file_path);
-          if (newMtime <= lastKnownMtime) return;
-          lastKnownMtime = newMtime;
+    if (isLocalFile) {
+      try {
+        // Check mtime first — file may have changed while tab was hidden
+        const currentMtime = await getFileMtime(editorFile.file_path);
+        if (lastKnownMtime > 0 && currentMtime > lastKnownMtime) {
           await handleExternalChange();
-        } catch {
-          // File may have been deleted — ignore
         }
-      });
-    } catch (e) {
-      logError(`Failed to start file watcher: ${e}`);
+        lastKnownMtime = currentMtime;
+
+        // Start fs watcher
+        await watchFile(tabId, editorFile.file_path);
+        unlistenFileChanged = await listen(`file-changed-${tabId}`, async () => {
+          try {
+            const newMtime = await getFileMtime(editorFile.file_path);
+            if (newMtime <= lastKnownMtime) return;
+            lastKnownMtime = newMtime;
+            await handleExternalChange();
+          } catch {
+            // File may have been deleted — ignore
+          }
+        });
+      } catch (e) {
+        logError(`Failed to start file watcher: ${e}`);
+      }
+    } else if (editorFile.remote_ssh_command && editorFile.remote_path) {
+      try {
+        // Check mtime via SSH — file may have changed while tab was hidden
+        const currentMtime = await getRemoteFileMtime(editorFile.remote_ssh_command, editorFile.remote_path);
+        if (lastKnownMtime > 0 && currentMtime > lastKnownMtime) {
+          await handleExternalChange();
+        }
+        lastKnownMtime = currentMtime;
+
+        // Register with backend polling task
+        await watchRemoteFile(tabId, editorFile.remote_ssh_command, editorFile.remote_path);
+        unlistenFileChanged = await listen(`file-changed-${tabId}`, async () => {
+          try {
+            const newMtime = await getRemoteFileMtime(editorFile.remote_ssh_command!, editorFile.remote_path!);
+            if (newMtime <= lastKnownMtime) return;
+            lastKnownMtime = newMtime;
+            await handleExternalChange();
+          } catch {
+            // SSH may have disconnected — ignore
+          }
+        });
+      } catch (e) {
+        logError(`Failed to start remote file watcher: ${e}`);
+      }
     }
   }
 
@@ -436,9 +463,9 @@
       unlistenFileChanged = null;
     }
     if (isLocalFile) {
-      try {
-        await unwatchFile(tabId);
-      } catch { /* ignore */ }
+      try { await unwatchFile(tabId); } catch { /* ignore */ }
+    } else {
+      try { await unwatchRemoteFile(tabId); } catch { /* ignore */ }
     }
   }
 
@@ -447,14 +474,21 @@
     if (!dirty) {
       // Auto-reload silently
       try {
-        const result = await readFile(editorFile.file_path);
-        originalContent = result.content;
+        let content: string;
+        if (editorFile.is_remote && editorFile.remote_ssh_command && editorFile.remote_path) {
+          const result = await scpReadFile(editorFile.remote_ssh_command, editorFile.remote_path);
+          content = result.content;
+        } else {
+          const result = await readFile(editorFile.file_path);
+          content = result.content;
+        }
+        originalContent = content;
         editorView.dispatch({
-          changes: { from: 0, to: editorView.state.doc.length, insert: result.content },
+          changes: { from: 0, to: editorView.state.doc.length, insert: content },
         });
         dirty = false;
         setEditorDirty(tabId, false);
-        logInfo(`Auto-reloaded ${editorFile.file_path}`);
+        logInfo(`Auto-reloaded ${editorFile.remote_path ?? editorFile.file_path}`);
       } catch (e) {
         logError(`Auto-reload failed: ${e}`);
       }
@@ -493,6 +527,8 @@
       // Update mtime so the watcher doesn't treat our own save as an external change
       if (isLocalFile) {
         try { lastKnownMtime = await getFileMtime(editorFile.file_path); } catch { /* ignore */ }
+      } else if (editorFile.remote_ssh_command && editorFile.remote_path) {
+        try { lastKnownMtime = await getRemoteFileMtime(editorFile.remote_ssh_command, editorFile.remote_path); } catch { /* ignore */ }
       }
       dispatch('File saved', editorFile.file_path.split('/').pop() ?? 'file', 'info');
     } catch (e) {
@@ -697,9 +733,11 @@
         // Record initial mtime and start watching if visible
         if (isLocalFile) {
           try { lastKnownMtime = await getFileMtime(editorFile.file_path); } catch { /* ignore */ }
-          if (visible) {
-            (async () => { await startWatching(); })();
-          }
+        } else if (editorFile.remote_ssh_command && editorFile.remote_path) {
+          try { lastKnownMtime = await getRemoteFileMtime(editorFile.remote_ssh_command, editorFile.remote_path); } catch { /* ignore */ }
+        }
+        if (visible) {
+          (async () => { await startWatching(); })();
         }
 
         // Apply pending selection from Claude Code openFile
@@ -795,7 +833,7 @@
 
   // Start/stop file watching based on visibility
   $effect(() => {
-    if (!isLocalFile || !editorView) return;
+    if (!editorView) return;
     if (visible) {
       startWatching();
     } else {

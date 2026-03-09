@@ -411,6 +411,18 @@ export async function getFileMtime(path: string): Promise<number> {
   return invoke('get_file_mtime', { path });
 }
 
+export async function watchRemoteFile(tabId: string, sshCommand: string, remotePath: string): Promise<void> {
+  return invoke('watch_remote_file', { tabId, sshCommand, remotePath });
+}
+
+export async function unwatchRemoteFile(tabId: string): Promise<void> {
+  return invoke('unwatch_remote_file', { tabId });
+}
+
+export async function getRemoteFileMtime(sshCommand: string, remotePath: string): Promise<number> {
+  return invoke('get_remote_file_mtime', { sshCommand, remotePath });
+}
+
 // Claude Code IDE integration commands
 export async function claudeCodeRespond(requestId: string, result: unknown): Promise<void> {
   return invoke('claude_code_respond', { requestId, result });

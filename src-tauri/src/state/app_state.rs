@@ -35,6 +35,13 @@ pub struct MemorySample {
     pub rss_bytes: u64,
 }
 
+/// Remote file watch entry for SSH-based polling.
+pub struct RemoteFileWatch {
+    pub user_host: String,
+    pub remote_path: String,
+    pub last_mtime: Option<u64>,
+}
+
 /// Active SSH MCP tunnel info (reverse port forward to expose local MCP on remote).
 pub struct SshTunnel {
     pub pid: u32,
@@ -60,6 +67,9 @@ pub struct AppState {
     pub claude_code_shutdown: parking_lot::Mutex<Option<tokio::sync::watch::Sender<bool>>>,
     // SSH MCP tunnels: keyed by host_key (user@host)
     pub ssh_tunnels: RwLock<HashMap<String, SshTunnel>>,
+    // Remote file watchers (SSH stat polling): keyed by tab_id
+    pub remote_file_watchers: RwLock<HashMap<String, RemoteFileWatch>>,
+    pub remote_watcher_running: std::sync::atomic::AtomicBool,
     // Diagnostics
     pub pty_stats: RwLock<HashMap<String, PtyStats>>,
     pub memory_samples: RwLock<Vec<MemorySample>>,
@@ -79,6 +89,8 @@ impl Default for AppState {
             claude_code_notify_tx: parking_lot::Mutex::new(None),
             claude_code_shutdown: parking_lot::Mutex::new(None),
             ssh_tunnels: RwLock::new(HashMap::new()),
+            remote_file_watchers: RwLock::new(HashMap::new()),
+            remote_watcher_running: std::sync::atomic::AtomicBool::new(false),
             pty_stats: RwLock::new(HashMap::new()),
             memory_samples: RwLock::new(Vec::new()),
         }

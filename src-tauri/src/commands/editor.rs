@@ -1,5 +1,5 @@
 use crate::state::persistence::save_state;
-use crate::state::{AppState, EditorFileInfo, FileWatcherHandle, Tab};
+use crate::state::{AppState, EditorFileInfo, FileWatcherHandle, RemoteFileWatch, Tab};
 use base64::Engine;
 use std::io::Read;
 use std::path::Path;
@@ -451,4 +451,205 @@ fn extract_user_host(ssh_command: &str) -> Result<String, String> {
     }
 
     Err("Cannot extract host from SSH command".to_string())
+}
+
+// ── Remote file watching (SSH stat polling) ──────────────────────────
+
+/// Get modification time of a remote file via SSH stat.
+/// Returns epoch seconds (not ms) since that's what `stat` gives us.
+fn ssh_stat_mtime(user_host: &str, remote_path: &str) -> Result<u64, String> {
+    let quoted = shell_quote(remote_path);
+    // stat -c %Y = Linux (GNU coreutils), stat -f %m = macOS/BSD
+    let cmd = format!(
+        "stat -c %Y {} 2>/dev/null || stat -f %m {} 2>/dev/null",
+        quoted, quoted
+    );
+    let output = std::process::Command::new("ssh")
+        .arg("-o").arg("BatchMode=yes")
+        .arg("-o").arg("ConnectTimeout=5")
+        .arg(user_host)
+        .arg(&cmd)
+        .output()
+        .map_err(|e| format!("Failed to run ssh: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("SSH stat failed: {}", stderr.trim()));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    stdout
+        .parse::<u64>()
+        .map_err(|_| format!("Cannot parse mtime from: {}", stdout))
+}
+
+/// One-shot remote file mtime check (used by frontend before/after saves).
+#[command]
+pub async fn get_remote_file_mtime(ssh_command: String, remote_path: String) -> Result<u64, String> {
+    let user_host = extract_user_host(&ssh_command)?;
+    let remote_path = expand_remote_tilde(&user_host, &remote_path);
+    let mtime = ssh_stat_mtime(&user_host, &remote_path)?;
+    // Return as seconds (frontend handles comparison consistently)
+    Ok(mtime)
+}
+
+/// Register a remote file for periodic mtime polling.
+#[command]
+pub async fn watch_remote_file(
+    state: State<'_, Arc<AppState>>,
+    app: tauri::AppHandle,
+    tab_id: String,
+    ssh_command: String,
+    remote_path: String,
+) -> Result<(), String> {
+    let user_host = extract_user_host(&ssh_command)?;
+    let remote_path = expand_remote_tilde(&user_host, &remote_path);
+
+    {
+        let mut watchers = state.remote_file_watchers.write();
+        watchers.insert(tab_id, RemoteFileWatch {
+            user_host,
+            remote_path,
+            last_mtime: None,
+        });
+    }
+
+    // Start polling task if not already running
+    if !state.remote_watcher_running.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        let state_clone = state.inner().clone();
+        let app_clone = app.clone();
+        tokio::spawn(remote_file_poll_loop(state_clone, app_clone));
+    }
+
+    Ok(())
+}
+
+/// Unregister a remote file watcher.
+#[command]
+pub async fn unwatch_remote_file(
+    state: State<'_, Arc<AppState>>,
+    tab_id: String,
+) -> Result<(), String> {
+    state.remote_file_watchers.write().remove(&tab_id);
+    Ok(())
+}
+
+/// Background polling loop for remote file watchers.
+/// Groups files by user@host, runs one batched stat per host every 3 seconds.
+async fn remote_file_poll_loop(state: Arc<AppState>, app: tauri::AppHandle) {
+    use std::collections::HashMap;
+
+    // Track consecutive failures per host
+    let mut host_failures: HashMap<String, u32> = HashMap::new();
+    const MAX_FAILURES: u32 = 5;
+
+    loop {
+        tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+
+        // Take a snapshot of current watchers
+        let snapshot: Vec<(String, String, String, Option<u64>)> = {
+            let watchers = state.remote_file_watchers.read();
+            if watchers.is_empty() {
+                // No watchers — stop the polling task
+                state.remote_watcher_running.store(false, std::sync::atomic::Ordering::SeqCst);
+                log::info!("Remote file watcher: no watchers remaining, stopping poll loop");
+                return;
+            }
+            watchers.iter().map(|(tab_id, w)| {
+                (tab_id.clone(), w.user_host.clone(), w.remote_path.clone(), w.last_mtime)
+            }).collect()
+        };
+
+        // Group by user_host
+        let mut by_host: HashMap<String, Vec<(String, String, Option<u64>)>> = HashMap::new();
+        for (tab_id, user_host, remote_path, last_mtime) in snapshot {
+            by_host.entry(user_host).or_default().push((tab_id, remote_path, last_mtime));
+        }
+
+        // Poll each host
+        for (user_host, files) in &by_host {
+            // Skip hosts that have failed too many times
+            if host_failures.get(user_host).copied().unwrap_or(0) >= MAX_FAILURES {
+                continue;
+            }
+
+            let result = poll_host_files(user_host, files).await;
+
+            match result {
+                Ok(mtimes) => {
+                    host_failures.remove(user_host);
+
+                    // Compare and emit events for changed files
+                    let mut watchers = state.remote_file_watchers.write();
+                    for (i, (tab_id, _path, _old_mtime)) in files.iter().enumerate() {
+                        if let Some(&new_mtime) = mtimes.get(i) {
+                            if new_mtime == 0 { continue; } // stat failed for this file
+                            if let Some(watcher) = watchers.get_mut(tab_id) {
+                                let changed = watcher.last_mtime
+                                    .map(|old| new_mtime != old)
+                                    .unwrap_or(false);
+                                watcher.last_mtime = Some(new_mtime);
+                                if changed {
+                                    log::info!("Remote file changed: {} (tab {})", watcher.remote_path, tab_id);
+                                    let _ = app.emit(&format!("file-changed-{}", tab_id), ());
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    let count = host_failures.entry(user_host.clone()).or_insert(0);
+                    *count += 1;
+                    if *count >= MAX_FAILURES {
+                        log::warn!("Remote file watcher: giving up on {} after {} failures", user_host, MAX_FAILURES);
+                    } else {
+                        log::debug!("Remote file watcher: poll failed for {}: {}", user_host, e);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Poll mtime for multiple files on a single host in one SSH call.
+/// Returns a vec of mtime values (one per file, 0 if stat failed for that file).
+async fn poll_host_files(
+    user_host: &str,
+    files: &[(String, String, Option<u64>)],
+) -> Result<Vec<u64>, String> {
+    // Build a script that stats each file and prints one mtime per line
+    let mut file_list = String::new();
+    for (_, path, _) in files {
+        if !file_list.is_empty() {
+            file_list.push(' ');
+        }
+        file_list.push_str(&shell_quote(path));
+    }
+
+    let script = format!(
+        "for f in {}; do stat -c %Y \"$f\" 2>/dev/null || stat -f %m \"$f\" 2>/dev/null || echo 0; done",
+        file_list
+    );
+
+    let output = tokio::process::Command::new("ssh")
+        .arg("-o").arg("BatchMode=yes")
+        .arg("-o").arg("ConnectTimeout=5")
+        .arg(user_host)
+        .arg(&script)
+        .output()
+        .await
+        .map_err(|e| format!("SSH failed: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("SSH stat failed: {}", stderr.trim()));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mtimes: Vec<u64> = stdout
+        .lines()
+        .map(|line| line.trim().parse::<u64>().unwrap_or(0))
+        .collect();
+
+    Ok(mtimes)
 }
