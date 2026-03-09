@@ -316,12 +316,13 @@ Exposes local MCP tools to Claude Code running on remote servers via SSH reverse
 **Architecture:**
 ```
 Local aiTerm → SSH reverse tunnel (-R 0:127.0.0.1:{mcp_port}) → Remote :allocated_port
+               Background SSH → writes lockfile + ~/.claude.json on remote
 Remote Claude Code → discovers ~/.claude/ide/{port}.lock → connects through tunnel → local MCP server
 ```
 
 **Key files:**
-- `src-tauri/src/commands/ssh_tunnel.rs` — tunnel lifecycle (start, detach, kill), port parsing
-- `src/lib/stores/sshMcpBridge.svelte.ts` — bridge orchestration, lockfile injection, ref counting
+- `src-tauri/src/commands/ssh_tunnel.rs` — tunnel lifecycle (start, detach, kill), port parsing, `ssh_run_setup` for background lockfile writing
+- `src/lib/stores/sshMcpBridge.svelte.ts` — bridge orchestration, reactive status tracking, ref counting
 
 **Preference:** `claude_code_ide_ssh` (default true, requires `claude_code_ide`). Controls auto-enable on SSH detection.
 
@@ -329,9 +330,15 @@ Remote Claude Code → discovers ~/.claude/ide/{port}.lock → connects through 
 
 **Auto-enable:** SSH sessions detected via `getPtyInfo()` foreground_command. For restore/clone SSH: 5s delay after SSH replay. For ad-hoc SSH: 10s delayed check. Manual via context menu.
 
-**Remote cleanup:** EXIT/HUP/TERM trap removes lockfile. Stale lockfile detection on reconnect tests dead ports via `/dev/tcp/localhost/{port}`.
+**Remote setup:** Lockfile and `~/.claude.json` registration are written via a separate background SSH connection (`ssh_run_setup`), **not** through the user's interactive PTY. This prevents command injection into running programs (e.g. Claude Code). The setup script uses shell variables for JSON data to avoid nested quoting issues, and pipes JSON to python3/jq via stdin.
 
-**Port allocation:** `ssh -R 0:...` lets SSH pick a free remote port. Parsed from stderr: `"Allocated port NNNNN for remote forward"`.
+**Remote cleanup:** Stale lockfile detection on reconnect tests dead ports via `/dev/tcp/localhost/{port}`. No EXIT trap (background SSH has no persistent shell on remote).
+
+**Port allocation:** `ssh -v -R 0:...` lets SSH pick a free remote port. The `-v` flag is required because ControlMaster mux clients print nothing without it. Port parsed from both stdout and stderr (direct connections use stderr, mux clients use stderr with `-v`). Uses `tokio::select!` to read both streams concurrently.
+
+**ControlMaster mux:** Tunnel and setup SSH commands do **not** use `-o ControlMaster=no` — this lets them multiplex over the user's existing authenticated socket (free auth for password/passphrase users). Mux clients exit immediately after setup (the master holds the forwarding), so the background process monitor only removes tunnel state on error exits, not clean exits.
+
+**Bridge status UI:** Reactive `$state` Map in `sshMcpBridge.svelte.ts` drives a bolt icon in TerminalTabs (green=connected, dim=failed). Failure dispatches an in-app notification via `notificationDispatch`.
 
 ### Editor Registry
 
@@ -640,4 +647,6 @@ Check `~/Library/Application Support/com.aiterm.dev/aiterm-state.json` (dev) or 
 - **Tauri notification `onAction` is mobile-only**: `tauri-plugin-notification` v2 uses `notify_rust` on desktop, which is fire-and-forget — no click callback, `extra` data discarded. `onAction`/`onNotificationReceived` events only fire on iOS/Android. The `extra.tabId` and `onAction` listener in `+layout.svelte` are prep for future mobile support.
 - **Serde round-trip pitfall**: Rust `skip_serializing_if = "Option::is_none"` omits null fields → loaded JS objects have `undefined` instead of `null`. Use field-by-field comparison with `?? null` normalization, NOT `JSON.stringify`.
 - **SSH ControlMaster on restore**: Users with `ControlMaster auto` get "socket already exists" warnings. `buildSshCommand()` injects `-o ControlMaster=no`, and `cleanSshCommand()` strips it (+ `-t`) before rebuilding to prevent flag accumulation across restore cycles.
+- **SSH ControlMaster mux silent output**: When SSH multiplexes through an existing master socket, `ssh -R 0:...` prints nothing to stdout or stderr without `-v`. The "Allocated port" message only appears with verbose mode. Additionally, the mux client exits immediately with code 0 after setting up the forwarding — the master process holds the tunnel. Background tunnel monitors must not clean up state on clean exit.
+- **SSH background command quoting**: Shell commands sent via `ssh user@host 'script'` must use newlines (not `;`) as separators — `do;`, `then;`, `else;` are syntax errors. JSON data should be stored in shell variables and passed to python3/jq via stdin to avoid nested quote hell.
 - **WebGL context limits**: Browsers cap WebGL contexts at ~8-16 per page. If all terminals load WebGL at once, older contexts are evicted and fall back to DOM renderer. Solution: only load WebGL addon on visible terminals, dispose when hidden. Track per-tab WebGL state via Set in `terminals.svelte.ts`.
