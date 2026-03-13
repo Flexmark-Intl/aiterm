@@ -6,7 +6,6 @@
   import { listen } from '@tauri-apps/api/event';
   import { workspacesStore, navigateToTab } from '$lib/stores/workspaces.svelte';
   import { terminalsStore } from '$lib/stores/terminals.svelte';
-  import ClaudeIntegrationModal from '$lib/components/ClaudeIntegrationModal.svelte';
   import ImportPreviewModal from '$lib/components/ImportPreviewModal.svelte';
   import Toast from '$lib/components/Toast.svelte';
   import { seedDefaultTriggers } from '$lib/triggers/defaults';
@@ -35,35 +34,9 @@
   }
 
   let { children }: Props = $props();
-  let showClaudeIntegration = $state(false);
   let showImportPreview = $state(false);
   let importPreview = $state<ImportPreview | null>(null);
   let importFilePath = $state('');
-
-  function dismissClaudeIntegration() {
-    showClaudeIntegration = false;
-    preferencesStore.setClaudeTriggersPrompted(true);
-  }
-
-  function enableClaudeIntegration() {
-    // Seed defaults if they don't exist yet, then enable all of them
-    const seeded = seedDefaultTriggers(
-      preferencesStore.triggers,
-      preferencesStore.hiddenDefaultTriggers,
-      true, // enableAll
-    ) ?? preferencesStore.triggers;
-    // Also enable any existing defaults that were disabled
-    const updated = seeded.map(t =>
-      t.default_id ? { ...t, enabled: true } : t
-    );
-    preferencesStore.setTriggers(updated);
-    dismissClaudeIntegration();
-  }
-
-  function askLaterClaudeIntegration() {
-    // Just close without setting the prompted flag — will ask again next launch
-    showClaudeIntegration = false;
-  }
 
   // Apply UI theme reactively (runs outside onMount so it reacts to changes)
   $effect(() => {
@@ -129,17 +102,10 @@
       e.preventDefault();
     }, true);
 
-    // Load preferences, then check if Claude integration prompt is needed
+    // Load preferences and clean up stale default triggers
     preferencesStore.load().then(() => {
-      // Clean up stale default triggers on startup
       const seeded = seedDefaultTriggers(preferencesStore.triggers, preferencesStore.hiddenDefaultTriggers);
       if (seeded) preferencesStore.setTriggers(seeded);
-
-      if (!preferencesStore.claudeTriggersPrompted) {
-        const defaults = preferencesStore.triggers.filter(t => t.default_id);
-        const allDisabled = defaults.length === 0 || defaults.every(t => !t.enabled);
-        if (allDisabled) showClaudeIntegration = true;
-      }
     }).catch((e: unknown) => logError(`Failed to load preferences: ${e}`));
 
     // Listen for cross-window preference changes
@@ -337,16 +303,6 @@
     })();
 
     function handleKeydown(e: KeyboardEvent) {
-      // Escape - close open modals
-      if (e.key === 'Escape') {
-        if (showClaudeIntegration) {
-          e.preventDefault();
-          e.stopPropagation();
-          askLaterClaudeIntegration();
-          return;
-        }
-      }
-
       const isMeta = isModKey(e);
       const activeTabIsEditor = workspacesStore.activeTab?.tab_type === 'editor';
       const activeTabIsDiff = workspacesStore.activeTab?.tab_type === 'diff';
@@ -717,7 +673,6 @@
 
 {@render children()}
 
-<ClaudeIntegrationModal open={showClaudeIntegration} onclose={dismissClaudeIntegration} onenable={enableClaudeIntegration} onlater={askLaterClaudeIntegration} />
 <ImportPreviewModal
   open={showImportPreview}
   preview={importPreview}
