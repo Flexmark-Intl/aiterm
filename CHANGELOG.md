@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.7.1
+
+- Fix blank Preferences and Help windows on Windows (SvelteKit trailingSlash routing)
+- Fix auto-resume command migration to catch additional old command patterns
+
 ## v1.7.0 — Performance overhaul for heavy workloads
 
 - Move terminal backend to alacritty_terminal — all VTE parsing and buffer management in Rust, xterm.js as thin renderer (~60fps ANSI frames)
