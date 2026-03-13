@@ -121,7 +121,9 @@ OSC 133 (FinalTerm protocol) detects command start/finish for tab indicators. Co
 - **Setup Shell Integration** — sends a one-liner to the current session (temporary). Uses `buildShellIntegrationSnippet()`.
 - **Install Shell Integration** — writes to `~/.bashrc` or `~/.zshrc` via heredoc (permanent). Uses `buildInstallSnippet()`.
 
-**Tab indicators** (`activity.svelte.ts`): Priority: completed (checkmark/cross) > prompt (›) > activity dot. Shell state only shown on inactive tabs.
+**Tab indicators** (`activity.svelte.ts` + `claudeState.svelte.ts`): Priority: alert (❗) > question > Claude state (pulsing accent = active, green dot = idle, lock = permission) > shell state (completed/prompt/activity dot). Shell state only shown on inactive tabs. Claude state indicators rendered in `TerminalTabs.svelte`.
+
+**OSC 133 A + SSH MCP bridge**: The prompt-start handler (`cmd === 'A'`) checks `getPtyInfo()` before tearing down the SSH MCP bridge. Remote shells emit OSC 133 A on every prompt, which would falsely disable the bridge. The guard ensures the bridge is only torn down when the local shell is at a prompt (no foreground SSH command).
 
 ## Split Cloning (Pane Duplication)
 

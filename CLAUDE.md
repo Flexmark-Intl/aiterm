@@ -31,6 +31,8 @@ src/                          # Frontend (Svelte/TypeScript)
 │   │   ├── activity.svelte.ts     # Tab activity indicators (OSC 133)
 │   │   ├── triggers.svelte.ts     # Trigger engine (pattern matching, variables)
 │   │   ├── claudeCode.svelte.ts   # Claude Code IDE tool request handler
+│   │   ├── claudeState.svelte.ts  # Claude session state from hooks (active/idle/permission)
+│   │   ├── sshMcpBridge.svelte.ts # SSH MCP bridge orchestration, reactive status
 │   │   ├── editorRegistry.svelte.ts # Editor state tracking (dirty, view refs)
 │   │   ├── notifications.svelte.ts  # Command completion notification logic
 │   │   ├── toasts.svelte.ts       # In-app toast notification store
@@ -164,7 +166,8 @@ Preferences
 ├── auto_save_interval, scrollback_limit
 ├── prompt_patterns, notification_mode, notification_sound
 ├── clone_cwd, clone_scrollback, clone_ssh, clone_history, clone_notes
-├── claude_code_ide, triggers, hidden_default_triggers
+├── claude_code_ide, claude_code_ide_ssh
+├── triggers, hidden_default_triggers
 └── (see state/workspace.rs for full list)
 ```
 
