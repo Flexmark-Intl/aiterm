@@ -1055,10 +1055,12 @@ async fn hooks_handler(
                 log::info!("Claude hook: session {} started (pending tab assignment)", session_id);
             }
 
+            let source = event.get("source").and_then(|v| v.as_str()).unwrap_or("");
             let _ = srv.app_handle.emit("claude-hook-session-start", serde_json::json!({
                 "session_id": session_id,
                 "tab_id": if tab_id.is_empty() { None } else { Some(&tab_id) },
                 "cwd": event.get("cwd"),
+                "source": source,
             }));
         }
 
@@ -1157,6 +1159,83 @@ async fn hooks_handler(
             let _ = srv.app_handle.emit("claude-hook-user-prompt", serde_json::json!({
                 "session_id": session_id,
                 "tab_id": tab_id,
+            }));
+        }
+
+        "PreToolUse" => {
+            let tab_id = {
+                let sessions = srv.state.claude_sessions.read();
+                sessions.get(&session_id).map(|s| s.tab_id.clone())
+            }
+            .or(tab_id_from_param);
+
+            let tool_name = event
+                .get("tool_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            // Update session state back to active (tool execution = working)
+            if !session_id.is_empty() {
+                use crate::state::app_state::ClaudeSessionState;
+                let mut sessions = srv.state.claude_sessions.write();
+                if let Some(session) = sessions.get_mut(&session_id) {
+                    session.state = ClaudeSessionState::Active;
+                }
+            }
+
+            log::debug!("Claude hook: PreToolUse tool='{}' session={} (tab {:?})",
+                tool_name, &session_id[..session_id.len().min(8)], tab_id);
+            let _ = srv.app_handle.emit("claude-hook-pre-tool-use", serde_json::json!({
+                "session_id": session_id,
+                "tab_id": tab_id,
+                "tool_name": tool_name,
+                "tool_input": event.get("tool_input"),
+            }));
+        }
+
+        "PostToolUse" => {
+            let tab_id = {
+                let sessions = srv.state.claude_sessions.read();
+                sessions.get(&session_id).map(|s| s.tab_id.clone())
+            }
+            .or(tab_id_from_param);
+
+            let tool_name = event
+                .get("tool_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            log::debug!("Claude hook: PostToolUse tool='{}' session={} (tab {:?})",
+                tool_name, &session_id[..session_id.len().min(8)], tab_id);
+            let _ = srv.app_handle.emit("claude-hook-post-tool-use", serde_json::json!({
+                "session_id": session_id,
+                "tab_id": tab_id,
+                "tool_name": tool_name,
+                "tool_input": event.get("tool_input"),
+            }));
+        }
+
+        "PreCompact" => {
+            let tab_id = {
+                let sessions = srv.state.claude_sessions.read();
+                sessions.get(&session_id).map(|s| s.tab_id.clone())
+            }
+            .or(tab_id_from_param);
+
+            let trigger = event
+                .get("trigger")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            log::info!("Claude hook: PreCompact trigger='{}' session={} (tab {:?})",
+                trigger, &session_id[..session_id.len().min(8)], tab_id);
+            let _ = srv.app_handle.emit("claude-hook-pre-compact", serde_json::json!({
+                "session_id": session_id,
+                "tab_id": tab_id,
+                "trigger": trigger,
             }));
         }
 

@@ -12,6 +12,8 @@ import { CLAUDE_RESUME_COMMAND } from '$lib/triggers/defaults';
  * State machine:
  *   SessionStart → active (thinking)
  *   UserPromptSubmit → active (thinking)
+ *   PreToolUse → active (tool_name set)
+ *   PostToolUse → active (tool_name cleared)
  *   Stop → idle (waiting for user input)
  *   Notification(idle_prompt) → idle
  *   Notification(permission_prompt) → permission
@@ -23,22 +25,90 @@ export type ClaudeState = 'active' | 'idle' | 'permission';
 export interface ClaudeTabSession {
   sessionId: string;
   state: ClaudeState;
+  /** Current tool being executed (set by PreToolUse, cleared by PostToolUse/Stop) */
+  toolName?: string;
+  /** Human-readable summary of what the tool is doing */
+  toolDetail?: string;
 }
+
+/** Build a human-readable action string from tool name + input. */
+function buildActionString(toolName: string, toolInput: Record<string, unknown> | null): string {
+  const detail = summarizeToolDetail(toolName, toolInput);
+  const displayName = toolName.startsWith('mcp__') ? toolName.split('__').slice(2).join('__') : toolName;
+  return detail ? `${displayName}: ${detail}` : displayName;
+}
+
+/** Extract a short detail from tool_input for display. */
+function summarizeToolDetail(toolName: string, toolInput: Record<string, unknown> | null): string | undefined {
+  if (!toolInput) return undefined;
+  switch (toolName) {
+    case 'Bash': {
+      const cmd = toolInput.command as string | undefined;
+      if (!cmd) return undefined;
+      return cmd.length > 50 ? cmd.slice(0, 47) + '...' : cmd;
+    }
+    case 'Edit':
+    case 'Write':
+    case 'Read': {
+      const fp = toolInput.file_path as string | undefined;
+      if (!fp) return undefined;
+      return fp.split('/').pop() || fp;
+    }
+    case 'Glob':
+    case 'Grep':
+      return toolInput.pattern as string | undefined;
+    case 'Agent':
+      return toolInput.description as string | undefined;
+    case 'WebFetch':
+    case 'WebSearch':
+      return (toolInput.query ?? toolInput.url) as string | undefined;
+    default:
+      return undefined;
+  }
+}
+
+/** How long (ms) to keep stale tool state before auto-clearing.
+ *  If no PreToolUse/PostToolUse arrives within this window, we assume
+ *  Claude was interrupted and clear the tool indicator. */
+const TOOL_STALE_TIMEOUT = 15_000;
 
 function createClaudeStateStore() {
   // tabId → session info
   let sessions = $state<Map<string, ClaudeTabSession>>(new Map());
   const unlisteners: (() => void)[] = [];
+  // tabId → timeout handle for stale tool detection
+  const staleTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
-  function setState(tabId: string, sessionId: string, state: ClaudeState) {
+  function setState(tabId: string, sessionId: string, state: ClaudeState, toolName?: string, toolDetail?: string) {
     const current = sessions.get(tabId);
-    if (current?.sessionId === sessionId && current?.state === state) return;
+    if (current?.sessionId === sessionId && current?.state === state && current?.toolName === toolName) return;
     sessions = new Map(sessions);
-    sessions.set(tabId, { sessionId, state });
+    sessions.set(tabId, { sessionId, state, toolName, toolDetail });
+
+    // Manage stale tool timer
+    clearStaleTimer(tabId);
+    if (toolName) {
+      staleTimers.set(tabId, setTimeout(() => {
+        const s = sessions.get(tabId);
+        if (s?.toolName === toolName) {
+          setState(tabId, sessionId, state);
+          setVariable(tabId, 'claudeAction', '');
+        }
+      }, TOOL_STALE_TIMEOUT));
+    }
+  }
+
+  function clearStaleTimer(tabId: string) {
+    const timer = staleTimers.get(tabId);
+    if (timer) {
+      clearTimeout(timer);
+      staleTimers.delete(tabId);
+    }
   }
 
   function removeSession(tabId: string) {
     if (!sessions.has(tabId)) return;
+    clearStaleTimer(tabId);
     sessions = new Map(sessions);
     sessions.delete(tabId);
   }
@@ -67,11 +137,14 @@ function createClaudeStateStore() {
     },
 
     async init() {
-      const u1 = await listen<{ session_id: string; tab_id: string }>('claude-hook-session-start', (e) => {
-        const { session_id, tab_id } = e.payload;
+      const u1 = await listen<{ session_id: string; tab_id: string; source?: string }>('claude-hook-session-start', (e) => {
+        const { session_id, tab_id, source } = e.payload;
         if (!tab_id) return;
         setState(tab_id, session_id, 'active');
-        logInfo(`Claude state: session ${session_id.slice(0, 8)} started → tab ${tab_id.slice(0, 8)} = active`);
+        if (source === 'compact') {
+          dispatch('Claude Code', 'Compaction complete', 'info', { tabId: tab_id });
+        }
+        logInfo(`Claude state: session ${session_id.slice(0, 8)} started (${source ?? 'unknown'}) → tab ${tab_id.slice(0, 8)} = active`);
       });
       unlisteners.push(u1);
 
@@ -79,6 +152,7 @@ function createClaudeStateStore() {
         const { tab_id } = e.payload;
         if (!tab_id) return;
         removeSession(tab_id);
+        setVariable(tab_id, 'claudeAction', '');
         logInfo(`Claude state: session ended → tab ${tab_id.slice(0, 8)} removed`);
       });
       unlisteners.push(u2);
@@ -87,13 +161,16 @@ function createClaudeStateStore() {
         const { session_id, tab_id } = e.payload;
         if (!tab_id) return;
         setState(tab_id, session_id, 'idle');
+        setVariable(tab_id, 'claudeAction', '');
       });
       unlisteners.push(u3);
 
       const u4 = await listen<{ session_id: string; tab_id: string | null }>('claude-hook-user-prompt', (e) => {
         const { session_id, tab_id } = e.payload;
         if (!tab_id) return;
+        // Clear tool state — new prompt means previous operation ended (possibly interrupted)
         setState(tab_id, session_id, 'active');
+        setVariable(tab_id, 'claudeAction', '');
       });
       unlisteners.push(u4);
 
@@ -133,11 +210,41 @@ function createClaudeStateStore() {
         logInfo(`Claude init: set claudeSessionId for tab ${tab_id.slice(0, 8)} = ${session_id.slice(0, 8)}`);
       });
       unlisteners.push(u6);
+
+      // PreToolUse: track which tool Claude is about to use + set %claudeAction variable
+      const u7 = await listen<{ session_id: string; tab_id: string | null; tool_name: string; tool_input: Record<string, unknown> | null }>('claude-hook-pre-tool-use', (e) => {
+        const { session_id, tab_id, tool_name, tool_input } = e.payload;
+        if (!tab_id) return;
+        const action = buildActionString(tool_name, tool_input);
+        const detail = summarizeToolDetail(tool_name, tool_input);
+        setState(tab_id, session_id, 'active', tool_name, detail);
+        setVariable(tab_id, 'claudeAction', action);
+      });
+      unlisteners.push(u7);
+
+      // PostToolUse: tool finished, clear tool info (still active/thinking)
+      const u8 = await listen<{ session_id: string; tab_id: string | null; tool_name: string }>('claude-hook-post-tool-use', (e) => {
+        const { session_id, tab_id } = e.payload;
+        if (!tab_id) return;
+        setState(tab_id, session_id, 'active');
+        setVariable(tab_id, 'claudeAction', '');
+      });
+      unlisteners.push(u8);
+
+      // PreCompact: context compaction starting
+      const u9 = await listen<{ session_id: string; tab_id: string | null; trigger: string }>('claude-hook-pre-compact', (e) => {
+        const { tab_id, trigger } = e.payload;
+        if (!tab_id) return;
+        dispatch('Claude Code', `Compacting conversation (${trigger})...`, 'info', { tabId: tab_id });
+      });
+      unlisteners.push(u9);
     },
 
     destroy() {
       for (const u of unlisteners) u();
       unlisteners.length = 0;
+      for (const timer of staleTimers.values()) clearTimeout(timer);
+      staleTimers.clear();
     },
   };
 }

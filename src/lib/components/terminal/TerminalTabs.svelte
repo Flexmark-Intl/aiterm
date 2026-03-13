@@ -531,7 +531,7 @@
           {/if}
           {#each shellTabs as archivedTab (archivedTab.id)}
             <div class="archive-item">
-              <span class="archive-item-icon" title="Terminal">&gt;_</span>
+              <Tooltip text="Terminal"><span class="archive-item-icon">&gt;_</span></Tooltip>
               <button
                 class="archive-item-name"
                 onclick={() => handleRestoreArchivedTab(archivedTab.id)}
@@ -544,12 +544,12 @@
               <IconButton
                 tooltip="Restore"
                 onclick={() => handleRestoreArchivedTab(archivedTab.id)}
-              >&#x21A9;</IconButton>
+              ><Icon name="restore" size={12} /></IconButton>
               <IconButton
                 tooltip="Delete permanently"
                 danger
                 onclick={(e) => handleDeleteArchivedTab(archivedTab.id, e)}
-              >&times;</IconButton>
+              ><Icon name="close" size={12} /></IconButton>
             </div>
           {/each}
           {#if showHeaders && viewerTabs.length > 0}
@@ -558,13 +558,13 @@
           {#each viewerTabs as archivedTab (archivedTab.id)}
             <div class="archive-item">
               {#if archivedTab.tab_type === 'diff'}
-                <span class="archive-item-icon" title="Diff">&#x21C4;</span>
+                <Tooltip text="Diff"><span class="archive-item-icon"><Icon name="diff" size={12} /></span></Tooltip>
               {:else if archivedTab.editor_file && isPdfFile(archivedTab.editor_file.file_path)}
-                <span class="archive-item-icon" title="PDF"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512" fill="currentColor"><path d="M181.9 256.1c-5-16-4.9-46.9-2-46.9 8.4 0 7.6 36.9 2 46.9zm-1.7 47.2c-7.7 20.2-17.3 43.3-28.4 62.7 18.3-7 39-17.2 62.9-21.9-12.7-9.6-24.9-23.4-34.5-40.8zM86.1 428.1c0 .8 13.2-5.4 34.9-40.2-6.7 6.3-29.1 24.5-34.9 40.2zM248 160h136v328c0 13.3-10.7 24-24 24H24c-13.3 0-24-10.7-24-24V24C0 10.7 10.7 0 24 0h200v136c0 13.2 10.8 24 24 24zm-8 171.8c-20-12.2-33.3-29-42.7-53.8 4.5-18.5 11.6-46.6 6.2-64.2-4.7-29.4-42.4-26.5-47.8-6.8-5 18.3-.4 44.1 8.1 77-11.6 27.6-28.7 64.6-40.8 85.8-.1 0-.1.1-.2.1-27.1 13.9-73.6 44.5-54.5 68 5.6 6.9 16 10 21.5 10 17.9 0 35.7-18 61.1-61.8 25.8-8.5 54.1-19.1 79-23.2 21.7 11.8 47.1 19.5 64 19.5 29.2 0 31.2-32 19.7-43.4-13.9-13.6-54.3-9.7-73.6-7.2zM377 105L279 7c-4.5-4.5-10.6-7-17-7h-6v128h128v-6.1c0-6.3-2.5-12.4-7-16.9zm-74.1 255.3c4.1-2.7-2.5-11.9-42.8-9 37.1 15.8 42.8 9 42.8 9z"/></svg></span>
+                <Tooltip text="PDF"><span class="archive-item-icon"><Icon name="pdf" size={12} /></span></Tooltip>
               {:else if archivedTab.editor_file && isImageFile(archivedTab.editor_file.file_path)}
-                <span class="archive-item-icon" title="Image"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="currentColor"><path d="M464 448H48c-26.51 0-48-21.49-48-48V112c0-26.51 21.49-48 48-48h416c26.51 0 48 21.49 48 48v288c0 26.51-21.49 48-48 48zM112 120c-30.928 0-56 25.072-56 56s25.072 56 56 56 56-25.072 56-56-25.072-56-56-56zM64 384h384V272l-87.515-87.515c-4.686-4.686-12.284-4.686-16.971 0L208 320l-55.515-55.515c-4.686-4.686-12.284-4.686-16.971 0L64 336v48z"/></svg></span>
+                <Tooltip text="Image"><span class="archive-item-icon"><Icon name="image" size={12} /></span></Tooltip>
               {:else}
-                <span class="archive-item-icon" title="Editor"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512" fill="currentColor"><path d="M224 136V0H24C10.7 0 0 10.7 0 24v464c0 13.3 10.7 24 24 24h336c13.3 0 24-10.7 24-24V160H248c-13.2 0-24-10.8-24-24zm64 236c0 6.6-5.4 12-12 12H108c-6.6 0-12-5.4-12-12v-8c0-6.6 5.4-12 12-12h168c6.6 0 12 5.4 12 12v8zm0-64c0 6.6-5.4 12-12 12H108c-6.6 0-12-5.4-12-12v-8c0-6.6 5.4-12 12-12h168c6.6 0 12 5.4 12 12v8zm0-72v8c0 6.6-5.4 12-12 12H108c-6.6 0-12-5.4-12-12v-8c0-6.6 5.4-12 12-12h168c6.6 0 12 5.4 12 12zm96-114.1v6.1H256V0h6.1c6.4 0 12.5 2.5 17 7l97.9 98c4.5 4.5 7 10.6 7 16.9z"/></svg></span>
+                <Tooltip text="Editor"><span class="archive-item-icon"><Icon name="file" size={12} /></span></Tooltip>
               {/if}
               <button
                 class="archive-item-name"
@@ -578,12 +578,12 @@
               <IconButton
                 tooltip="Restore"
                 onclick={() => handleRestoreArchivedTab(archivedTab.id)}
-              >&#x21A9;</IconButton>
+              ><Icon name="restore" size={12} /></IconButton>
               <IconButton
                 tooltip="Delete permanently"
                 danger
                 onclick={(e) => handleDeleteArchivedTab(archivedTab.id, e)}
-              >&times;</IconButton>
+              ><Icon name="close" size={12} /></IconButton>
             </div>
           {/each}
         </div>
@@ -645,46 +645,45 @@
         </div>
       {:else}
         {#if isDiff}
-          <span class="editor-icon" title="Diff">&#x21C4;</span>
+          <Tooltip text="Diff"><span class="editor-icon"><Icon name="diff" size={12} /></span></Tooltip>
         {:else if isEditor}
           {#if tab.editor_file && isPdfFile(tab.editor_file.file_path)}
-            <span class="editor-icon" title="PDF"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512" fill="currentColor"><path d="M181.9 256.1c-5-16-4.9-46.9-2-46.9 8.4 0 7.6 36.9 2 46.9zm-1.7 47.2c-7.7 20.2-17.3 43.3-28.4 62.7 18.3-7 39-17.2 62.9-21.9-12.7-9.6-24.9-23.4-34.5-40.8zM86.1 428.1c0 .8 13.2-5.4 34.9-40.2-6.7 6.3-29.1 24.5-34.9 40.2zM248 160h136v328c0 13.3-10.7 24-24 24H24c-13.3 0-24-10.7-24-24V24C0 10.7 10.7 0 24 0h200v136c0 13.2 10.8 24 24 24zm-8 171.8c-20-12.2-33.3-29-42.7-53.8 4.5-18.5 11.6-46.6 6.2-64.2-4.7-29.4-42.4-26.5-47.8-6.8-5 18.3-.4 44.1 8.1 77-11.6 27.6-28.7 64.6-40.8 85.8-.1 0-.1.1-.2.1-27.1 13.9-73.6 44.5-54.5 68 5.6 6.9 16 10 21.5 10 17.9 0 35.7-18 61.1-61.8 25.8-8.5 54.1-19.1 79-23.2 21.7 11.8 47.1 19.5 64 19.5 29.2 0 31.2-32 19.7-43.4-13.9-13.6-54.3-9.7-73.6-7.2zM377 105L279 7c-4.5-4.5-10.6-7-17-7h-6v128h128v-6.1c0-6.3-2.5-12.4-7-16.9zm-74.1 255.3c4.1-2.7-2.5-11.9-42.8-9 37.1 15.8 42.8 9 42.8 9z"/></svg></span>
+            <Tooltip text="PDF"><span class="editor-icon"><Icon name="pdf" size={12} /></span></Tooltip>
           {:else if tab.editor_file && isImageFile(tab.editor_file.file_path)}
-            <span class="editor-icon" title="Image"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="currentColor"><path d="M464 448H48c-26.51 0-48-21.49-48-48V112c0-26.51 21.49-48 48-48h416c26.51 0 48 21.49 48 48v288c0 26.51-21.49 48-48 48zM112 120c-30.928 0-56 25.072-56 56s25.072 56 56 56 56-25.072 56-56-25.072-56-56-56zM64 384h384V272l-87.515-87.515c-4.686-4.686-12.284-4.686-16.971 0L208 320l-55.515-55.515c-4.686-4.686-12.284-4.686-16.971 0L64 336v48z"/></svg></span>
+            <Tooltip text="Image"><span class="editor-icon"><Icon name="image" size={12} /></span></Tooltip>
           {:else}
-            <span class="editor-icon" class:editor-dirty={isEditorDirty(tab.id)} title={isEditorDirty(tab.id) ? 'Unsaved changes' : 'Editor'}><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512" fill="currentColor"><path d="M224 136V0H24C10.7 0 0 10.7 0 24v464c0 13.3 10.7 24 24 24h336c13.3 0 24-10.7 24-24V160H248c-13.2 0-24-10.8-24-24zm64 236c0 6.6-5.4 12-12 12H108c-6.6 0-12-5.4-12-12v-8c0-6.6 5.4-12 12-12h168c6.6 0 12 5.4 12 12v8zm0-64c0 6.6-5.4 12-12 12H108c-6.6 0-12-5.4-12-12v-8c0-6.6 5.4-12 12-12h168c6.6 0 12 5.4 12 12v8zm0-72v8c0 6.6-5.4 12-12 12H108c-6.6 0-12-5.4-12-12v-8c0-6.6 5.4-12 12-12h168c6.6 0 12 5.4 12 12zm96-114.1v6.1H256V0h6.1c6.4 0 12.5 2.5 17 7l97.9 98c4.5 4.5 7 10.6 7 16.9z"/></svg></span>
+            <Tooltip text={isEditorDirty(tab.id) ? 'Unsaved changes' : 'Editor'}><span class="editor-icon" class:editor-dirty={isEditorDirty(tab.id)}><Icon name="file" size={12} /></span></Tooltip>
           {/if}
         {:else if tabState === 'alert'}
-          <span class="indicator alert-indicator">&#x2757;</span>
+          <span class="indicator alert-indicator"><Icon name="warning" size={11} /></span>
         {:else if tabState === 'question'}
-          <span class="indicator question-indicator">&#x2753;</span>
+          <span class="indicator question-indicator"><Icon name="help" size={11} /></span>
         {:else if claudeState?.state === 'permission'}
-          <span class="indicator claude-permission" title="Claude needs permission">&#x26A0;</span>
+          <Tooltip text="Claude needs permission"><span class="indicator claude-permission"><Icon name="warning" size={11} /></span></Tooltip>
         {:else if claudeState?.state === 'active'}
-          <span class="indicator claude-active" title="Claude is working">&#x25CF;</span>
+          <Tooltip text={claudeState.toolName ? `Claude: ${claudeState.toolName}${claudeState.toolDetail ? ': ' + claudeState.toolDetail : ''}` : 'Claude is working'}><span class="indicator claude-active"><Icon name="circle" size={8} /></span></Tooltip>
         {:else if claudeState?.state === 'idle'}
-          <span class="indicator claude-idle" title="Claude waiting for input">&#x25CF;</span>
+          <Tooltip text="Claude waiting for input"><span class="indicator claude-idle"><Icon name="circle" size={8} /></span></Tooltip>
         {:else if shellState?.state === 'completed'}
-          <span class="indicator" class:completed-indicator={shellState.exitCode === 0} class:failed-indicator={shellState.exitCode !== 0}>{shellState.exitCode === 0 ? '\u2713' : '\u2717'}</span>
+          <span class="indicator" class:completed-indicator={shellState.exitCode === 0} class:failed-indicator={shellState.exitCode !== 0}>{#if shellState.exitCode === 0}<Icon name="check" size={11} />{:else}<Icon name="cross" size={11} />{/if}</span>
         {:else if hasActivity}
           <span class="indicator"><StatusDot color="accent" /></span>
         {/if}
         {#if !isEditor && tab.auto_resume_enabled && (tab.auto_resume_ssh_command || tab.auto_resume_cwd || tab.auto_resume_command)}
-          <span class="auto-resume-indicator" title={
+          <Tooltip text={
             tab.auto_resume_ssh_command
               ? `Auto-resume: ${tab.auto_resume_ssh_command}${tab.auto_resume_remote_cwd ? ` (${tab.auto_resume_remote_cwd})` : ''}`
               : `Auto-resume: ${tab.auto_resume_cwd ?? 'enabled'}`
-          }><Icon name="resume" size={12} /></span>
+          }><span class="auto-resume-indicator"><Icon name="resume" size={12} /></span></Tooltip>
         {/if}
         {#if !isEditor && preferencesStore.claudeCodeIde && preferencesStore.claudeCodeIdeSsh}
           {@const bridgeStatus = getBridgeStatus(tab.id)}
           {#if bridgeStatus}
-            <span
+            <Tooltip text={bridgeStatus === 'connected' ? 'MCP bridge active' : 'MCP bridge failed'}><span
               class="bridge-indicator"
               class:bridge-connected={bridgeStatus === 'connected'}
               class:bridge-failed={bridgeStatus === 'failed'}
-              title={bridgeStatus === 'connected' ? 'MCP bridge active' : 'MCP bridge failed'}
-            ><Icon name="bolt" size={12} /></span>
+            ><Icon name="bolt" size={12} /></span></Tooltip>
           {/if}
         {/if}
         <span class="tab-name">{displayName(tab)}</span>
@@ -699,23 +698,23 @@
               tooltip="Duplicate tab ({modLabel}+Shift+T)"
               style="width:22px;height:18px;border-radius:3px"
               onclick={(e) => handleDuplicateTab(tab.id, e)}
-            >&#x29C9;</IconButton>
+            ><Icon name="duplicate" size={11} /></IconButton>
           {/if}
           <IconButton
             tooltip="Close tab ({modLabel}+W)"
             style="width:22px;height:18px;border-radius:3px"
             onclick={(e) => handleCloseTab(tab.id, e)}
           >
-            &times;
+            <Icon name="close" size={11} />
           </IconButton>
         </div>
       {/if}
     </div>
   {/each}
 
-  <button class="new-tab-btn" onclick={handleNewTab} title="New tab ({modLabel}+T)">
-    +
-  </button>
+  <Tooltip text="New tab ({modLabel}+T)"><button class="new-tab-btn" onclick={handleNewTab}>
+    <Icon name="plus" size={14} />
+  </button></Tooltip>
 
   <div class="tabs-spacer" data-tauri-drag-region></div>
 
@@ -921,10 +920,10 @@
 
   .indicator {
     flex-shrink: 0;
+    display: flex;
+    align-items: center;
     margin-right: 4px;
-    font-size: 0.769rem;
-    font-weight: bold;
-    line-height: 1;
+    line-height: 0;
   }
 
   .completed-indicator {
@@ -935,28 +934,17 @@
     color: var(--red, #f7768e);
   }
 
-  .alert-indicator {
-    font-size: 0.846rem;
-  }
-
-  .question-indicator {
-    font-size: 0.846rem;
-  }
-
   .claude-active {
     color: var(--accent);
-    font-size: 0.6rem;
     animation: claude-pulse 1.5s ease-in-out infinite;
   }
 
   .claude-idle {
     color: var(--green, #9ece6a);
-    font-size: 0.6rem;
   }
 
   .claude-permission {
     color: var(--yellow, #e0af68);
-    font-size: 0.75rem;
   }
 
   @keyframes claude-pulse {
@@ -1065,11 +1053,13 @@
 
   .new-tab-btn {
     flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     padding: 4px 10px;
     margin-left: 5px;
     border-radius: 4px;
     color: var(--fg-dim);
-    font-size: 1.077rem;
     -webkit-app-region: no-drag;
   }
 

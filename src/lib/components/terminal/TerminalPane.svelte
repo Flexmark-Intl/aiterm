@@ -28,6 +28,8 @@
   import { createFilePathLinkProvider } from '$lib/utils/filePathDetector';
   import { openFileFromTerminal } from '$lib/utils/openFile';
   import { enableBridge, disableBridge, hasBridge } from '$lib/stores/sshMcpBridge.svelte';
+  import { claudeStateStore } from '$lib/stores/claudeState.svelte';
+  import Icon from '$lib/components/Icon.svelte';
   import Button from '$lib/components/ui/Button.svelte';
 
   interface Props {
@@ -1231,17 +1233,6 @@
           <Button variant="secondary" onclick={() => { claudeSetupModal = false; }} style="padding:6px 18px;border-radius:4px;font-size: 1rem;font-weight:500">Cancel</Button>
           <Button variant="primary" onclick={async () => {
             try {
-              const triggers = preferencesStore.triggers;
-              const needsUpdate = triggers.some(t =>
-                (t.default_id === 'claude-resume' || t.default_id === 'claude-session-id') && !t.enabled
-              );
-              if (needsUpdate) {
-                preferencesStore.setTriggers(triggers.map(t =>
-                  (t.default_id === 'claude-resume' || t.default_id === 'claude-session-id')
-                    ? { ...t, enabled: true }
-                    : t
-                ));
-              }
               const ctx = await gatherAutoResumeContext();
               const sshCmd = ctx.sshCmd ? normalizeSshInput(ctx.sshCmd) : null;
               await workspacesStore.setTabAutoResumeContext(workspaceId, paneId, tabId, ctx.cwd, sshCmd, ctx.remoteCwd, CLAUDE_RESUME_COMMAND);
@@ -1253,6 +1244,13 @@
           }} style="padding:6px 18px;border-radius:4px;font-size: 1rem;font-weight:500">Activate</Button>
         </div>
       </div>
+    </div>
+  {/if}
+  {#if claudeStateStore.getState(tabId)?.toolName}
+    {@const cs = claudeStateStore.getState(tabId)!}
+    <div class="claude-action-tag">
+      <span class="claude-action-dot"><Icon name="circle" size={6} /></span>
+      {cs.toolName}{#if cs.toolDetail}: <span class="claude-action-detail">{cs.toolDetail}</span>{/if}
     </div>
   {/if}
   {#if scrollTotalLines > scrollViewportRows}
@@ -1362,6 +1360,39 @@
 
   .terminal-container :global(.xterm-viewport) {
     overflow: hidden !important;
+  }
+
+  .claude-action-tag {
+    position: absolute;
+    bottom: 6px;
+    left: 8px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    background: var(--bg-medium);
+    border: 1px solid var(--bg-light);
+    color: var(--fg-dim);
+    font-size: 0.77rem;
+    line-height: 1;
+    padding: 3px 8px;
+    border-radius: 4px;
+    pointer-events: none;
+    z-index: 4;
+    max-width: 50%;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .claude-action-dot {
+    color: var(--accent);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+  }
+
+  .claude-action-detail {
+    opacity: 0.7;
   }
 
   .scrollbar-track {

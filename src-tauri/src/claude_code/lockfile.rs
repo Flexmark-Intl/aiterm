@@ -246,7 +246,10 @@ You MUST immediately call the {mcp_key} initSession tool with this tabId and ses
         "SessionEnd": http_hook(&hooks_url),
         "Notification": http_hook(&hooks_url),
         "Stop": http_hook(&hooks_url),
-        "UserPromptSubmit": http_hook(&hooks_url)
+        "UserPromptSubmit": http_hook(&hooks_url),
+        "PreToolUse": http_hook(&hooks_url),
+        "PostToolUse": http_hook(&hooks_url),
+        "PreCompact": http_hook(&hooks_url)
     });
 
     // Sweep: remove any aiTerm hook entries whose port has no live lockfile.
@@ -536,40 +539,39 @@ fn write_aiterm_skill() -> Result<(), String> {
     let dir = aiterm_skill_dir().ok_or("Could not determine home directory")?;
     fs::create_dir_all(&dir).map_err(|e| format!("Failed to create skill dir: {}", e))?;
 
-    let mcp_key = mcp_server_key();
-    let skill = format!(r#"---
+    let skill = r#"---
 name: aiterm
 description: Quick aiTerm terminal operations — /aiterm notes, /aiterm diag, /aiterm tabs, etc.
 ---
 
-Execute the aiTerm MCP tool for the requested operation. Use the {mcp_key} MCP server. Always call initSession first if you haven't this session.
+Execute the aiTerm MCP tool for the requested operation. Use whichever aiterm MCP server you already called initSession on (aiterm or aiterm-dev). If you haven't initialized yet, call initSession first.
 
 ## Command reference
 
 | Command | MCP Tool | Parameters |
 |---------|----------|------------|
-| `notes` | openNotesPanel | `{{ "open": true }}` |
-| `notes close` | openNotesPanel | `{{ "open": false }}` |
-| `notes read` | getTabNotes | `{{}}` |
-| `notes write <content>` | setTabNotes | `{{ "notes": "<content>" }}` |
-| `tabs` | listWorkspaces | `{{}}` |
-| `tab` | getActiveTab | `{{}}` |
-| `diag` | getDiagnostics | `{{}}` |
-| `vars` | getTriggerVariables | `{{}}` |
-| `var <name> <value>` | setTriggerVariable | `{{ "name": "<name>", "value": "<value>" }}` |
-| `resume on` | setAutoResume | `{{ "enabled": true }}` |
-| `resume off` | setAutoResume | `{{ "enabled": false }}` |
-| `resume` | getAutoResume | `{{}}` |
-| `notify <title> <body>` | sendNotification | `{{ "title": "<title>", "body": "<body>" }}` |
-| `logs` | readLogs | `{{}}` |
-| `logs <search>` | readLogs | `{{ "search": "<search>" }}` |
-| `init` | initSession | `{{ "tabId": "$AITERM_TAB_ID", "sessionId": "<from SessionStart hook>" }}` |
+| `notes` | openNotesPanel | `{ "open": true }` |
+| `notes close` | openNotesPanel | `{ "open": false }` |
+| `notes read` | getTabNotes | `{}` |
+| `notes write <content>` | setTabNotes | `{ "notes": "<content>" }` |
+| `tabs` | listWorkspaces | `{}` |
+| `tab` | getActiveTab | `{}` |
+| `diag` | getDiagnostics | `{}` |
+| `vars` | getTriggerVariables | `{}` |
+| `var <name> <value>` | setTriggerVariable | `{ "name": "<name>", "value": "<value>" }` |
+| `resume on` | setAutoResume | `{ "enabled": true }` |
+| `resume off` | setAutoResume | `{ "enabled": false }` |
+| `resume` | getAutoResume | `{}` |
+| `notify <title> <body>` | sendNotification | `{ "title": "<title>", "body": "<body>" }` |
+| `logs` | readLogs | `{}` |
+| `logs <search>` | readLogs | `{ "search": "<search>" }` |
+| `init` | initSession | `{ "tabId": "$AITERM_TAB_ID", "sessionId": "<from SessionStart hook>" }` |
 
 Call the exact MCP tool listed above with the specified parameters. Do not ask for clarification — just execute.
 For `init`: read tabId from $AITERM_TAB_ID env var and sessionId from your SessionStart hook context.
 
 $ARGUMENTS
-"#, mcp_key = mcp_key);
+"#;
 
     let path = dir.join("SKILL.md");
     fs::write(&path, skill).map_err(|e| format!("Failed to write skill: {}", e))?;
