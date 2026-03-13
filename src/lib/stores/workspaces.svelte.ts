@@ -159,6 +159,8 @@ function createWorkspacesStore() {
       // Migration: update old auto-resume commands and backfill missing context
       const OLD_RESUME_COMMANDS = [
         'if [ -n "%claudeSessionId" ]; then claude --resume %claudeSessionId; elif [ -n "%claudeResumeCommand" ]; then %claudeResumeCommand; else claude --continue; fi',
+        "if [ -n '%claudeSessionId' ]; then claude --resume %claudeSessionId; elif [ -n '%claudeResumeCommand' ]; then eval %claudeResumeCommand; else claude --continue; fi",
+        'claude --resume %claudeSessionId',
       ];
       for (const ws of workspaces) {
         for (const pane of ws.panes) {
@@ -177,7 +179,7 @@ function createWorkspacesStore() {
             // command. Detect by matching the template skeleton with any values
             // and reset to the uninterpolated template.
             if (tab.auto_resume_command && tab.auto_resume_command !== CLAUDE_RESUME_COMMAND
-              && /^if \[ -n ".*" \]; then claude --resume .*; elif \[ -n ".*" \]; then eval .*; else claude --continue; fi$/.test(tab.auto_resume_command)) {
+              && /^if \[ -n ['"].*['"] \]; then claude --resume .*; elif \[ -n ['"].*['"] \]; then (eval )?.*; else claude --continue; fi$/.test(tab.auto_resume_command)) {
               tab.auto_resume_command = CLAUDE_RESUME_COMMAND;
               tab.auto_resume_remembered_command = CLAUDE_RESUME_COMMAND;
               migrated = true;

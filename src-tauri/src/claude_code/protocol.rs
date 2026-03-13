@@ -424,7 +424,9 @@ pub fn initialize_response() -> Value {
             "You are running inside an aiTerm terminal tab. At the start of every session (new, resume, compact, clear), \
              you MUST call initSession with your tab ID (from $AITERM_TAB_ID or SessionStart hook context) before responding to the user. \
              This registers your session so all tool calls automatically target the correct tab. \
-             IMPORTANT: You MUST use tools from the '{}' MCP server ONLY. Do NOT use tools from any other aiterm MCP server.",
+             IMPORTANT: You MUST use tools from the '{}' MCP server ONLY. Do NOT use tools from any other aiterm MCP server. \
+             IMPORTANT: Always call initSession when requested via /aiterm init, even if you believe it was already called. \
+             Resume, fork, and compact events require re-initialization to pick up state changes.",
             if cfg!(debug_assertions) { "aiterm-dev" } else { "aiterm" }
         )
     })

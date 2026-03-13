@@ -336,16 +336,12 @@ export async function handleEnableAutoResume(tabId: string, commandTemplate: str
 
     // Preserve existing custom command — only fall back to the trigger's
     // command template when the tab has no command set yet.
-    // Migrate known old default commands to the current template automatically.
+    // Old commands are migrated at startup in workspaces.svelte.ts load().
     const ws = workspacesStore.workspaces.find(w => w.id === instance.workspaceId);
     const pane = ws?.panes.find(p => p.id === instance.paneId);
     const tab = pane?.tabs.find(t => t.id === tabId);
     const existing = tab?.auto_resume_command ?? tab?.auto_resume_remembered_command ?? null;
-    const isOldDefault = existing && (
-      existing.startsWith("if [ -n '%claudeSessionId' ]") ||
-      (existing.startsWith('claude --resume %claudeSessionId') && existing !== commandTemplate)
-    );
-    const cmd = (!existing || isOldDefault) ? (commandTemplate || null) : existing;
+    const cmd = existing || (commandTemplate || null);
 
     // Prevent SSH context downgrade: if the tab already has an SSH auto-resume
     // context but the current PTY shows no SSH (e.g. SSH replay failed on

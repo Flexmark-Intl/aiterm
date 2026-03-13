@@ -569,7 +569,7 @@ Execute the aiTerm MCP tool for the requested operation. Use whichever aiterm MC
 | `init` | initSession | `{ "tabId": "$AITERM_TAB_ID", "sessionId": "<from SessionStart hook>" }` |
 
 Call the exact MCP tool listed above with the specified parameters. Do not ask for clarification — just execute.
-For `init`: read tabId from $AITERM_TAB_ID env var and sessionId from your SessionStart hook context.
+For `init`: read tabId from $AITERM_TAB_ID env var and sessionId from your SessionStart hook context. IMPORTANT: Always call initSession when requested, even if you believe it was already called earlier in the session. Session resume, fork, and compact events require re-initialization to pick up state changes.
 
 $ARGUMENTS
 "#;
