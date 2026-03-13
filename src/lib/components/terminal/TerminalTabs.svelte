@@ -11,6 +11,7 @@
   import { onVariablesChange, interpolateVariables } from '$lib/stores/triggers.svelte';
   import { isEditorDirty } from '$lib/stores/editorRegistry.svelte';
   import { getBridgeStatus } from '$lib/stores/sshMcpBridge.svelte';
+  import { claudeStateStore } from '$lib/stores/claudeState.svelte';
   import { isImageFile, isPdfFile } from '$lib/utils/languageDetect';
   import Icon from '$lib/components/Icon.svelte';
   import StatusDot from '$lib/components/ui/StatusDot.svelte';
@@ -597,6 +598,7 @@
     {@const shellState = !isEditor && tab.id !== pane.active_tab_id ? activityStore.getShellState(tab.id) : undefined}
     {@const hasActivity = !isEditor && tab.id !== pane.active_tab_id && activityStore.hasActivity(tab.id)}
     {@const tabState = !isEditor && tab.id !== pane.active_tab_id ? activityStore.getTabState(tab.id) : undefined}
+    {@const claudeState = !isEditor ? claudeStateStore.getState(tab.id) : undefined}
     <div
       class="tab"
       class:active={tab.id === pane.active_tab_id}
@@ -656,6 +658,12 @@
           <span class="indicator alert-indicator">&#x2757;</span>
         {:else if tabState === 'question'}
           <span class="indicator question-indicator">&#x2753;</span>
+        {:else if claudeState?.state === 'permission'}
+          <span class="indicator claude-permission" title="Claude needs permission">&#x26A0;</span>
+        {:else if claudeState?.state === 'active'}
+          <span class="indicator claude-active" title="Claude is working">&#x25CF;</span>
+        {:else if claudeState?.state === 'idle'}
+          <span class="indicator claude-idle" title="Claude waiting for input">&#x25CF;</span>
         {:else if shellState?.state === 'completed'}
           <span class="indicator" class:completed-indicator={shellState.exitCode === 0} class:failed-indicator={shellState.exitCode !== 0}>{shellState.exitCode === 0 ? '\u2713' : '\u2717'}</span>
         {:else if hasActivity}
@@ -933,6 +941,27 @@
 
   .question-indicator {
     font-size: 0.846rem;
+  }
+
+  .claude-active {
+    color: var(--accent);
+    font-size: 0.6rem;
+    animation: claude-pulse 1.5s ease-in-out infinite;
+  }
+
+  .claude-idle {
+    color: var(--green, #9ece6a);
+    font-size: 0.6rem;
+  }
+
+  .claude-permission {
+    color: var(--yellow, #e0af68);
+    font-size: 0.75rem;
+  }
+
+  @keyframes claude-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
   }
 
   .tab-name {

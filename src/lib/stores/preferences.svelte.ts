@@ -50,11 +50,12 @@ function createPreferencesStore() {
   let claudeTriggersPrompted = $state(false);
   let claudeCodeIde = $state(false);
   let claudeCodeIdeSsh = $state(true);
+  let claudeCodeHooks = $state(true);
+  let claudeCodeAutoResume = $state(false);
   let windowsShell = $state('powershell');
   let fileLinkAction = $state('modifier_click');
   let backupDirectory = $state<string | null>(null);
   let backupInterval = $state('off');
-  let backupCompress = $state(false);
   let backupExcludeScrollback = $state(true);
   let backupTrimEnabled = $state(false);
   let backupTrimAge = $state('1m');
@@ -106,11 +107,12 @@ function createPreferencesStore() {
     get claudeTriggersPrompted() { return claudeTriggersPrompted; },
     get claudeCodeIde() { return claudeCodeIde; },
     get claudeCodeIdeSsh() { return claudeCodeIdeSsh; },
+    get claudeCodeHooks() { return claudeCodeHooks; },
+    get claudeCodeAutoResume() { return claudeCodeAutoResume; },
     get windowsShell() { return windowsShell; },
     get fileLinkAction() { return fileLinkAction; },
     get backupDirectory() { return backupDirectory; },
     get backupInterval() { return backupInterval; },
-    get backupCompress() { return backupCompress; },
     get backupExcludeScrollback() { return backupExcludeScrollback; },
     get backupTrimEnabled() { return backupTrimEnabled; },
     get backupTrimAge() { return backupTrimAge; },
@@ -172,11 +174,12 @@ function createPreferencesStore() {
       claudeTriggersPrompted = prefs.claude_triggers_prompted ?? false;
       claudeCodeIde = prefs.claude_code_ide ?? false;
       claudeCodeIdeSsh = prefs.claude_code_ide_ssh ?? true;
+      claudeCodeHooks = prefs.claude_code_hooks ?? true;
+      claudeCodeAutoResume = prefs.claude_code_auto_resume ?? false;
       windowsShell = prefs.windows_shell ?? 'powershell';
       fileLinkAction = prefs.file_link_action ?? 'modifier_click';
       backupDirectory = prefs.backup_directory ?? null;
       backupInterval = prefs.backup_interval || 'off';
-      backupCompress = prefs.backup_compress ?? false;
       backupExcludeScrollback = prefs.backup_exclude_scrollback ?? true;
       backupTrimEnabled = prefs.backup_trim_enabled ?? false;
       backupTrimAge = prefs.backup_trim_age || '1m';
@@ -384,6 +387,14 @@ function createPreferencesStore() {
       await this.save();
     },
 
+    async setClaudeCodeHooks(value: boolean) {
+      claudeCodeHooks = value;
+      await this.save();
+    },
+    async setClaudeCodeAutoResume(value: boolean) {
+      claudeCodeAutoResume = value;
+      await this.save();
+    },
     async setClaudeCodeIde(value: boolean) {
       claudeCodeIde = value;
       await this.save();
@@ -411,11 +422,6 @@ function createPreferencesStore() {
 
     async setBackupInterval(value: string) {
       backupInterval = value;
-      await this.save();
-    },
-
-    async setBackupCompress(value: boolean) {
-      backupCompress = value;
       await this.save();
     },
 
@@ -505,11 +511,12 @@ function createPreferencesStore() {
       claudeTriggersPrompted = prefs.claude_triggers_prompted ?? false;
       claudeCodeIde = prefs.claude_code_ide ?? false;
       claudeCodeIdeSsh = prefs.claude_code_ide_ssh ?? true;
+      claudeCodeHooks = prefs.claude_code_hooks ?? true;
+      claudeCodeAutoResume = prefs.claude_code_auto_resume ?? false;
       windowsShell = prefs.windows_shell ?? 'powershell';
       fileLinkAction = prefs.file_link_action ?? 'modifier_click';
       backupDirectory = prefs.backup_directory ?? null;
       backupInterval = prefs.backup_interval || 'off';
-      backupCompress = prefs.backup_compress ?? false;
       backupExcludeScrollback = prefs.backup_exclude_scrollback ?? true;
       backupTrimEnabled = prefs.backup_trim_enabled ?? false;
       backupTrimAge = prefs.backup_trim_age || '1m';
@@ -561,11 +568,12 @@ function createPreferencesStore() {
         claude_triggers_prompted: claudeTriggersPrompted,
         claude_code_ide: claudeCodeIde,
         claude_code_ide_ssh: claudeCodeIdeSsh,
+        claude_code_hooks: claudeCodeHooks,
+        claude_code_auto_resume: claudeCodeAutoResume,
         windows_shell: windowsShell,
         file_link_action: fileLinkAction,
         backup_directory: backupDirectory,
         backup_interval: backupInterval === 'off' ? '' : backupInterval,
-        backup_compress: backupCompress,
         backup_exclude_scrollback: backupExcludeScrollback,
         auto_suspend_minutes: autoSuspendMinutes,
         backup_trim_enabled: backupTrimEnabled,

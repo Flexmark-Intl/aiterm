@@ -13,6 +13,8 @@ import * as commands from '$lib/tauri/commands';
 import { preferencesStore } from '$lib/stores/preferences.svelte';
 import { dispatch } from '$lib/stores/notificationDispatch';
 import { error as logError, info as logInfo } from '@tauri-apps/plugin-log';
+import { listen } from '@tauri-apps/api/event';
+import type { UnlistenFn } from '@tauri-apps/api/event';
 
 export type BridgeStatus = 'connected' | 'failed';
 
@@ -25,6 +27,42 @@ interface BridgeState {
 
 /** Reactive map of tabId → bridge state. Svelte 5 $state for reactivity in TerminalTabs. */
 let bridgeStates = $state<Map<string, BridgeState>>(new Map());
+
+/** Per-tab event listeners for tunnel-down events from Rust. */
+const tunnelListeners = new Map<string, UnlistenFn>();
+
+/**
+ * Remove bridge state for a tab (internal — no backend call).
+ * Used when Rust notifies us the tunnel died.
+ */
+function clearBridgeState(tabId: string): void {
+  if (!bridgeStates.has(tabId)) return;
+  bridgeStates.delete(tabId);
+  bridgeStates = new Map(bridgeStates);
+  logInfo(`SSH MCP bridge cleared for tab ${tabId} (tunnel down)`);
+}
+
+/**
+ * Start listening for tunnel-down events from Rust for this tab.
+ */
+async function listenForTunnelDown(tabId: string): Promise<void> {
+  // Already listening?
+  if (tunnelListeners.has(tabId)) return;
+  const unlisten = await listen(`ssh-tunnel-down-${tabId}`, () => {
+    logInfo(`Received ssh-tunnel-down for tab ${tabId}`);
+    clearBridgeState(tabId);
+    cleanupListener(tabId);
+  });
+  tunnelListeners.set(tabId, unlisten);
+}
+
+function cleanupListener(tabId: string): void {
+  const unlisten = tunnelListeners.get(tabId);
+  if (unlisten) {
+    unlisten();
+    tunnelListeners.delete(tabId);
+  }
+}
 
 /**
  * Extract host_key (user@host with non-standard flags) from a cleaned SSH command.
@@ -127,6 +165,9 @@ export async function enableBridge(tabId: string, sshArgs: string): Promise<bool
       status: 'connected',
     }));
 
+    // Listen for tunnel process death from Rust — clears indicator in real-time
+    listenForTunnelDown(tabId).catch(() => {});
+
     logInfo(`SSH MCP bridge enabled for tab ${tabId} → ${hostKey}:${tunnelInfo.remote_port}`);
     return true;
   } catch (e) {
@@ -152,6 +193,7 @@ export async function disableBridge(tabId: string): Promise<void> {
   const bridge = bridgeStates.get(tabId);
   if (!bridge) return;
 
+  cleanupListener(tabId);
   bridgeStates.delete(tabId);
   bridgeStates = new Map(bridgeStates);
 

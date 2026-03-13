@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use tauri::Emitter;
+
 use crate::state::AppState;
 
 #[derive(serde::Serialize)]
@@ -15,6 +17,7 @@ pub struct SshTunnelInfo {
 /// Returns the tunnel info including the allocated remote port.
 #[tauri::command]
 pub async fn start_ssh_tunnel(
+    app: tauri::AppHandle,
     state: tauri::State<'_, Arc<AppState>>,
     ssh_args: String,
     host_key: String,
@@ -100,6 +103,7 @@ pub async fn start_ssh_tunnel(
     // process exits with code 0 — the forwarding is still alive in the master.
     let state_clone = state.inner().clone();
     let hk = host_key.clone();
+    let app_clone = app.clone();
     tokio::spawn(async move {
         let status = child.wait().await;
         let exit_ok = status.map(|s| s.success()).unwrap_or(false);
@@ -107,7 +111,18 @@ pub async fn start_ssh_tunnel(
             log::info!("SSH tunnel process exited cleanly for {} (likely ControlMaster mux)", hk);
         } else {
             log::info!("SSH tunnel process exited with error for {}", hk);
-            state_clone.ssh_tunnels.write().remove(&hk);
+            let tab_ids: Vec<String> = {
+                let mut tunnels = state_clone.ssh_tunnels.write();
+                if let Some(tunnel) = tunnels.remove(&hk) {
+                    tunnel.tab_ids.into_iter().collect()
+                } else {
+                    vec![]
+                }
+            };
+            // Notify frontend so bridge indicators update in real-time
+            for tid in &tab_ids {
+                let _ = app_clone.emit(&format!("ssh-tunnel-down-{}", tid), ());
+            }
         }
     });
 

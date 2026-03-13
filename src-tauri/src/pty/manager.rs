@@ -8,6 +8,10 @@ use tauri::{AppHandle, Emitter};
 
 use crate::state::{AppState, PtyCommand, PtyHandle, PtyStats};
 use crate::state::persistence::app_data_slug;
+use crate::terminal::event_proxy::AitermEventProxy;
+use crate::terminal::handle::create_terminal;
+use crate::terminal::osc::OscEvent;
+use crate::terminal::render;
 
 pub fn spawn_pty(
     app_handle: &AppHandle,
@@ -59,6 +63,12 @@ pub fn spawn_pty(
 
         // Expose tab ID so processes (e.g. Claude Code) can identify their terminal
         cmd.env("AITERM_TAB_ID", tab_id);
+
+        // Expose MCP server port so hooks can scope to this aiTerm instance
+        // (prevents dev/prod cross-talk when both are running)
+        if let Some(port) = state.claude_code_port.read().as_ref() {
+            cmd.env("AITERM_PORT", port.to_string());
+        }
 
         // Most shells use -l for login, fish uses --login
         match shell_name {
@@ -235,6 +245,7 @@ pub fn spawn_pty(
 
     // Create channel for commands
     let (tx, rx) = mpsc::channel::<PtyCommand>();
+    let tx_for_proxy = tx.clone();
 
     // Store PTY handle with child PID
     {
@@ -250,6 +261,26 @@ pub fn spawn_pty(
             bytes_written: AtomicU64::new(0),
             bytes_read: AtomicU64::new(0),
         });
+    }
+
+    // Create alacritty_terminal instance
+    {
+        let scrollback_limit = {
+            let app_data = state.app_data.read();
+            let limit = app_data.preferences.scrollback_limit;
+            if limit == 0 { 100_000 } else { limit as usize }
+        };
+
+        let event_proxy = AitermEventProxy {
+            pty_id: pty_id.to_string(),
+            app_handle: app_handle.clone(),
+            pty_sender: tx_for_proxy,
+        };
+
+        let terminal_handle = create_terminal(
+            pty_id, tab_id, cols, rows, scrollback_limit, event_proxy,
+        );
+        state.terminal_registry.write().insert(pty_id.to_string(), terminal_handle);
     }
 
     // Spawn writer thread (with PTY registry cleanup on exit)
@@ -297,8 +328,9 @@ pub fn spawn_pty(
         // master handle isn't closed after the child exits.
         drop(writer);
         drop(master);
-        // Cleanup: remove PTY handle and tab mapping on exit
+        // Cleanup: remove PTY handle, terminal handle, and tab mapping on exit
         state_clone.pty_registry.write().remove(&pty_id_owned);
+        state_clone.terminal_registry.write().remove(&pty_id_owned);
         // Only remove tab mapping if it still points to this PTY (a new spawn may have already replaced it)
         {
             let mut tab_map = state_clone.tab_pty_map.write();
@@ -308,7 +340,8 @@ pub fn spawn_pty(
         }
     });
 
-    // Spawn reader thread
+    // Spawn reader thread — feeds PTY output through OSC interceptor + alacritty_terminal,
+    // then emits rendered frames to the frontend
     let pty_id_clone = pty_id.to_string();
     let tab_id_reader = tab_id.to_string();
     let app_handle_clone = app_handle.clone();
@@ -316,6 +349,7 @@ pub fn spawn_pty(
 
     thread::spawn(move || {
         let mut buf = [0u8; 4096];
+
         loop {
             match reader.read(&mut buf) {
                 Ok(0) => {
@@ -330,18 +364,94 @@ pub fn spawn_pty(
                             s.bytes_read.fetch_add(n as u64, Ordering::Relaxed);
                         }
                     }
-                    let data = buf[..n].to_vec();
-                    let event_name = format!("pty-output-{}", pty_id_clone);
-                    let _ = app_handle_clone.emit(&event_name, data);
+                    let data = &buf[..n];
+
+                    // Process through OscInterceptor → emit OSC events
+                    let osc_events = {
+                        let mut registry = state_reader.terminal_registry.write();
+                        if let Some(handle) = registry.get_mut(&pty_id_clone) {
+                            handle.osc_interceptor.process(data)
+                        } else {
+                            vec![]
+                        }
+                    };
+                    for osc_event in osc_events {
+                        match osc_event {
+                            OscEvent::Cwd { cwd, host } => {
+                                let _ = app_handle_clone.emit(
+                                    &format!("term-osc7-{}", pty_id_clone),
+                                    serde_json::json!({ "cwd": cwd, "host": host }),
+                                );
+                            }
+                            OscEvent::ShellIntegration { cmd, exit_code } => {
+                                let _ = app_handle_clone.emit(
+                                    &format!("term-osc133-{}", pty_id_clone),
+                                    serde_json::json!({ "cmd": cmd.to_string(), "exit_code": exit_code }),
+                                );
+                            }
+                            OscEvent::Notification { message } => {
+                                let _ = app_handle_clone.emit(
+                                    &format!("term-notification-{}", pty_id_clone),
+                                    message,
+                                );
+                            }
+                            OscEvent::CurrentDir { cwd } => {
+                                let _ = app_handle_clone.emit(
+                                    &format!("term-osc7-{}", pty_id_clone),
+                                    serde_json::json!({ "cwd": cwd, "host": null }),
+                                );
+                            }
+                        }
+                    }
+
+                    // Feed bytes to alacritty_terminal VTE parser
+                    {
+                        let mut registry = state_reader.terminal_registry.write();
+                        if let Some(handle) = registry.get_mut(&pty_id_clone) {
+                            handle.processor.advance(&mut handle.term, data);
+                        }
+                    }
+
+                    // Render viewport frame and emit to frontend after every read.
+                    // No throttling — render_viewport() is fast (grid iteration) and
+                    // the read() blocking naturally rate-limits during burst output.
+                    // Throttling caused missed final frames when no more data arrives.
+                    {
+                        let registry = state_reader.terminal_registry.read();
+                        if let Some(handle) = registry.get(&pty_id_clone) {
+                            let frame = render::render_viewport(&handle.term);
+                            let _ = app_handle_clone.emit(
+                                &format!("term-frame-{}", pty_id_clone),
+                                &frame,
+                            );
+                        }
+                    }
+
+                    // Emit raw bytes for trigger engine (frontend, temporary bridge)
+                    let _ = app_handle_clone.emit(
+                        &format!("pty-raw-{}", pty_id_clone),
+                        data.to_vec(),
+                    );
                 }
                 Err(_) => {
                     break;
                 }
             }
         }
+
+        // Emit final frame before closing
+        {
+            let registry = state_reader.terminal_registry.read();
+            if let Some(handle) = registry.get(&pty_id_clone) {
+                let frame = render::render_viewport(&handle.term);
+                let _ = app_handle_clone.emit(
+                    &format!("term-frame-{}", pty_id_clone),
+                    &frame,
+                );
+            }
+        }
+
         // Only emit close event if this PTY wasn't replaced by a new spawn for the same tab.
-        // During HMR, a new spawn kills the old PTY — emitting pty-close would cause the
-        // frontend to delete the tab even though the new PTY is taking over.
         let was_replaced = {
             let tab_map = state_reader.tab_pty_map.read();
             tab_map.get(&tab_id_reader).map(|id| id != &pty_id_clone).unwrap_or(false)
@@ -380,7 +490,21 @@ pub fn resize_pty(state: &Arc<AppState>, pty_id: &str, cols: u16, rows: u16) -> 
     handle
         .sender
         .send(PtyCommand::Resize { cols, rows })
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    // Also resize the alacritty_terminal instance
+    {
+        use crate::terminal::handle::TermDimensions;
+        let mut term_registry = state.terminal_registry.write();
+        if let Some(term_handle) = term_registry.get_mut(pty_id) {
+            term_handle.term.resize(TermDimensions {
+                cols: cols as usize,
+                rows: rows as usize,
+            });
+        }
+    }
+
+    Ok(())
 }
 
 pub fn kill_pty(state: &Arc<AppState>, pty_id: &str) -> Result<(), String> {
@@ -389,6 +513,9 @@ pub fn kill_pty(state: &Arc<AppState>, pty_id: &str) -> Result<(), String> {
     if let Some(handle) = registry.remove(pty_id) {
         let _ = handle.sender.send(PtyCommand::Kill);
     }
+
+    // Clean up terminal registry
+    state.terminal_registry.write().remove(pty_id);
 
     // Clean up tab → pty mapping (reverse lookup)
     {

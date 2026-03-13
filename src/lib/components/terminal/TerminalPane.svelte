@@ -5,11 +5,10 @@
   import { Terminal } from '@xterm/xterm';
   import { FitAddon } from '@xterm/addon-fit';
   import { WebLinksAddon } from '@xterm/addon-web-links';
-  import { SerializeAddon } from '@xterm/addon-serialize';
-  import { SearchAddon } from '@xterm/addon-search';
   import { WebglAddon } from '@xterm/addon-webgl';
   import '@xterm/xterm/css/xterm.css';
-  import { spawnTerminal, writeTerminal, resizeTerminal, killTerminal, setTabScrollback, getPtyInfo, setTabRestoreContext, cleanSshCommand, normalizeSshInput, buildSshCommand, shellEscapePath, readClipboardFilePaths } from '$lib/tauri/commands';
+  import { spawnTerminal, writeTerminal, resizeTerminal, killTerminal, setTabScrollback, getPtyInfo, setTabRestoreContext, cleanSshCommand, normalizeSshInput, buildSshCommand, shellEscapePath, readClipboardFilePaths, serializeTerminal, restoreTerminalScrollback, resizeTerminalGrid, scrollTerminal, scrollTerminalTo, saveTerminalScrollback, restoreTerminalFromSaved, hasSavedScrollback } from '$lib/tauri/commands';
+  import type { TerminalFrame, OscCwdEvent, OscShellEvent } from '$lib/tauri/types';
   import { readText as clipboardReadText, writeText as clipboardWriteText } from '@tauri-apps/plugin-clipboard-manager';
   import { terminalsStore } from '$lib/stores/terminals.svelte';
   import { workspacesStore } from '$lib/stores/workspaces.svelte';
@@ -37,7 +36,6 @@
     tabId: string;
     existingPtyId?: string | null;
     visible: boolean;
-    initialScrollback?: string | null;
     restoreCwd?: string | null;
     restoreSshCommand?: string | null;
     restoreRemoteCwd?: string | null;
@@ -51,17 +49,22 @@
     triggerVariables?: Record<string, string>;
   }
 
-  let { workspaceId, paneId, tabId, existingPtyId, visible, initialScrollback, restoreCwd, restoreSshCommand, restoreRemoteCwd, autoResumeCwd, autoResumeSshCommand, autoResumeRemoteCwd, autoResumeCommand, autoResumeRememberedCommand, autoResumePinned, autoResumeEnabled, triggerVariables }: Props = $props();
+  let { workspaceId, paneId, tabId, existingPtyId, visible, restoreCwd, restoreSshCommand, restoreRemoteCwd, autoResumeCwd, autoResumeSshCommand, autoResumeRemoteCwd, autoResumeCommand, autoResumeRememberedCommand, autoResumePinned, autoResumeEnabled, triggerVariables }: Props = $props();
 
   let containerRef: HTMLDivElement;
   let terminal: Terminal;
   let fitAddon: FitAddon;
-  let serializeAddon: SerializeAddon;
-  let searchAddon: SearchAddon;
   let ptyId: string;
   let destroyed = false;
   let unlistenOutput: UnlistenFn;
+  let unlistenRaw: UnlistenFn;
   let unlistenClose: UnlistenFn;
+  let unlistenTitle: UnlistenFn;
+  let unlistenCwd: UnlistenFn;
+  let unlistenShell: UnlistenFn;
+  let unlistenNotification: UnlistenFn;
+  let unlistenClipboard: UnlistenFn;
+  let unlistenBell: UnlistenFn;
   let unlistenDragOver: UnlistenFn;
   let unlistenDragDrop: UnlistenFn;
   let unlistenDragLeave: UnlistenFn;
@@ -77,6 +80,14 @@
     isAutoResume = (autoResumeEnabled ?? true) && !!(autoResumeSshCommand || autoResumeCwd || autoResumeCommand);
   });
   let resizePtyTimeout: ReturnType<typeof setTimeout> | undefined;
+  let lastFrameAlternateScreen = false;
+  // Scrollback scrollbar state
+  let scrollDisplayOffset = $state(0);
+  let scrollTotalLines = $state(0);
+  let scrollViewportRows = $state(0);
+  let scrollbarDragging = false;
+  let scrollbarFadeTimeout: ReturnType<typeof setTimeout> | undefined;
+  let scrollbarVisible = $state(false);
   // Inline prompt for auto-resume command
   let autoResumePrompt = $state<{ cwd: string | null; sshCmd: string | null; remoteCwd: string | null; pinned: boolean } | null>(null);
   let autoResumePromptValue = $state('');
@@ -84,9 +95,24 @@
   let autoResumeTextarea = $state<{ focus: () => void } | undefined>();
   let autoResumeHeightBeforeMouse = 0;
 
+  function updateScrollbar(displayOffset: number, totalLines: number) {
+    scrollDisplayOffset = displayOffset;
+    scrollTotalLines = totalLines;
+    scrollViewportRows = terminal?.rows ?? 0;
+    if (displayOffset > 0) {
+      scrollbarVisible = true;
+      clearTimeout(scrollbarFadeTimeout);
+      scrollbarFadeTimeout = setTimeout(() => { scrollbarVisible = false; }, 1500);
+    } else {
+      // At live position — hide after brief delay
+      clearTimeout(scrollbarFadeTimeout);
+      scrollbarFadeTimeout = setTimeout(() => { scrollbarVisible = false; }, 500);
+    }
+  }
+
   // Fit terminal with one fewer row for bottom breathing room.
   // Uses proposeDimensions() + a single resize instead of fit() + resize()
-  // to avoid a double reflow that corrupts the scroll position.
+  // to avoid a double reflow.
   function fitWithPadding() {
     // Guard: skip if container is not in the document (detached during split re-render)
     if (!containerRef?.isConnected) return;
@@ -98,11 +124,7 @@
     // is connected but hasn't been laid out yet, producing tiny dimensions.
     if (cols < 10 || rows < 2) return;
     if (cols === terminal.cols && rows === terminal.rows) return;
-    const wasAtBottom = terminal.buffer.active.viewportY >= terminal.buffer.active.baseY;
     terminal.resize(cols, rows);
-    if (wasAtBottom) {
-      terminal.scrollToBottom();
-    }
   }
   let contextMenu = $state<{ x: number; y: number } | null>(null);
   let hoveredLinkUri: string | null = null;
@@ -171,7 +193,7 @@
       lineHeight: 1.2,
       cursorBlink: preferencesStore.cursorBlink,
       cursorStyle: preferencesStore.cursorStyle,
-      scrollback: preferencesStore.scrollbackLimit === 0 ? 100000 : preferencesStore.scrollbackLimit,
+      scrollback: 0, // Rust (alacritty_terminal) manages all scrollback
       allowProposedApi: true,
       linkHandler: {
         allowNonHttpProtocols: true,
@@ -194,11 +216,7 @@
     });
 
     fitAddon = new FitAddon();
-    serializeAddon = new SerializeAddon();
-    searchAddon = new SearchAddon();
     terminal.loadAddon(fitAddon);
-    terminal.loadAddon(serializeAddon);
-    terminal.loadAddon(searchAddon);
     terminal.loadAddon(new WebLinksAddon((_event, uri) => {
       shellOpen(uri);
     }));
@@ -208,107 +226,8 @@
     // File path link provider: managed reactively based on preference
     // (initial registration handled by $effect below)
 
-    // OSC 0 (icon name + title) and OSC 2 (title): shells/programs set window title
-    // promptCwd is auto-derived from title in terminalsStore.updateOsc()
-    // Also persist title as tab.name for non-custom tabs so restarts show the
-    // last-known title instead of "Terminal X".
-    let lastPersistedTitle = '';
-    function handleOscTitle(data: string) {
-      if (!data) return;
-      terminalsStore.updateOsc(tabId, { title: data });
-      // Persist as tab.name if user hasn't set a custom name, and title changed
-      if (data !== lastPersistedTitle) {
-        lastPersistedTitle = data;
-        const ws = workspacesStore.workspaces.find(w => w.id === workspaceId);
-        const tab = ws?.panes.find(p => p.id === paneId)?.tabs.find(t => t.id === tabId);
-        if (tab && !tab.custom_name) {
-          workspacesStore.renameTab(workspaceId, paneId, tabId, data, false);
-        }
-      }
-    }
-    terminal.parser.registerOscHandler(0, (data) => { handleOscTitle(data); return true; });
-    terminal.parser.registerOscHandler(2, (data) => { handleOscTitle(data); return true; });
-
-    // OSC 7: shells report cwd via \e]7;file://host/path\e\\
-    terminal.parser.registerOscHandler(7, (data) => {
-      try {
-        const url = new URL(data);
-        if (url.protocol === 'file:') {
-          const cwd = decodeURIComponent(url.pathname);
-          const cwdHost = url.hostname || null;
-          if (cwd) terminalsStore.updateOsc(tabId, { cwd, cwdHost });
-        }
-      } catch {
-        // not a valid URL — ignore
-      }
-      return true;
-    });
-
-    // Shell integration handler — shared by OSC 133 (FinalTerm) and OSC 633 (VS Code)
-    // Gated on trackActivity to ignore sequences replayed from restored scrollback.
-    let commandStartedAt = 0;
-    const MIN_COMPLETION_MS = 2000; // Only show completed indicator for commands that ran 2s+
-    function handleShellIntegration(data: string): boolean {
-      if (!trackActivity) return true;
-      const parts = data.split(';');
-      const cmd = parts[0];
-      if (cmd === 'A') {
-        activityStore.setShellState(tabId, 'prompt');
-      } else if (cmd === 'D') {
-        const elapsed = commandStartedAt ? Date.now() - commandStartedAt : 0;
-        if (elapsed >= MIN_COMPLETION_MS) {
-          const exitCode = parts[1] ? parseInt(parts[1], 10) : 0;
-          activityStore.setShellState(tabId, 'completed', exitCode);
-        }
-        // For short commands, just let the subsequent A set 'prompt'
-      }
-      if (cmd === 'B' || cmd === 'C') {
-        commandStartedAt = Date.now();
-        activityStore.setShellState(tabId, null);
-      }
-      return true;
-    }
-    terminal.parser.registerOscHandler(133, handleShellIntegration);
-    terminal.parser.registerOscHandler(633, handleShellIntegration);
-
-    // OSC 9: notification — programs emit \e]9;message\a to request a notification
-    // Some programs (e.g. Claude Code) emit OSC 9 with protocol data like "4;0;"
-    // that isn't a human-readable message — skip payloads that are only digits/semicolons.
-    terminal.parser.registerOscHandler(9, (data) => {
-      if (!trackActivity || !data) return true;
-      if (/^[\d;]*$/.test(data)) return true;
-      const oscState = terminalsStore.getOsc(tabId);
-      const title = oscState?.title || 'Terminal';
-      dispatch(title, data, 'info');
-      return true;
-    });
-
-    // OSC 52: clipboard set — \e]52;c;base64data\a writes to system clipboard
-    // Ignores query requests (? payload) for security.
-    terminal.parser.registerOscHandler(52, (data) => {
-      if (!trackActivity) return true;
-      const semi = data.indexOf(';');
-      if (semi < 0) return true;
-      const payload = data.slice(semi + 1);
-      if (!payload || payload === '?') return true;
-      try {
-        const decoded = atob(payload);
-        clipboardWriteText(decoded).catch(e => logError(String(e)));
-      } catch {
-        // invalid base64 — ignore
-      }
-      return true;
-    });
-
-    // OSC 1337: iTerm2 extensions — only handle CurrentDir for cwd reporting
-    terminal.parser.registerOscHandler(1337, (data) => {
-      const match = data.match(/^CurrentDir=(.+)$/);
-      if (match) {
-        const cwd = match[1];
-        if (cwd) terminalsStore.updateOsc(tabId, { cwd, cwdHost: null });
-      }
-      return true;
-    });
+    // OSC events are now handled by Rust (alacritty_terminal + OscInterceptor).
+    // Listeners are set up below after PTY spawn/reattach, using Tauri events.
 
     // Portal into the slot rendered by SplitPane
     attachToSlot();
@@ -316,43 +235,9 @@
     // Listen for slot re-creation (after split tree changes)
     window.addEventListener('terminal-slot-ready', handleSlotReady);
 
-    // Restore scrollback if available
-    if (initialScrollback) {
-      // Strip orphaned underline from serialized OSC 8 links.
-      // The serialize addon doesn't preserve OSC 8 link data but emits SGR 4
-      // (underline) for linked cells, sometimes in compound sequences like
-      // \e[1;4;33m. On restore these become non-clickable underlined text.
-      // Remove the "4" parameter from SGR sequences (and the matching "24" off).
-      const cleaned = initialScrollback.replace(/\x1b\[([0-9;]*)m/g, (_match, params: string) => {
-        const filtered = params.split(';').filter(p => p !== '4' && p !== '24');
-        if (filtered.length === 0) return '';
-        return `\x1b[${filtered.join(';')}m`;
-      });
-      terminal.write(cleaned);
-
-      // Reset DEC private modes that programs may have enabled during the
-      // previous session. The serialize addon preserves mode state (e.g.
-      // ?1004h for focus reporting), which causes xterm.js to send escape
-      // sequences to the new shell before it's ready, producing garbled output.
-      terminal.write('\x1b[?1004l'); // Disable focus reporting
-      terminal.write('\x1b[?2004l'); // Disable bracketed paste (shell manages its own)
-
-      // Check if the last line looks like a shell prompt — if so, erase it
-      // to avoid a duplicate prompt when the new shell starts.
-      // If not a prompt, add a newline for clean separation.
-      const buffer = terminal.buffer.active;
-      const lastLine = buffer.getLine(buffer.baseY + buffer.cursorY);
-      const lineText = lastLine?.translateToString(true) ?? '';
-      const lineRaw = lastLine?.translateToString(false) ?? '';
-      if (lineRaw.trim().length === 0 && lineRaw.length > 0) {
-        // Whitespace-only line — erase it
-        terminal.write('\x1b[2K\r');
-      } else if (lineText.length > 0 && /[$%>#]\s*$/.test(lineText)) {
-        terminal.write('\x1b[2K\r');
-      } else if (lineText.length > 0) {
-        terminal.write('\r\n');
-      }
-    }
+    // Scrollback restore is deferred until after PTY spawn — Rust's
+    // restoreTerminalScrollback needs the terminal handle to exist first.
+    // The initialScrollback value is held and restored below.
 
     // Wait for container to have dimensions
     await new Promise(resolve => requestAnimationFrame(resolve));
@@ -370,26 +255,19 @@
     // and commands won't fire from old scrollback or Claude redraw output.
     suppressTab(tabId);
 
-    // Listen for PTY output
-    unlistenOutput = await listen<number[]>(`pty-output-${ptyId}`, (event) => {
+    // Listen for rendered frames from Rust (alacritty_terminal renders viewport as ANSI bytes)
+    unlistenOutput = await listen<TerminalFrame>(`term-frame-${ptyId}`, (event) => {
+      const frame = event.payload;
+      lastFrameAlternateScreen = frame.alternate_screen;
+      scrollDisplayOffset = frame.display_offset;
+      scrollTotalLines = frame.total_lines;
+      scrollViewportRows = terminal.rows;
+      terminal.write(new Uint8Array(frame.ansi));
+    });
+
+    // Raw PTY bytes for trigger engine + activity tracking
+    unlistenRaw = await listen<number[]>(`pty-raw-${ptyId}`, (event) => {
       const data = new Uint8Array(event.payload);
-
-      // Lock viewport position across writes. TUI apps (like Claude Code / Ink)
-      // redraw on the normal buffer using cursor-up sequences, which causes
-      // xterm.js to scroll the viewport into the scrollback region. Instead of
-      // scrollToBottom (which causes rapid top/bottom flipping), we save the
-      // exact viewport offset from bottom and restore it after the write.
-      const buf = terminal.buffer.active;
-      const distFromBottom = buf.baseY - buf.viewportY;
-
-      terminal.write(data, () => {
-        const newBuf = terminal.buffer.active;
-        const targetY = newBuf.baseY - distFromBottom;
-        if (targetY >= 0 && newBuf.viewportY !== targetY) {
-          terminal.scrollToLine(targetY);
-        }
-      });
-
       processOutput(tabId, data);
       terminalsStore.markDirty(tabId);
       // Mark tab as active for background tabs, but skip:
@@ -402,6 +280,77 @@
           activityStore.markActive(tabId);
         }
       }
+    });
+
+    // OSC event listeners from Rust
+    let lastPersistedTitle = '';
+    let commandStartedAt = 0;
+    const MIN_COMPLETION_MS = 2000;
+
+    unlistenTitle = await listen<string>(`term-title-${ptyId}`, (event) => {
+      const title = event.payload;
+      if (!title) return;
+      terminalsStore.updateOsc(tabId, { title });
+      if (title !== lastPersistedTitle) {
+        lastPersistedTitle = title;
+        const ws = workspacesStore.workspaces.find(w => w.id === workspaceId);
+        const tab = ws?.panes.find(p => p.id === paneId)?.tabs.find(t => t.id === tabId);
+        if (tab && !tab.custom_name) {
+          workspacesStore.renameTab(workspaceId, paneId, tabId, title, false);
+        }
+      }
+      // Title changes when SSH exits — check if bridge should be torn down
+      if (hasBridge(tabId)) {
+        getPtyInfo(ptyId).then(info => {
+          if (!info.foreground_command) {
+            disableBridge(tabId).catch(() => {});
+          }
+        }).catch(() => {});
+      }
+    });
+
+    unlistenCwd = await listen<OscCwdEvent>(`term-osc7-${ptyId}`, (event) => {
+      const { cwd, host } = event.payload;
+      if (cwd) terminalsStore.updateOsc(tabId, { cwd, cwdHost: host });
+    });
+
+    unlistenShell = await listen<OscShellEvent>(`term-osc133-${ptyId}`, (event) => {
+      if (!trackActivity) return;
+      const { cmd, exit_code } = event.payload;
+      if (cmd === 'A') {
+        activityStore.setShellState(tabId, 'prompt');
+        // Local shell prompt means SSH session ended — tear down bridge
+        if (hasBridge(tabId)) {
+          disableBridge(tabId).catch(() => {});
+        }
+      } else if (cmd === 'D') {
+        const elapsed = commandStartedAt ? Date.now() - commandStartedAt : 0;
+        if (elapsed >= MIN_COMPLETION_MS) {
+          activityStore.setShellState(tabId, 'completed', exit_code ?? 0);
+        }
+      }
+      if (cmd === 'B' || cmd === 'C') {
+        commandStartedAt = Date.now();
+        activityStore.setShellState(tabId, null);
+      }
+    });
+
+    unlistenNotification = await listen<string>(`term-notification-${ptyId}`, (event) => {
+      if (!trackActivity || !event.payload) return;
+      const oscState = terminalsStore.getOsc(tabId);
+      const title = oscState?.title || 'Terminal';
+      dispatch(title, event.payload, 'info');
+    });
+
+    unlistenClipboard = await listen<string>(`term-clipboard-${ptyId}`, (event) => {
+      if (!trackActivity) return;
+      clipboardWriteText(event.payload).catch(e => logError(String(e)));
+    });
+
+    unlistenBell = await listen(`term-bell-${ptyId}`, () => {
+      if (!trackActivity) return;
+      const oscState = terminalsStore.getOsc(tabId);
+      dispatch(oscState?.title || 'Terminal', 'Bell', 'info');
     });
 
     // Listen for PTY close — when the shell exits (exit/logout/Ctrl+D),
@@ -509,13 +458,21 @@
     // Load persisted trigger variables into runtime map
     if (triggerVariables) loadTabVariables(tabId, triggerVariables);
 
-    // Register terminal instance with serialize addon for scrollback saving
-    terminalsStore.register(tabId, terminal, ptyId, serializeAddon, searchAddon, workspaceId, paneId);
+    // Register terminal instance
+    terminalsStore.register(tabId, terminal, ptyId, workspaceId, paneId);
 
-    // Release the initial scrollback string from the frontend store.
-    // It's now in xterm's buffer — no reason to keep the serialized copy
-    // in the reactive state where it gets duplicated through every mutation.
-    workspacesStore.releaseScrollback(tabId);
+    // Restore scrollback from SQLite directly in Rust (never passes through WebView).
+    // Must happen after spawn so the terminal handle exists in Rust.
+    if (!reattaching) {
+      try {
+        const hasScrollback = await hasSavedScrollback(tabId);
+        if (hasScrollback) {
+          await restoreTerminalFromSaved(ptyId, tabId);
+        }
+      } catch (e) {
+        logError(`Failed to restore scrollback: ${e}`);
+      }
+    }
 
     // Cmd+C: copy if selection, SIGINT if not. Cmd+V: paste into PTY.
     terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
@@ -559,6 +516,42 @@
         return false;
       }
 
+      // Keyboard scrollback navigation (non-alternate screen only)
+      if (!lastFrameAlternateScreen) {
+        if (e.key === 'PageUp') {
+          e.preventDefault();
+          scrollTerminal(ptyId, terminal.rows).then(frame => {
+            terminal.write(new Uint8Array(frame.ansi));
+            updateScrollbar(frame.display_offset, frame.total_lines);
+          }).catch(() => {});
+          return false;
+        }
+        if (e.key === 'PageDown') {
+          e.preventDefault();
+          scrollTerminal(ptyId, -terminal.rows).then(frame => {
+            terminal.write(new Uint8Array(frame.ansi));
+            updateScrollbar(frame.display_offset, frame.total_lines);
+          }).catch(() => {});
+          return false;
+        }
+        if (e.shiftKey && e.key === 'ArrowUp') {
+          e.preventDefault();
+          scrollTerminal(ptyId, 1).then(frame => {
+            terminal.write(new Uint8Array(frame.ansi));
+            updateScrollbar(frame.display_offset, frame.total_lines);
+          }).catch(() => {});
+          return false;
+        }
+        if (e.shiftKey && e.key === 'ArrowDown') {
+          e.preventDefault();
+          scrollTerminal(ptyId, -1).then(frame => {
+            terminal.write(new Uint8Array(frame.ansi));
+            updateScrollbar(frame.display_offset, frame.total_lines);
+          }).catch(() => {});
+          return false;
+        }
+      }
+
       return true;
     });
 
@@ -584,6 +577,39 @@
       }, 150);
     });
     resizeObserver.observe(containerRef);
+
+    // Intercept mouse wheel for Rust-managed scrollback navigation.
+    // In alternate screen mode (TUI apps), let xterm.js handle scrolling
+    // (sends arrow keys to the app, which is the expected behavior).
+    // Uses velocity-sensitive scrolling: small movements = 1 line, fast flicks = many lines.
+    let scrollAccumulator = 0;
+    containerRef.addEventListener('wheel', (e) => {
+      if (lastFrameAlternateScreen) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      // Normalize delta to lines based on deltaMode
+      let delta: number;
+      if (e.deltaMode === 1) {
+        // Line mode (mouse wheel) — use directly
+        delta = -e.deltaY;
+      } else {
+        // Pixel mode (trackpad) — convert to lines, ~20px per line
+        delta = -e.deltaY / 20;
+      }
+
+      // Accumulate sub-line amounts for smooth trackpad scrolling
+      scrollAccumulator += delta;
+      const lines = Math.trunc(scrollAccumulator);
+      if (lines === 0) return;
+      scrollAccumulator -= lines;
+
+      scrollTerminal(ptyId, lines).then((frame) => {
+        terminal.write(new Uint8Array(frame.ansi));
+        updateScrollbar(frame.display_offset, frame.total_lines);
+      }).catch(() => { /* terminal may have been killed */ });
+    }, { passive: false, capture: true });
 
     // Drag & drop file support: listen for Tauri window-level drag events
     unlistenDragOver = await listen<{ position: { x: number; y: number } }>('tauri://drag-over', (event) => {
@@ -627,9 +653,6 @@
   });
 
   onDestroy(() => {
-    // Do NOT save scrollback here — saveAllScrollback() handles it before
-    // destroy is called, and async onDestroy is not awaited by Svelte,
-    // which causes race conditions with terminal.dispose() below.
     destroyed = true;
 
     // Detach SSH MCP bridge (fire-and-forget, non-blocking)
@@ -638,7 +661,14 @@
     window.removeEventListener('terminal-slot-ready', handleSlotReady);
 
     if (unlistenOutput) unlistenOutput();
+    if (unlistenRaw) unlistenRaw();
     if (unlistenClose) unlistenClose();
+    if (unlistenTitle) unlistenTitle();
+    if (unlistenCwd) unlistenCwd();
+    if (unlistenShell) unlistenShell();
+    if (unlistenNotification) unlistenNotification();
+    if (unlistenClipboard) unlistenClipboard();
+    if (unlistenBell) unlistenBell();
     if (unlistenDragOver) unlistenDragOver();
     if (unlistenDragDrop) unlistenDragDrop();
     if (unlistenDragLeave) unlistenDragLeave();
@@ -650,10 +680,17 @@
       // Don't kill the PTY — the new TerminalPane will reattach.
       if (terminal) terminal.dispose();
     } else {
-      if (terminal) terminal.dispose();
+      // Save scrollback from Rust before killing the PTY.
+      // Fire-and-forget: onDestroy is sync, but the save must complete before
+      // the kill. Chain them so kill waits for serialize to finish.
       if (ptyId) {
-        killTerminal(ptyId).catch(e => logError(String(e)));
+        saveTerminalScrollback(ptyId, tabId)
+          .catch(() => {})
+          .finally(() => {
+            killTerminal(ptyId).catch(e => logError(String(e)));
+          });
       }
+      if (terminal) terminal.dispose();
       terminalsStore.unregister(tabId);
       cleanupTab(tabId);
     }
@@ -765,7 +802,7 @@
 
   // React to auto-save interval changes
   $effect(() => {
-    if (!initialized || !serializeAddon) return;
+    if (!initialized) return;
 
     const interval = preferencesStore.autoSaveInterval;
 
@@ -783,17 +820,12 @@
         // Skip auto-save during shutdown — saveAllScrollback handles it
         if (terminalsStore.shuttingDown) return;
         // Skip terminals that haven't received output since last save.
-        // Claude TUI redraws constantly so this won't help there, but
-        // idle terminals (shell prompts) are completely skipped.
         if (!terminalsStore.isDirty(tabId)) return;
-        // Skip when alternate screen is active (nano, vim, less, etc.)
-        if (terminal.buffer.active.type === 'alternate') return;
         terminalsStore.clearDirty(tabId);
         try {
-          const scrollback = serializeAddon.serialize();
-          await setTabScrollback(workspaceId, paneId, tabId, scrollback);
-        } catch (e) {
-          logError(`Failed to auto-save scrollback: ${e}`);
+          await saveTerminalScrollback(ptyId, tabId);
+        } catch {
+          // Terminal may have been killed or alternate screen active — ignore
         }
 
         // Also save restore context (cwd/SSH) if enabled
@@ -1223,6 +1255,57 @@
       </div>
     </div>
   {/if}
+  {#if scrollTotalLines > scrollViewportRows}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div
+      class="scrollbar-track"
+      class:scrollbar-visible={scrollbarVisible || scrollbarDragging}
+      onmousedown={(e) => {
+        // Click on track → jump to position
+        const rect = e.currentTarget.getBoundingClientRect();
+        const fraction = (e.clientY - rect.top) / rect.height;
+        const maxOffset = scrollTotalLines - scrollViewportRows;
+        const targetOffset = Math.round((1 - fraction) * maxOffset);
+        scrollTerminalTo(ptyId, targetOffset).then(frame => {
+          terminal.write(new Uint8Array(frame.ansi));
+          updateScrollbar(frame.display_offset, frame.total_lines);
+        }).catch(() => {});
+      }}
+    >
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div
+        class="scrollbar-thumb"
+        style="height: {Math.max(20, (scrollViewportRows / scrollTotalLines) * 100)}%; top: {((scrollTotalLines - scrollViewportRows - scrollDisplayOffset) / (scrollTotalLines - scrollViewportRows)) * (100 - Math.max(20, (scrollViewportRows / scrollTotalLines) * 100))}%;"
+        onmousedown={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          scrollbarDragging = true;
+          const trackEl = e.currentTarget.parentElement!;
+          const startY = e.clientY;
+          const startOffset = scrollDisplayOffset;
+          const maxOffset = scrollTotalLines - scrollViewportRows;
+
+          const onMove = (me: MouseEvent) => {
+            const trackRect = trackEl.getBoundingClientRect();
+            const deltaFraction = (me.clientY - startY) / trackRect.height;
+            const targetOffset = Math.round(startOffset - deltaFraction * maxOffset);
+            const clamped = Math.max(0, Math.min(maxOffset, targetOffset));
+            scrollTerminalTo(ptyId, clamped).then(frame => {
+              terminal.write(new Uint8Array(frame.ansi));
+              updateScrollbar(frame.display_offset, frame.total_lines);
+            }).catch(() => {});
+          };
+          const onUp = () => {
+            scrollbarDragging = false;
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+          };
+          document.addEventListener('mousemove', onMove);
+          document.addEventListener('mouseup', onUp);
+        }}
+      ></div>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -1278,7 +1361,44 @@
   }
 
   .terminal-container :global(.xterm-viewport) {
-    overflow-y: auto !important;
+    overflow: hidden !important;
+  }
+
+  .scrollbar-track {
+    position: absolute;
+    top: 4px;
+    bottom: 4px;
+    right: 2px;
+    width: 8px;
+    border-radius: 4px;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    z-index: 5;
+    pointer-events: auto;
+  }
+
+  .scrollbar-track.scrollbar-visible {
+    opacity: 1;
+  }
+
+  .scrollbar-track:hover {
+    opacity: 1;
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  .scrollbar-thumb {
+    position: absolute;
+    width: 100%;
+    min-height: 20px;
+    background: rgba(255, 255, 255, 0.25);
+    border-radius: 4px;
+    cursor: default;
+    transition: background 0.15s ease;
+  }
+
+  .scrollbar-thumb:hover,
+  .scrollbar-thumb:active {
+    background: rgba(255, 255, 255, 0.4);
   }
 
   .auto-resume-prompt-backdrop {

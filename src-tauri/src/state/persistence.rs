@@ -232,6 +232,13 @@ pub fn save_state(data: &AppData) -> Result<(), String> {
                         pane.active_tab_id = pane.tabs.last().map(|t| t.id.clone());
                     }
                 }
+                // Strip scrollback — it's now persisted in SQLite
+                for tab in &mut pane.tabs {
+                    tab.scrollback = None;
+                }
+            }
+            for tab in &mut ws.archived_tabs {
+                tab.scrollback = None;
             }
         }
     }
@@ -261,4 +268,42 @@ pub fn save_state(data: &AppData) -> Result<(), String> {
     SAVE_LAST_BYTES.store(json.len() as u64, Ordering::Relaxed);
 
     Ok(())
+}
+
+/// Migrate scrollback data from JSON state to SQLite on first load.
+pub fn migrate_scrollback_to_db(data: &mut AppData, db: &super::scrollback_db::ScrollbackDb) {
+    let mut migrated = 0u32;
+    for win in &mut data.windows {
+        for ws in &mut win.workspaces {
+            for pane in &mut ws.panes {
+                for tab in &mut pane.tabs {
+                    if let Some(ref scrollback) = tab.scrollback {
+                        if !scrollback.is_empty() {
+                            if let Err(e) = db.save(&tab.id, scrollback) {
+                                log::error!("Failed to migrate scrollback for tab {}: {}", tab.id, e);
+                            } else {
+                                migrated += 1;
+                            }
+                        }
+                        tab.scrollback = None;
+                    }
+                }
+            }
+            for tab in &mut ws.archived_tabs {
+                if let Some(ref scrollback) = tab.scrollback {
+                    if !scrollback.is_empty() {
+                        if let Err(e) = db.save(&tab.id, scrollback) {
+                            log::error!("Failed to migrate archived scrollback for tab {}: {}", tab.id, e);
+                        } else {
+                            migrated += 1;
+                        }
+                        tab.scrollback = None;
+                    }
+                }
+            }
+        }
+    }
+    if migrated > 0 {
+        log::info!("Migration: moved {} tab scrollbacks from JSON to SQLite", migrated);
+    }
 }

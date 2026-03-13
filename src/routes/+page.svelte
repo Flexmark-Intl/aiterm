@@ -180,7 +180,6 @@
                     tabId={tab.id}
                     existingPtyId={terminalsStore.get(tab.id) ? tab.pty_id : null}
                     visible={tab.id === pane.active_tab_id && ws.id === workspacesStore.activeWorkspaceId}
-                    initialScrollback={tab.scrollback}
                     restoreCwd={tab.restore_cwd}
                     restoreSshCommand={tab.restore_ssh_command}
                     restoreRemoteCwd={tab.restore_remote_cwd}

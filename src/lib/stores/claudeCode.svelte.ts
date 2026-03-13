@@ -6,7 +6,6 @@ import { getEditorByFilePath, getEditorByTabId } from '$lib/stores/editorRegistr
 import { interpolateVariables, getVariables, setVariable, handleEnableAutoResume, getTriggerStats } from '$lib/stores/triggers.svelte';
 import { CLAUDE_RESUME_COMMAND } from '$lib/triggers/defaults';
 import { preferencesStore } from '$lib/stores/preferences.svelte';
-import { stripAnsi } from '$lib/utils/ansi';
 import { dispatch as dispatchNotification } from '$lib/stores/notificationDispatch';
 import { error as logError, info as logInfo } from '@tauri-apps/plugin-log';
 
@@ -109,10 +108,10 @@ function createClaudeCodeStore() {
           result = await handleMoveNote(args as { direction: string; tabId?: string; workspaceId?: string; noteId?: string; force?: boolean });
           break;
         case 'getTabContext':
-          result = handleGetTabContext(args as { tabIds?: string[]; lines?: number });
+          result = await handleGetTabContext(args as { tabIds?: string[]; lines?: number });
           break;
         case 'openNotesPanel':
-          result = handleOpenNotesPanel(args as { open?: boolean });
+          result = handleOpenNotesPanel(args as { tabId?: string; open?: boolean });
           break;
         case 'setNotesScope':
           result = await handleSetNotesScope(args as { scope: string });
@@ -157,11 +156,16 @@ function createClaudeCodeStore() {
     const instances = terminalsStore.instances;
     const terminalDetails: Record<string, unknown>[] = [];
     for (const [tabId, inst] of instances) {
+      let scrollInfo = null;
+      try {
+        scrollInfo = await commands.getTerminalScrollbackInfo(inst.ptyId);
+      } catch { /* terminal may have been killed */ }
       terminalDetails.push({
         tabId,
         ptyId: inst.ptyId,
         webgl: terminalsStore.isWebgl(tabId),
-        bufferLines: inst.terminal.buffer.normal.length,
+        bufferLines: scrollInfo?.total_lines ?? 0,
+        viewportRows: scrollInfo?.viewport_rows ?? 0,
         altBufferActive: inst.terminal.buffer.active === inst.terminal.buffer.alternate,
       });
     }
@@ -513,6 +517,17 @@ function createClaudeCodeStore() {
     if (args.mode) {
       await workspacesStore.setTabNotesMode(wsId, paneId, tab.id, args.mode);
     }
+
+    // Auto-open notes panel so the user sees the written content
+    if (notes !== null) {
+      if (preferencesStore.notesScope !== 'tab') {
+        await preferencesStore.setNotesScope('tab');
+      }
+      if (!workspacesStore.isNotesVisible(tab.id)) {
+        workspacesStore.toggleNotes(tab.id);
+      }
+    }
+
     return { success: true, tabId: tab.id };
   }
 
@@ -555,18 +570,37 @@ function createClaudeCodeStore() {
     const ws = resolveWorkspace(args.workspaceId);
     if (!ws) return { error: `Workspace not found${args.workspaceId ? `: ${args.workspaceId}` : ''}` };
 
+    let resultNoteId: string;
+    let action: string;
+
     if (args.noteId) {
       // Update existing
       const note = ws.workspace_notes.find(n => n.id === args.noteId);
       if (!note) return { error: `Note not found: ${args.noteId}` };
       await workspacesStore.updateWorkspaceNote(ws.id, args.noteId, args.content, args.mode ?? note.mode ?? null);
-      return { success: true, noteId: args.noteId, action: 'updated' };
+      resultNoteId = args.noteId;
+      action = 'updated';
     } else {
       // Create new
       const note = await workspacesStore.addWorkspaceNote(ws.id, args.content, args.mode ?? null);
       if (!note) return { error: 'Failed to create note' };
-      return { success: true, noteId: note.id, action: 'created' };
+      resultNoteId = note.id;
+      action = 'created';
     }
+
+    // Auto-open notes panel on workspace scope so the user sees the written note
+    if (preferencesStore.notesScope !== 'workspace') {
+      await preferencesStore.setNotesScope('workspace');
+    }
+    const activeTab = workspacesStore.activeWorkspace?.panes
+      .find(p => p.id === workspacesStore.activeWorkspace?.active_pane_id)
+      ?.tabs.find(t => t.id === workspacesStore.activeWorkspace?.panes
+        .find(p => p.id === workspacesStore.activeWorkspace?.active_pane_id)?.active_tab_id);
+    if (activeTab && !workspacesStore.isNotesVisible(activeTab.id)) {
+      workspacesStore.toggleNotes(activeTab.id);
+    }
+
+    return { success: true, noteId: resultNoteId, action };
   }
 
   async function handleDeleteWorkspaceNote(args: { workspaceId?: string; noteId: string }) {
@@ -671,31 +705,24 @@ function createClaudeCodeStore() {
 
   // --- Tab context tool ---
 
-  function getTerminalText(tabId: string, lineCount: number): string | null {
+  async function getTerminalText(tabId: string, lineCount: number): Promise<string | null> {
     const instance = terminalsStore.get(tabId);
-    if (instance?.terminal) {
-      // Live terminal — extract from xterm.js buffer
-      const buffer = instance.terminal.buffer.active;
-      const totalLines = buffer.baseY + buffer.cursorY + 1;
-      const startLine = Math.max(0, totalLines - lineCount);
-      const lines: string[] = [];
-      for (let i = startLine; i < totalLines; i++) {
-        const line = buffer.getLine(i);
-        if (line) lines.push(line.translateToString(true));
+    if (instance) {
+      // Live terminal — read from Rust alacritty_terminal buffer
+      try {
+        const text = await commands.getTerminalRecentText(instance.ptyId, lineCount);
+        return text.trimEnd() || null;
+      } catch {
+        // Terminal may have been killed, fall through to persisted scrollback
       }
-      return lines.join('\n').trimEnd() || null;
     }
 
-    // Unmounted terminal — use persisted scrollback
-    for (const ws of workspacesStore.workspaces) {
-      for (const pane of ws.panes) {
-        const tab = pane.tabs.find(t => t.id === tabId);
-        if (tab?.scrollback) {
-          const plain = stripAnsi(tab.scrollback);
-          const allLines = plain.split('\n');
-          return allLines.slice(-lineCount).join('\n').trimEnd() || null;
-        }
-      }
+    // Unmounted terminal — read from SQLite via Rust
+    try {
+      const text = await commands.getSavedScrollbackText(tabId, lineCount);
+      if (text) return text;
+    } catch {
+      // Tab may not have scrollback saved
     }
     return null;
   }
@@ -712,7 +739,7 @@ function createClaudeCodeStore() {
     return null;
   }
 
-  function handleGetTabContext(args: { tabIds?: string[]; lines?: number }) {
+  async function handleGetTabContext(args: { tabIds?: string[]; lines?: number }) {
     const lineCount = args.lines ?? 50;
 
     // Collect all tabs across workspaces
@@ -739,12 +766,12 @@ function createClaudeCodeStore() {
       };
     }
 
-    const results = targetTabs.map(({ tab, workspace, pane }) => {
+    const results = await Promise.all(targetTabs.map(async ({ tab, workspace, pane }) => {
       const tabType = tab.tab_type ?? 'terminal';
       let content: string | null = null;
 
       if (tabType === 'terminal') {
-        content = getTerminalText(tab.id, lineCount);
+        content = await getTerminalText(tab.id, lineCount);
       } else if (tabType === 'editor') {
         content = getEditorText(tab.id, lineCount);
       }
@@ -762,17 +789,25 @@ function createClaudeCodeStore() {
         ...(tab.editor_file ? { filePath: tab.editor_file.file_path } : {}),
         content,
       };
-    });
+    }));
 
     return { tabs: results, lineCount };
   }
 
   // --- Notes panel tools ---
 
-  function handleOpenNotesPanel(args: { open?: boolean }) {
-    const ws = workspacesStore.activeWorkspace;
-    const pane = ws?.panes.find(p => p.id === ws.active_pane_id);
-    const tab = pane?.tabs.find(t => t.id === pane.active_tab_id);
+  function handleOpenNotesPanel(args: { tabId?: string; open?: boolean }) {
+    let tab: Tab | undefined;
+
+    if (args.tabId) {
+      const loc = findTabLocation(args.tabId);
+      if (!loc) return { error: `Tab not found: ${args.tabId}` };
+      tab = loc.tab;
+    } else {
+      const ws = workspacesStore.activeWorkspace;
+      const pane = ws?.panes.find(p => p.id === ws.active_pane_id);
+      tab = pane?.tabs.find(t => t.id === pane.active_tab_id);
+    }
     if (!tab) return { error: 'No active tab' };
 
     const isVisible = workspacesStore.isNotesVisible(tab.id);

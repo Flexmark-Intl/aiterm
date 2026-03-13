@@ -30,12 +30,18 @@ const SSE_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(15);
 /// Per-SSE-session sender: receives raw JSON strings, which the SSE stream wraps as data events.
 type SseSessions = Arc<parking_lot::RwLock<HashMap<String, mpsc::UnboundedSender<String>>>>;
 
+/// Per-connection tab affinity: maps transport connection ID → tab ID.
+/// Set by `initSession` tool, used to auto-inject `tabId` into tool calls.
+type ConnectionTabMap = Arc<parking_lot::RwLock<HashMap<String, String>>>;
+
 #[derive(Clone)]
 struct ServerState {
     app_handle: AppHandle,
     state: Arc<AppState>,
     expected_auth: String,
     sse_sessions: SseSessions,
+    /// Maps connection IDs (SSE session, WS id, or "streamable-http") to tab IDs.
+    connection_tabs: ConnectionTabMap,
 }
 
 pub async fn start_server(app_handle: AppHandle, state: Arc<AppState>) {
@@ -87,7 +93,8 @@ pub async fn start_server(app_handle: AppHandle, state: Arc<AppState>) {
     *state.claude_code_auth.write() = Some(auth.clone());
 
     let workspace_folders = collect_workspace_folders(&state);
-    if let Err(e) = write_lockfile(port, &auth, workspace_folders) {
+    let hooks_enabled = state.app_data.read().preferences.claude_code_hooks;
+    if let Err(e) = write_lockfile(port, &auth, workspace_folders, hooks_enabled) {
         log::warn!("Failed to write Claude Code lock file: {}", e);
     }
 
@@ -99,11 +106,14 @@ pub async fn start_server(app_handle: AppHandle, state: Arc<AppState>) {
 
     let sse_sessions: SseSessions = Arc::new(parking_lot::RwLock::new(HashMap::new()));
 
+    let connection_tabs: ConnectionTabMap = Arc::new(parking_lot::RwLock::new(HashMap::new()));
+
     let server_state = ServerState {
         app_handle,
         state,
         expected_auth: auth,
         sse_sessions,
+        connection_tabs,
     };
 
     let app = Router::new()
@@ -114,6 +124,8 @@ pub async fn start_server(app_handle: AppHandle, state: Arc<AppState>) {
         // Legacy SSE — older MCP clients (GET /sse + POST /message)
         .route("/sse", get(sse_get_handler))
         .route("/message", post(sse_message_handler))
+        // Claude Code hooks — lifecycle events from hook scripts
+        .route("/hooks", post(hooks_handler))
         .with_state(server_state);
 
     if let Err(e) = axum::serve(listener, app)
@@ -217,9 +229,10 @@ fn preference_meta() -> Vec<(&'static str, PrefMeta)> {
         ("show_workspace_tab_count", PrefMeta { description: "Show tab count badges on workspace items", ptype: "boolean", category: "Workspace", read_only: false }),
         ("claude_code_ide", PrefMeta { description: "Enable Claude Code IDE integration (MCP server)", ptype: "boolean", category: "Integration", read_only: false }),
         ("claude_code_ide_ssh", PrefMeta { description: "Enable MCP bridge over SSH (reverse tunnel for remote Claude Code)", ptype: "boolean", category: "Integration", read_only: false }),
+        ("claude_code_hooks", PrefMeta { description: "Enable hooks integration (session lifecycle events, tab indicators)", ptype: "boolean", category: "Integration", read_only: false }),
+        ("claude_code_auto_resume", PrefMeta { description: "Enable hooks-based auto-resume (programmatic session ID capture)", ptype: "boolean", category: "Integration", read_only: false }),
         ("backup_directory", PrefMeta { description: "Backup directory path (null = scheduled backups disabled)", ptype: "string", category: "Backup", read_only: false }),
         ("backup_interval", PrefMeta { description: "Scheduled backup interval (off, hourly, daily, weekly, monthly)", ptype: "string", category: "Backup", read_only: false }),
-        ("backup_compress", PrefMeta { description: "Compress backups with gzip", ptype: "boolean", category: "Backup", read_only: false }),
         ("backup_exclude_scrollback", PrefMeta { description: "Exclude terminal scrollback from backups", ptype: "boolean", category: "Backup", read_only: false }),
         ("backup_trim_enabled", PrefMeta { description: "Auto-delete old backups", ptype: "boolean", category: "Backup", read_only: false }),
         ("backup_trim_age", PrefMeta { description: "Max age for auto-trim (1h, 1d, 1w, 1m, 1y)", ptype: "string", category: "Backup", read_only: false }),
@@ -348,9 +361,6 @@ fn handle_backend_tool(tool_name: &str, arguments: &Value, state: &Arc<AppState>
             let exclude_scrollback = arguments.get("excludeScrollback")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(prefs.backup_exclude_scrollback);
-            let compress = arguments.get("compress")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(prefs.backup_compress);
 
             let dir_path = std::path::PathBuf::from(&dir);
             if !dir_path.exists() {
@@ -359,7 +369,7 @@ fn handle_backend_tool(tool_name: &str, arguments: &Value, state: &Arc<AppState>
                 }
             }
 
-            let filtered = crate::commands::workspace::prepare_export(&app_data, exclude_scrollback);
+            let filtered = crate::commands::workspace::prepare_export(&app_data, exclude_scrollback, &state.scrollback_db);
             let json = match serde_json::to_string_pretty(&filtered) {
                 Ok(j) => j,
                 Err(e) => return Some(serde_json::json!({ "error": format!("Serialization failed: {}", e) })),
@@ -379,11 +389,10 @@ fn handle_backend_tool(tool_name: &str, arguments: &Value, state: &Arc<AppState>
             let da = remainder % 30 + 1;
             let timestamp = format!("{:04}{:02}{:02}_{:02}{:02}{:02}", y, mo, da, h, m, s);
 
-            let ext = if compress { "json.gz" } else { "json" };
-            let filename = format!("aiterm_backup_{}.{}", timestamp, ext);
+            let filename = format!("aiterm_backup_{}.json.gz", timestamp);
             let file_path = dir_path.join(&filename);
 
-            if compress {
+            {
                 use flate2::write::GzEncoder;
                 use flate2::Compression;
                 use std::io::Write;
@@ -398,15 +407,11 @@ fn handle_backend_tool(tool_name: &str, arguments: &Value, state: &Arc<AppState>
                 if let Err(e) = encoder.finish() {
                     return Some(serde_json::json!({ "error": format!("Compression finalize failed: {}", e) }));
                 }
-            } else {
-                if let Err(e) = std::fs::write(&file_path, &json) {
-                    return Some(serde_json::json!({ "error": format!("Failed to write file: {}", e) }));
-                }
             }
 
             let path_str = file_path.to_string_lossy().to_string();
             log::info!("MCP backup created: {}", path_str);
-            Some(serde_json::json!({ "success": true, "path": path_str, "compressed": compress, "excludedScrollback": exclude_scrollback }))
+            Some(serde_json::json!({ "success": true, "path": path_str, "excludedScrollback": exclude_scrollback }))
         }
         _ => None,
     }
@@ -450,7 +455,8 @@ async fn ws_upgrade_handler(
 }
 
 async fn handle_ws_connection(socket: WebSocket, srv: ServerState) {
-    log::info!("Claude Code WS client connected");
+    let ws_connection_id = format!("ws-{}", uuid::Uuid::new_v4());
+    log::info!("Claude Code WS client connected ({})", &ws_connection_id[..11]);
     set_connected(&srv, true);
 
     // response_tx: handle_message sends raw JSON here; main loop writes to WS
@@ -466,7 +472,7 @@ async fn handle_ws_connection(socket: WebSocket, srv: ServerState) {
             msg = ws_read.next() => {
                 match msg {
                     Some(Ok(WsMessage::Text(text))) => {
-                        handle_message(&text, &srv.app_handle, &srv.state, &response_tx).await;
+                        handle_message(&text, &srv.app_handle, &srv.state, &srv.connection_tabs, &ws_connection_id, &response_tx).await;
                     }
                     Some(Ok(WsMessage::Ping(data))) => {
                         let _ = ws_write.send(WsMessage::Pong(data)).await;
@@ -498,8 +504,9 @@ async fn handle_ws_connection(socket: WebSocket, srv: ServerState) {
     }
 
     set_connected(&srv, false);
+    srv.connection_tabs.write().remove(&ws_connection_id);
     *srv.state.claude_code_notify_tx.lock() = None;
-    log::info!("Claude Code WS connection cleaned up");
+    log::info!("Claude Code WS connection cleaned up ({})", &ws_connection_id[..11]);
 }
 
 // ─── Streamable HTTP handler (modern MCP transport) ────────────────────────
@@ -522,8 +529,15 @@ async fn streamable_http_handler(
         return StatusCode::UNAUTHORIZED.into_response();
     }
 
+    // Use Mcp-Session-Id header for connection affinity (streamable HTTP sessions)
+    let connection_id = headers
+        .get("mcp-session-id")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| format!("mcp-{}", s))
+        .unwrap_or_else(|| "streamable-http".to_string());
+
     // Process the JSON-RPC message and get the response
-    let response_json = process_message(&body, &srv.app_handle, &srv.state).await;
+    let response_json = process_message(&body, &srv.app_handle, &srv.state, &srv.connection_tabs, &connection_id).await;
 
     match response_json {
         Some(json) => {
@@ -607,6 +621,7 @@ async fn sse_get_handler(State(srv): State<ServerState>, headers: HeaderMap) -> 
             }
         }
         cleanup_srv.sse_sessions.write().remove(&cleanup_session_id);
+        cleanup_srv.connection_tabs.write().remove(&format!("sse-{}", cleanup_session_id));
         set_connected(&cleanup_srv, false);
         *cleanup_srv.state.claude_code_notify_tx.lock() = None;
         log::info!("Claude Code SSE client disconnected");
@@ -647,7 +662,8 @@ async fn sse_message_handler(
         return StatusCode::NOT_FOUND.into_response();
     };
 
-    handle_message(&body, &srv.app_handle, &srv.state, &tx).await;
+    let connection_id = format!("sse-{}", params.session_id);
+    handle_message(&body, &srv.app_handle, &srv.state, &srv.connection_tabs, &connection_id, &tx).await;
     StatusCode::OK.into_response()
 }
 
@@ -655,10 +671,14 @@ async fn sse_message_handler(
 
 /// Process one JSON-RPC message and return the response as a raw JSON string.
 /// Returns `None` for notifications (no id) that don't require a response.
+/// `connection_id` identifies the transport connection (SSE session, WS, or streamable-http)
+/// for tab affinity tracking.
 async fn process_message(
     text: &str,
     app_handle: &AppHandle,
     state: &Arc<AppState>,
+    connection_tabs: &ConnectionTabMap,
+    connection_id: &str,
 ) -> Option<String> {
     let req: JsonRpcRequest = match serde_json::from_str(text) {
         Ok(r) => r,
@@ -687,10 +707,178 @@ async fn process_message(
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string();
-                let arguments = params
+                let mut arguments = params
                     .get("arguments")
                     .cloned()
                     .unwrap_or(Value::Object(serde_json::Map::new()));
+
+                // ── initSession: register connection → tab affinity ──
+                if tool_name == "initSession" {
+                    let tab_id = arguments.get("tabId").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let session_id = arguments.get("sessionId").and_then(|v| v.as_str()).unwrap_or("").to_string();
+
+                    if tab_id.is_empty() {
+                        let resp = JsonRpcResponse::success(
+                            id,
+                            serde_json::json!({
+                                "content": [{ "type": "text", "text": "Error: tabId is required. Read your tab ID from the SessionStart hook context or $AITERM_TAB_ID environment variable." }],
+                                "isError": true
+                            }),
+                        );
+                        return Some(serde_json::to_string(&resp).unwrap());
+                    }
+
+                    // Verify tab exists in this instance
+                    if find_window_for_tab(state, &tab_id).is_none() {
+                        let this_server = if cfg!(debug_assertions) { "aiterm-dev" } else { "aiterm" };
+                        let other_server = if cfg!(debug_assertions) { "aiterm" } else { "aiterm-dev" };
+                        let resp = JsonRpcResponse::success(
+                            id,
+                            serde_json::json!({
+                                "content": [{ "type": "text", "text": format!(
+                                    "Tab '{}' not found in this aiTerm instance ({}). Use '{}' tools instead.",
+                                    tab_id, this_server, other_server
+                                ) }],
+                                "isError": true
+                            }),
+                        );
+                        return Some(serde_json::to_string(&resp).unwrap());
+                    }
+
+                    // Store connection → tab affinity
+                    connection_tabs.write().insert(connection_id.to_string(), tab_id.clone());
+                    log::info!("initSession: connection {} → tab {} (claude session: {})",
+                        &connection_id[..connection_id.len().min(8)], &tab_id[..tab_id.len().min(8)],
+                        if session_id.is_empty() { "none" } else { &session_id[..session_id.len().min(8)] }
+                    );
+
+                    // Link claude session → tab mapping
+                    {
+                        use crate::state::app_state::{ClaudeSessionInfo, ClaudeSessionState};
+
+                        // If Claude passed sessionId explicitly, use that
+                        if !session_id.is_empty() {
+                            let mut sessions = state.claude_sessions.write();
+                            sessions.insert(
+                                session_id.clone(),
+                                ClaudeSessionInfo {
+                                    tab_id: tab_id.clone(),
+                                    cwd: None,
+                                    state: ClaudeSessionState::Active,
+                                },
+                            );
+                        }
+
+                        // Also pop the most recent pending SessionStart hook session and link it
+                        let pending = {
+                            let mut pending = state.pending_hook_sessions.write();
+                            let cutoff = std::time::Instant::now() - std::time::Duration::from_secs(30);
+                            pending.retain(|(_, _, ts)| *ts > cutoff);
+                            pending.pop()
+                        };
+                        if let Some((pending_sid, pending_cwd, _)) = pending {
+                            if session_id.is_empty() || pending_sid != session_id {
+                                let mut sessions = state.claude_sessions.write();
+                                sessions.insert(
+                                    pending_sid.clone(),
+                                    ClaudeSessionInfo {
+                                        tab_id: tab_id.clone(),
+                                        cwd: pending_cwd,
+                                        state: ClaudeSessionState::Active,
+                                    },
+                                );
+                                log::info!("initSession: linked pending session {} → tab {}",
+                                    &pending_sid[..pending_sid.len().min(8)], &tab_id[..tab_id.len().min(8)]);
+                                // Re-emit session start now that we know the tab
+                                let _ = app_handle.emit("claude-hook-session-start", serde_json::json!({
+                                    "session_id": pending_sid,
+                                    "tab_id": &tab_id,
+                                }));
+                            }
+                        }
+                    }
+
+                    // Emit event so frontend can set claudeSessionId trigger variable
+                    if !session_id.is_empty() {
+                        let auto_resume = state.app_data.read().preferences.claude_code_auto_resume;
+                        if auto_resume {
+                            let _ = app_handle.emit("claude-init-session", serde_json::json!({
+                                "tab_id": &tab_id,
+                                "session_id": &session_id,
+                            }));
+                        }
+                    }
+
+                    let resp = JsonRpcResponse::success(
+                        id,
+                        serde_json::json!({
+                            "content": [{ "type": "text", "text": format!(
+                                "Session initialized. All subsequent tool calls on this connection will target tab {}. You no longer need to pass tabId.",
+                                tab_id
+                            ) }]
+                        }),
+                    );
+                    return Some(serde_json::to_string(&resp).unwrap());
+                }
+
+                // ── Auto-inject tabId from connection affinity ──
+                // If the tool call doesn't include tabId but this connection has affinity, inject it.
+                let has_affinity = connection_tabs.read().contains_key(connection_id);
+                if has_affinity {
+                    if arguments.get("tabId").and_then(|v| v.as_str()).map_or(true, |s| s.is_empty()) {
+                        if let Some(affinity_tab) = connection_tabs.read().get(connection_id).cloned() {
+                            if let Some(obj) = arguments.as_object_mut() {
+                                obj.insert("tabId".to_string(), Value::String(affinity_tab));
+                            }
+                        }
+                    }
+                } else {
+                    // No affinity yet — require initSession first for tab-specific tools.
+                    // Allow global tools that don't need a tab to pass through.
+                    let global_tools = [
+                        "getOpenEditors", "getWorkspaceFolders", "getDiagnostics",
+                        "sendNotification", "readLogs", "listWindows", "listWorkspaces",
+                        "getPreferences", "setPreference", "createBackup",
+                    ];
+                    if !global_tools.contains(&tool_name.as_str())
+                        && arguments.get("tabId").and_then(|v| v.as_str()).map_or(true, |s| s.is_empty())
+                    {
+                        let resp = JsonRpcResponse::success(
+                            id,
+                            serde_json::json!({
+                                "content": [{ "type": "text", "text":
+                                    "Session not initialized. You must call initSession with your tabId first. \
+                                     Read your tab ID from $AITERM_TAB_ID environment variable."
+                                }],
+                                "isError": true
+                            }),
+                        );
+                        return Some(serde_json::to_string(&resp).unwrap());
+                    }
+                }
+
+                // Guard: if a tabId is provided, verify it exists in THIS instance.
+                // Prevents cross-talk when both dev and prod are running.
+                if let Some(tab_id) = arguments.get("tabId").and_then(|v| v.as_str()) {
+                    if !tab_id.is_empty() && find_window_for_tab(state, tab_id).is_none() {
+                        let other_server = if cfg!(debug_assertions) { "aiterm" } else { "aiterm-dev" };
+                        let this_server = if cfg!(debug_assertions) { "aiterm-dev" } else { "aiterm" };
+                        let err_msg = format!(
+                            "Tab '{}' does not exist in this aiTerm instance ({}). \
+                             You may be calling the wrong MCP server. Use '{}' tools instead.",
+                            tab_id, this_server, other_server
+                        );
+                        log::warn!("MCP tool guard: {}", err_msg);
+                        let resp = JsonRpcResponse::success(
+                            id,
+                            serde_json::json!({
+                                "content": [{ "type": "text", "text": err_msg }],
+                                "isError": true
+                            }),
+                        );
+                        return Some(serde_json::to_string(&resp).unwrap());
+                    }
+                }
 
                 // Backend-only tools: handle directly without emitting to frontend
                 if let Some(result) = handle_backend_tool(&tool_name, &arguments, state, app_handle) {
@@ -776,15 +964,221 @@ async fn process_message(
     }
 }
 
+// ─── Claude Code Hooks ──────────────────────────────────────────────────────
+
+/// Handle POST /hooks — receives Claude Code hook events.
+/// SessionStart registers a session→tab mapping. Other events use
+/// that mapping to route Tauri events to the correct frontend tab.
+async fn hooks_handler(
+    State(srv): State<ServerState>,
+    headers: HeaderMap,
+    Query(params): Query<HashMap<String, String>>,
+    body: String,
+) -> Response {
+    let auth = headers
+        .get("x-claude-code-ide-authorization")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    if auth != srv.expected_auth {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+
+    let event: Value = match serde_json::from_str(&body) {
+        Ok(v) => v,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+
+    let hook_event_name = event
+        .get("hook_event_name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let session_id = event
+        .get("session_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    log::info!("Claude hook: received '{}' session={}", hook_event_name, &session_id[..session_id.len().min(8)]);
+
+    // tab_id comes from query param (set by the command hook script from $AITERM_TAB_ID)
+    // Validate it actually exists — it may be stale after HMR reload or tab recreation.
+    let tab_id_from_param = params.get("tab_id").and_then(|raw_id| {
+        if raw_id.is_empty() {
+            return None;
+        }
+        // Check if this tab ID exists in any workspace
+        let exists = {
+            let app_data = srv.state.app_data.read();
+            app_data.windows.iter().any(|w| {
+                w.workspaces.iter().any(|ws| {
+                    ws.panes.iter().any(|p| p.tabs.iter().any(|t| t.id == *raw_id))
+                })
+            })
+        };
+        if exists {
+            Some(raw_id.clone())
+        } else {
+            // Tab ID doesn't exist — don't fall back to active tab as that
+            // causes cross-talk between dev/prod instances.
+            log::warn!(
+                "Claude hook: tab_id '{}' not found (stale env var or wrong instance), ignoring",
+                raw_id
+            );
+            None
+        }
+    });
+
+    match hook_event_name {
+        "SessionStart" => {
+            let tab_id = tab_id_from_param.clone().unwrap_or_default();
+            let cwd = event.get("cwd").and_then(|v| v.as_str()).map(String::from);
+
+            if !session_id.is_empty() && !tab_id.is_empty() {
+                use crate::state::app_state::{ClaudeSessionInfo, ClaudeSessionState};
+                let mut sessions = srv.state.claude_sessions.write();
+                sessions.insert(
+                    session_id.clone(),
+                    ClaudeSessionInfo {
+                        tab_id: tab_id.clone(),
+                        cwd: cwd.clone(),
+                        state: ClaudeSessionState::Active,
+                    },
+                );
+                log::info!("Claude hook: session {} started for tab {}", session_id, tab_id);
+            } else if !session_id.is_empty() {
+                // No tab_id yet — buffer for initSession to pick up
+                let mut pending = srv.state.pending_hook_sessions.write();
+                // Clean entries older than 30s
+                let cutoff = std::time::Instant::now() - std::time::Duration::from_secs(30);
+                pending.retain(|(_, _, ts)| *ts > cutoff);
+                pending.push((session_id.clone(), cwd.clone(), std::time::Instant::now()));
+                log::info!("Claude hook: session {} started (pending tab assignment)", session_id);
+            }
+
+            let _ = srv.app_handle.emit("claude-hook-session-start", serde_json::json!({
+                "session_id": session_id,
+                "tab_id": if tab_id.is_empty() { None } else { Some(&tab_id) },
+                "cwd": event.get("cwd"),
+            }));
+        }
+
+        "SessionEnd" => {
+            let tab_id = {
+                let mut sessions = srv.state.claude_sessions.write();
+                sessions.remove(&session_id).map(|s| s.tab_id)
+            }
+            .or(tab_id_from_param);
+
+            log::info!("Claude hook: session {} ended (tab {:?})", session_id, tab_id);
+
+            let _ = srv.app_handle.emit("claude-hook-session-end", serde_json::json!({
+                "session_id": session_id,
+                "tab_id": tab_id,
+                "reason": event.get("reason"),
+            }));
+        }
+
+        "Notification" => {
+            let tab_id = {
+                let sessions = srv.state.claude_sessions.read();
+                sessions.get(&session_id).map(|s| s.tab_id.clone())
+            }
+            .or(tab_id_from_param);
+
+            let notification_type = event
+                .get("notification_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+
+            // Update session state based on notification type
+            if !session_id.is_empty() {
+                use crate::state::app_state::ClaudeSessionState;
+                let mut sessions = srv.state.claude_sessions.write();
+                if let Some(session) = sessions.get_mut(&session_id) {
+                    session.state = match notification_type {
+                        "idle_prompt" => ClaudeSessionState::WaitingInput,
+                        "permission_prompt" => ClaudeSessionState::WaitingPermission,
+                        _ => session.state,
+                    };
+                }
+            }
+
+            log::info!("Claude hook: Notification type='{}' session={} (tab {:?})",
+                notification_type, &session_id[..session_id.len().min(8)], tab_id);
+            let _ = srv.app_handle.emit("claude-hook-notification", serde_json::json!({
+                "session_id": session_id,
+                "tab_id": tab_id,
+                "notification_type": notification_type,
+                "title": event.get("title"),
+                "body": event.get("body"),
+            }));
+        }
+
+        "Stop" => {
+            let tab_id = {
+                let sessions = srv.state.claude_sessions.read();
+                sessions.get(&session_id).map(|s| s.tab_id.clone())
+            }
+            .or(tab_id_from_param);
+
+            // Update session state to stopped (waiting for next user prompt)
+            if !session_id.is_empty() {
+                use crate::state::app_state::ClaudeSessionState;
+                let mut sessions = srv.state.claude_sessions.write();
+                if let Some(session) = sessions.get_mut(&session_id) {
+                    session.state = ClaudeSessionState::Stopped;
+                }
+            }
+
+            log::info!("Claude hook: Stop for session {} (tab {:?})", &session_id[..session_id.len().min(8)], tab_id);
+            let _ = srv.app_handle.emit("claude-hook-stop", serde_json::json!({
+                "session_id": session_id,
+                "tab_id": tab_id,
+            }));
+        }
+
+        "UserPromptSubmit" => {
+            let tab_id = {
+                let sessions = srv.state.claude_sessions.read();
+                sessions.get(&session_id).map(|s| s.tab_id.clone())
+            }
+            .or(tab_id_from_param);
+
+            // Update session state to processing
+            if !session_id.is_empty() {
+                use crate::state::app_state::ClaudeSessionState;
+                let mut sessions = srv.state.claude_sessions.write();
+                if let Some(session) = sessions.get_mut(&session_id) {
+                    session.state = ClaudeSessionState::Active;
+                }
+            }
+
+            log::info!("Claude hook: UserPromptSubmit session={} (tab {:?})", &session_id[..session_id.len().min(8)], tab_id);
+            let _ = srv.app_handle.emit("claude-hook-user-prompt", serde_json::json!({
+                "session_id": session_id,
+                "tab_id": tab_id,
+            }));
+        }
+
+        other => {
+            log::debug!("Claude hook: unhandled event type '{}'", other);
+        }
+    }
+
+    StatusCode::OK.into_response()
+}
+
 /// Channel-based wrapper: process a message and send the response to a channel.
 /// Used by WebSocket and legacy SSE handlers.
 async fn handle_message(
     text: &str,
     app_handle: &AppHandle,
     state: &Arc<AppState>,
+    connection_tabs: &ConnectionTabMap,
+    connection_id: &str,
     response_tx: &mpsc::UnboundedSender<String>,
 ) {
-    if let Some(json) = process_message(text, app_handle, state).await {
+    if let Some(json) = process_message(text, app_handle, state, connection_tabs, connection_id).await {
         let _ = response_tx.send(json);
     }
 }

@@ -6,7 +6,7 @@ A Tauri-based terminal emulator with workspace organization, built with Svelte 5
 
 - **Frontend**: Svelte 5 (runes), SvelteKit, TypeScript, Vite
 - **Backend**: Rust, Tauri 2
-- **Terminal**: xterm.js with fit, serialize, web-links, and webgl addons
+- **Terminal**: alacritty_terminal (Rust VTE parser + buffer) with xterm.js as thin renderer (scrollback=0, fit, web-links, webgl addons)
 - **Editor**: CodeMirror 6 (+ MergeView for diffs)
 - **PTY**: portable-pty for cross-platform pseudo-terminal support
 - **State**: parking_lot RwLock for thread-safe Rust state
@@ -36,42 +36,30 @@ src/                          # Frontend (Svelte/TypeScript)
 │   │   ├── toasts.svelte.ts       # In-app toast notification store
 │   │   └── notificationDispatch.ts # Routes to toast or OS notification
 │   ├── triggers/             # Trigger definitions and parsing
-│   │   ├── defaults.ts       # Built-in Claude Code trigger templates
-│   │   └── variableCondition.ts # Variable expression parser (&&, ||, ==, !=)
 │   ├── themes/               # Theme system
-│   │   └── index.ts          # 10 built-in themes, custom theme support, CSS application
 │   ├── utils/                # Pure utility modules
-│   │   ├── shellIntegration.ts  # Remote shell hook snippets
-│   │   ├── promptPattern.ts     # PS1 prompt pattern matching
-│   │   ├── ansi.ts              # ANSI escape code stripping
-│   │   ├── editorTheme.ts       # Tokyo Night CodeMirror 6 theme
-│   │   ├── languageDetect.ts    # Extension/filename → language + CM6 loader
-│   │   ├── filePathDetector.ts  # xterm.js ILinkProvider for file paths
-│   │   ├── openFile.ts          # Orchestrates file open (local/remote/editor tab)
-│   │   └── platform.ts         # OS detection, modifier key helpers (isMac, isModKey)
-│   └── tauri/                # Tauri IPC layer
-│       ├── commands.ts       # invoke() wrappers
-│       └── types.ts          # TypeScript interfaces matching Rust
+│   └── tauri/                # Tauri IPC layer (commands.ts, types.ts)
 
 src-tauri/src/                # Backend (Rust)
 ├── lib.rs                    # Tauri app setup, command registration
 ├── commands/                 # Tauri command handlers
-│   ├── workspace.rs          # State CRUD operations
-│   ├── editor.rs             # File read/write, SCP, binary/image loading
-│   ├── terminal.rs           # PTY spawn/write/resize/kill
-│   ├── window.rs             # Multi-window management, preferences window
-│   └── claude_code.rs        # Claude Code tool response + selection notification
-├── claude_code/              # Claude Code IDE integration
-│   ├── server.rs             # WebSocket + SSE MCP server (axum)
-│   ├── protocol.rs           # JSON-RPC protocol, tool list, initialize response
-│   └── lockfile.rs           # Lock file management + MCP server registration
-├── state/                    # Application state
-│   ├── workspace.rs          # Data structures (Workspace, Pane, Tab, Preferences)
-│   ├── app_state.rs          # Global state container (incl. Claude Code fields)
-│   └── persistence.rs        # JSON file storage
+├── claude_code/              # Claude Code IDE integration (MCP server)
+├── terminal/                 # Terminal backend (alacritty_terminal)
+│   ├── handle.rs             # TerminalHandle, TermDimensions, create_terminal()
+│   ├── event_proxy.rs        # AitermEventProxy (EventListener → Tauri events)
+│   ├── render.rs             # Grid → ANSI viewport renderer (~60fps)
+│   ├── osc.rs                # OscInterceptor (OSC 7/9/133/633/1337)
+│   ├── search.rs             # Buffer search via RegexSearch
+│   └── serialize.rs          # Buffer serialization/restore via VTE parser
+├── state/                    # Application state + persistence
 └── pty/                      # PTY management
-    └── manager.rs            # spawn_pty, PTY I/O handling
 ```
+
+**Module-specific docs**: Detailed documentation for individual subsystems lives in CLAUDE.md files within their directories:
+- `src/lib/components/terminal/CLAUDE.md` — Portal pattern, terminal architecture (alacritty_terminal + xterm.js), OSC, shell integration, split cloning
+- `src/lib/components/editor/CLAUDE.md` — CodeMirror, diff tabs, editor registry
+- `src-tauri/src/claude_code/CLAUDE.md` — Claude Code IDE integration, SSH MCP bridge
+- `src/lib/triggers/CLAUDE.md` — Trigger engine, defaults, variables, dedup
 
 ## Commands
 
@@ -141,9 +129,7 @@ export const myStore = createMyStore();
 --accent: #7aa2f7;      /* Interactive elements */
 ```
 
-Themes defined in `src/lib/themes/index.ts`. Each theme has separate `UiColors` (CSS variables) and `TerminalColors` (ANSI 16 + cursor/selection). Applied via `applyUiTheme()` which sets CSS variables on `document.documentElement`. Custom themes editable via `ThemeEditor.svelte` in Preferences.
-
-Use CSS variables from `app.css`. Component styles are scoped.
+Themes defined in `src/lib/themes/index.ts`. Applied via `applyUiTheme()` which sets CSS variables on `document.documentElement`. Use CSS variables from `app.css`. Component styles are scoped.
 
 ## Data Model
 
@@ -164,334 +150,23 @@ Tab
 ├── id, name, custom_name (bool — true if user explicitly renamed)
 ├── tab_type: 'terminal' | 'editor' | 'diff'
 ├── pty_id (terminal tabs — links to running PTY)
-├── editor_file (editor tabs — EditorFileInfo: file_path, is_remote, remote_ssh_command, remote_path, language)
-├── diff_context (diff tabs — DiffContext: request_id, file_path, old_content, new_content, tab_name)
+├── editor_file (editor tabs — EditorFileInfo)
+├── diff_context (diff tabs — DiffContext)
 ├── scrollback (serialized terminal state)
 ├── notes, notes_open, notes_mode (per-tab markdown notes)
 └── trigger_variables (persisted variable map from triggers)
 
 SplitNode = SplitLeaf { pane_id } | SplitBranch { id, direction, ratio, children }
 
-Trigger
-├── id, name, description, pattern (regex or text)
-├── match_mode: 'regex' | 'plain_text' | 'variable'
-├── actions: TriggerActionEntry[] (notify, send_command, enable_auto_resume, set_tab_state)
-├── variables: VariableMapping[] (capture group → named variable)
-├── enabled, cooldown, workspaces (scope filter)
-└── default_id (links to app-provided default template, if any)
-
 Preferences
-├── theme, custom_themes
-├── font_size, font_family
+├── theme, custom_themes, font_size, font_family
 ├── cursor_style, cursor_blink
 ├── auto_save_interval, scrollback_limit
-├── prompt_patterns (PS1-like patterns for remote cwd detection)
-├── clone_cwd, clone_scrollback, clone_ssh, clone_history, clone_notes, clone_auto_resume, clone_variables
-├── notification_mode (auto, in_app, native, disabled)
-├── notification_sound, notification_volume, toast_duration, notify_min_duration
-├── workspace_sort_order (default, alphabetical, recent)
-├── show_workspace_tab_count, show_recent_workspaces
-├── claude_code_ide (bool — enable Claude Code integration)
-├── number_duplicated_tabs (bool — prefix duplicated tab names with numbers, default true)
-├── notes_font_size, notes_font_family, notes_width
-├── triggers: Trigger[]
-└── hidden_default_triggers (IDs of deleted app-provided defaults)
+├── prompt_patterns, notification_mode, notification_sound
+├── clone_cwd, clone_scrollback, clone_ssh, clone_history, clone_notes
+├── claude_code_ide, triggers, hidden_default_triggers
+└── (see state/workspace.rs for full list)
 ```
-
-## Portal Pattern (Terminal Persistence)
-
-When the split tree changes (leaf → split node), Svelte destroys and recreates the entire subtree. To prevent terminals from being killed and recreated:
-
-- **TerminalPanes render flat** at the `+page.svelte` level in a keyed `{#each}` block over all tabs
-- **SplitPane renders empty slot divs** with `data-terminal-slot={tab.id}`
-- **TerminalPane portals** its `containerRef` into the matching slot via `attachToSlot()`
-- **SplitPane dispatches** `terminal-slot-ready` CustomEvents on mount so TerminalPanes can re-attach after splits
-- Guard `fitWithPadding` with `containerRef.isConnected` to skip when detached between portal moves
-
-**Do not** move TerminalPane rendering into SplitPane — this breaks terminal persistence on split.
-
-### Tab Move Between Workspaces (PTY Preservation)
-
-Dragging a terminal tab to another workspace preserves the running PTY instead of killing and respawning:
-
-- **`terminalsStore.preservePty(ptyId)`** — called before the move, prevents `onDestroy` from killing the PTY
-- **`terminalsStore.consumePreserve(ptyId)`** — checked in `onDestroy`, skips `killTerminal` if set
-- **Backend `move_tab_to_workspace`** — atomically moves the tab (with `pty_id`) between workspaces
-- **`existingPtyId` prop** — `+page.svelte` passes `tab.pty_id` only when `terminalsStore.get(tab.id)` is truthy (avoids reattach on app restart with stale PTY IDs)
-- **New TerminalPane reattach** — when `existingPtyId` is set, skips `spawnTerminal`, SSH replay, and auto-resume; sets up fresh PTY output listener and registers with the store
-
-**Known issue**: TUI apps (Claude Code/Ink) may render at the wrong size after a tab move. The new xterm instance starts at default 80×24 and a resize is sent to the PTY, but the SIGWINCH doesn't always trigger a full TUI redraw. A manual window resize or toggling the notes panel forces a refit and fixes it. Root cause is unclear — the `setTimeout` resize in the reattach path of `onMount` fires but the TUI doesn't respond. Needs investigation with a full `tauri:dev` restart (not HMR) to rule out stale closures.
-
-**EditorPane and DiffPane use the same portal pattern** — `attachToSlot()` portals into `data-terminal-slot={tabId}`, listens for `terminal-slot-ready`.
-
-## CodeMirror Editor Tabs
-
-Editor tabs (`tab_type === 'editor'`) render `EditorPane.svelte` instead of `TerminalPane.svelte`. They exist alongside terminal tabs in the same pane.
-
-**Key files**:
-- `src/lib/components/editor/EditorPane.svelte` — main component
-- `src/lib/utils/editorTheme.ts` — Tokyo Night CM6 theme (matches terminal colors)
-- `src/lib/utils/languageDetect.ts` — language detection + dynamic CM6 language loader
-- `src/lib/utils/openFile.ts` — orchestrates open flow (local vs remote, fetch, tab creation)
-- `src-tauri/src/commands/editor.rs` — `read_file`, `write_file`, `read_file_base64`, `scp_read_file`, `scp_write_file`, `scp_read_file_base64`, `create_editor_tab`
-
-**Language loading**: `loadLanguageExtension(langId)` dynamically imports the CM6 language package. First-class packages (js, ts, python, rust, html, css, json, etc.) are preferred; legacy `StreamLanguage` modes cover 30+ additional languages. Detection priority: explicit `editorFile.language` → shebang → file extension → filename.
-
-**Image preview**: `isImageFile()` checks extension; if true, loads via `read_file_base64` / `scp_read_file_base64` and renders with `<img src="data:...">`. Zoom controls: fit-to-window (default), preset steps (10%–500%), +/- buttons.
-
-**Remote files**: SCP commands extracted from the SSH foreground command. Files >2MB or binary (null bytes in first 8KB) are rejected with a user-friendly error toast.
-
-**Search panel**: Uses `search({ top: true })` — positioned at top of editor. Styled via `:global(.cm-panel.cm-search)` CSS in EditorPane.
-
-**Tab insertion**: New editor tabs insert after the currently active tab, not at the end.
-
-## Diff Tabs
-
-Diff tabs (`tab_type === 'diff'`) render `DiffPane.svelte` using CodeMirror's `MergeView` for side-by-side comparison. Created by Claude Code's `openDiff` tool.
-
-- **Accept**: Writes `new_content` to `file_path` (local or SCP), responds to Claude with success
-- **Reject**: Responds to Claude with `DIFF_REJECTED`, closes tab
-- **Blocking**: Claude Code waits for the accept/reject response before continuing
-- **DiffContext**: `{ request_id, file_path, old_content, new_content, tab_name }`
-
-## Claude Code IDE Integration
-
-aiTerm exposes an MCP server that Claude Code CLI discovers and connects to, providing IDE-like capabilities.
-
-### Architecture
-
-```
-Claude Code CLI ←→ WebSocket/SSE ←→ axum server (Rust) ←→ Tauri events ←→ Frontend (Svelte)
-```
-
-**Backend** (`src-tauri/src/claude_code/`):
-- `server.rs` — axum router with WebSocket (`/`) and SSE (`/sse` + `/message`) endpoints. Random port (10000–65535), 32-char auth token.
-- `protocol.rs` — JSON-RPC request/response types, `tool_list_response()` (11 tools), `initialize_response()`
-- `lockfile.rs` — writes `~/.claude/ide/{port}.lock` for discovery, registers `mcpServers.aiterm` (or `aiterm-dev`) in `~/.claude.json`
-
-**Frontend** (`src/lib/stores/claudeCode.svelte.ts`):
-- Listens for `claude-code-tool` Tauri events
-- Dispatches to tool handlers (getOpenEditors, openFile, openDiff, etc.)
-- Responds via `claude_code_respond` Tauri command
-
-**Enabled by**: `preferences.claude_code_ide` (default true). Server starts in `lib.rs` as a background tokio task.
-
-### Tools Exposed
-
-| Tool | Description |
-|------|-------------|
-| getOpenEditors | List open editor tabs (path, language, dirty state) |
-| getWorkspaceFolders | Workspace root paths |
-| getDiagnostics | Language diagnostics for a file |
-| checkDocumentDirty | Check if file has unsaved changes |
-| saveDocument | Save file to disk |
-| getCurrentSelection | Active editor selection + cursor |
-| getLatestSelection | Most recent selection in any tab |
-| openFile | Open file in editor tab (with optional line/text selection) |
-| openDiff | Show side-by-side diff for review (blocking) |
-| closeAllDiffTabs | Close all pending diff tabs |
-| listWorkspaces | List all workspaces with panes, tabs (IDs, display names, types, active state, notes) |
-| switchTab | Navigate to a tab by ID (auto-resolves workspace/pane) |
-| getTabNotes | Read notes for a tab (optional tabId, defaults to active) |
-| setTabNotes | Write/clear notes for a tab |
-| listWorkspaceNotes | List workspace-level notes (IDs, previews, timestamps) |
-| readWorkspaceNote | Read full content of a workspace note |
-| writeWorkspaceNote | Create or update a workspace note |
-| deleteWorkspaceNote | Delete a workspace note |
-| moveNote | Move note between tab and workspace (with conflict detection) |
-| getTabContext | Get recent terminal output/editor content for tab discovery |
-| openNotesPanel | Open/close/toggle the notes panel for the active tab |
-| setNotesScope | Switch notes panel between 'tab' and 'workspace' views |
-| getActiveTab | Get the currently active workspace, pane, and tab info |
-| setTriggerVariable | Set/clear a trigger variable (e.g. claudeSessionId) for a tab |
-| getTriggerVariables | Read all trigger variables for a tab |
-| setAutoResume | Enable/disable auto-resume with optional command/cwd/ssh overrides |
-| getAutoResume | Get current auto-resume configuration for a tab |
-| findNotes | Search all tabs and workspaces for notes, returns previews |
-
-### SSH MCP Bridge (Remote IDE Tools)
-
-Exposes local MCP tools to Claude Code running on remote servers via SSH reverse tunnels.
-
-**Architecture:**
-```
-Local aiTerm → SSH reverse tunnel (-R 0:127.0.0.1:{mcp_port}) → Remote :allocated_port
-               Background SSH → writes lockfile + ~/.claude.json on remote
-Remote Claude Code → discovers ~/.claude/ide/{port}.lock → connects through tunnel → local MCP server
-```
-
-**Key files:**
-- `src-tauri/src/commands/ssh_tunnel.rs` — tunnel lifecycle (start, detach, kill), port parsing, `ssh_run_setup` for background lockfile writing
-- `src/lib/stores/sshMcpBridge.svelte.ts` — bridge orchestration, reactive status tracking, ref counting
-
-**Preference:** `claude_code_ide_ssh` (default true, requires `claude_code_ide`). Controls auto-enable on SSH detection.
-
-**Tunnel sharing:** One tunnel per `host_key` (user@host), ref-counted by tab IDs. Last tab detaches → tunnel killed.
-
-**Auto-enable:** SSH sessions detected via `getPtyInfo()` foreground_command. For restore/clone SSH: 5s delay after SSH replay. For ad-hoc SSH: 10s delayed check. Manual via context menu.
-
-**Remote setup:** Lockfile and `~/.claude.json` registration are written via a separate background SSH connection (`ssh_run_setup`), **not** through the user's interactive PTY. This prevents command injection into running programs (e.g. Claude Code). The setup script uses shell variables for JSON data to avoid nested quoting issues, and pipes JSON to python3/jq via stdin.
-
-**Remote cleanup:** Stale lockfile detection on reconnect tests dead ports via `/dev/tcp/localhost/{port}`. No EXIT trap (background SSH has no persistent shell on remote).
-
-**Port allocation:** `ssh -v -R 0:...` lets SSH pick a free remote port. The `-v` flag is required because ControlMaster mux clients print nothing without it. Port parsed from both stdout and stderr (direct connections use stderr, mux clients use stderr with `-v`). Uses `tokio::select!` to read both streams concurrently.
-
-**ControlMaster mux:** Tunnel and setup SSH commands do **not** use `-o ControlMaster=no` — this lets them multiplex over the user's existing authenticated socket (free auth for password/passphrase users). Mux clients exit immediately after setup (the master holds the forwarding), so the background process monitor only removes tunnel state on error exits, not clean exits.
-
-**Bridge status UI:** Reactive `$state` Map in `sshMcpBridge.svelte.ts` drives a bolt icon in TerminalTabs (green=connected, dim=failed). Failure dispatches an in-app notification via `notificationDispatch`.
-
-### Editor Registry
-
-`editorRegistry.svelte.ts` maintains a map of open editor views, used by Claude Code tools to query editor state (dirty tabs, file paths, selections) and by DiffPane for tracking.
-
-## OSC 8 File Hyperlinks (`l` Command)
-
-The `l` shell function wraps `ls -la` and emits OSC 8 hyperlinks (`file://hostname/path`) for each file, making filenames clickable in the terminal.
-
-**Injection**: Always injected via `PROMPT_COMMAND` (bash) or ZDOTDIR shim (zsh) in `pty/manager.rs`, regardless of shell integration preference. Also available in remote shells via `shellIntegration.ts`.
-
-**Multi-file support**: `l Downloads/*.jpg` works — awk branch detects single-dir vs multi-file arguments and resolves each path individually.
-
-**Link handling**: `TerminalPane.svelte` registers a `linkHandler` for `file://` URIs. On activate, calls `openFile()` from `openFile.ts`. Context menu adds "Copy Full Path" for hovered file links (snapshot to `contextMenuLinkUri` at open time — hover `leave` fires before menu interaction).
-
-**Underline behavior**: xterm.js hardcodes `UnderlineStyle.DASHED` for any cell with a `urlId`. We override with `.xterm-underline-5 { text-decoration: none; }` (no `!important` — lets xterm's inline hover style override the class rule). Result: no underline at rest, underline on hover.
-
-**Scrollback cleanup**: The serialize addon emits SGR `4` for OSC 8 linked cells but doesn't preserve `urlId`. On restore, these become orphaned underlines. Stripped before writing to terminal:
-```typescript
-const cleaned = scrollback.replace(/\x1b\[([0-9;]*)m/g, (_match, params) => {
-  const filtered = params.split(';').filter(p => p !== '4' && p !== '24');
-  return filtered.length === 0 ? '' : `\x1b[${filtered.join(';')}m`;
-});
-```
-
-**File path detection**: `filePathDetector.ts` implements xterm's `ILinkProvider`. Only active when Cmd/Ctrl is held (reduces regex overhead). Detects absolute paths, `~/`, `./`, `../`, and relative paths with extensions. Skips `d`-prefixed lines from `ls -l` (directories).
-
-## Split Cloning (Pane Duplication)
-
-`splitPaneWithContext()` in `workspaces.svelte.ts` handles pane duplication:
-
-1. Serializes scrollback from source terminal
-2. Gets PTY info via `getPtyInfo()` — returns local cwd (via lsof) and foreground SSH command (via process tree)
-3. Creates new pane with scrollback pre-populated
-4. Copies shell history (`copyTabHistory`)
-5. Stores split context for the new TerminalPane to consume on mount
-
-### SSH Session Cloning
-
-When source has active SSH, `buildSshCommand()` in TerminalPane.svelte constructs:
-```
-ssh -t user@host 'cd ~/path && exec $SHELL -l'
-```
-- Atomic: cd + shell exec happen before prompt appears
-- Works with interactive password prompts (auth is during SSH handshake)
-
-### Remote CWD Detection
-
-Priority: OSC 7 (if not stale) → prompt pattern heuristic.
-
-**Stale OSC 7 detection**: Compare OSC 7 cwd with lsof-reported local cwd. If equal, OSC 7 is stale (set by local shell before SSH started).
-
-**Prompt patterns**: User-configurable in Preferences > Shell. PS1-like format compiled to RegExp at runtime. See `src/lib/utils/promptPattern.ts`.
-
-| Placeholder | Meaning | Compiles to |
-|-------------|---------|-------------|
-| `\h` | hostname | `\S+` |
-| `\u` | username | `\S+` |
-| `\d` | directory (capture group) | `(.+?)` |
-| `\p` | prompt char ($#%>) | `[$#%>]` |
-
-### Shell Escaping
-
-`shellEscapePath()` handles quoting for remote shells:
-- `~` left unquoted for expansion, rest single-quoted: `~/path` → `~/'path'`
-- Single quotes in paths escaped as `'\''`
-
-## OSC State
-
-`terminals.svelte.ts` manages per-terminal OSC state (title, cwd, cwdHost):
-
-- **OSC 0/2** (title): Updates tab display name unless `tab.custom_name` is true
-- **OSC 7** (cwd): Parses `file://hostname/path` URL, stores both cwd and cwdHost
-- **OSC 133** (FinalTerm): Command completion detection — see Shell Integration below
-- **Listener API**: `onOscChange(fn)` for reactive subscriptions (used by TerminalTabs)
-
-## Shell Integration
-
-OSC 133 (FinalTerm protocol) detects command start/finish for tab indicators. Controlled by `shell_integration` preference.
-
-**Protocol**: `A` = prompt start, `B` = command start, `D;exitcode` = command finished
-
-**Local hooks** (Rust `pty/manager.rs`): Injected via env vars / ZDOTDIR shim before the shell starts.
-
-**Remote hooks** (`src/lib/utils/shellIntegration.ts`): Two context menu modes:
-- **Setup Shell Integration** — sends a one-liner to the current session (temporary, lost on shell exit). Uses `buildShellIntegrationSnippet()`.
-- **Install Shell Integration** — writes clean hook functions to `~/.bashrc` or `~/.zshrc` via heredoc (permanent, idempotent). Uses `buildInstallSnippet()`.
-
-**Tab indicators** (`activity.svelte.ts`): Priority: completed (checkmark/cross) > prompt (›) > activity dot. Shell state only shown on inactive tabs. `B`/`C` sequences clear indicators (new command started), they do NOT show a spinner — long-running interactive programs (SSH, vim) make a "running" state unreliable.
-
-**Bash hook anatomy**:
-```
-PROMPT_COMMAND="__aiterm_ec=$?; printf D; printf A; printf title; __aiterm_at_prompt=1"
-trap '[[ "$__aiterm_at_prompt" == 1 ]] && __aiterm_at_prompt= && printf B' DEBUG
-```
-
-**Zsh hook anatomy**: Uses `add-zsh-hook precmd` (for D+A) and `add-zsh-hook preexec` (for B).
-
-## Dev/Production Isolation
-
-Dev and production builds use **separate data directories** so they can run simultaneously without state corruption:
-
-- **Dev** (`tauri:dev`): `~/Library/Application Support/com.aiterm.dev/`
-- **Production** (`tauri:build`): `~/Library/Application Support/com.aiterm.app/`
-
-Controlled by `cfg!(debug_assertions)` in `state/persistence.rs` → `app_data_slug()`. The window title is set to "aiTerm (Dev)" in debug builds. `APP_DISPLAY_NAME` is "aiTermDev" (dev) or "aiTerm" (prod) — used in Claude Code lock files and MCP server registration. The sidebar shows a DEV badge via `+layout.svelte` exposing an `isDevMode` flag.
-
-**Do not** hardcode `com.aiterm.app` anywhere — always use `app_data_slug()` in Rust. State files, backups, and temp files all derive their paths from this slug.
-
-## New Tab Context Inheritance
-
-When creating a new tab (Cmd+T / + button), the workspace's dominant CWD or SSH setup is inherited:
-
-1. Queries live PTY info (`getPtyInfo`) for all terminal tabs in the active pane
-2. Builds composite keys: `ssh\0command\0remoteCwd` for SSH tabs, `local\0cwd` for local tabs
-3. Counts occurrences — the most common setup wins
-4. On ties, the active tab's setup is preferred (considered the "most recent" context)
-5. SSH setups inherit both the SSH command and remote CWD; local setups inherit just the CWD
-
-**New workspace insert order**: New workspaces insert after the currently active workspace (not appended to end), persisted via `reorderWorkspaces`.
-
-## Important Conventions
-
-- **Keyboard shortcuts**: Defined in `+layout.svelte` handleKeydown
-- **Persistence**: State saved to `<data_dir>/<app_slug>/aiterm-state.json` (see Dev/Production Isolation above)
-- **Terminal lifecycle**: Created in TerminalPane onMount, PTY spawned immediately
-- **Scrollback**: Saved on destroy, periodically (based on preferences), and on app close
-
-## Triggers
-
-Triggers watch terminal output for regex patterns and fire actions. Configured in Preferences > Triggers.
-
-- **Engine**: `src/lib/stores/triggers.svelte.ts` — `processOutput()` called from TerminalPane's PTY listener
-- **Flow**: raw PTY bytes → redraw detection → ANSI-stripped → buffer (append or replace) → regex match → dedup check → fire
-- **Match modes**: `regex` (default), `plain_text`, `variable` (evaluates variable-condition expressions)
-- **Variable conditions** (`src/lib/triggers/variableCondition.ts`): Expression parser supporting `a || b && c`, `!x`, `x == "value"`, `x != "value"`. Cached AST.
-- **Redraw detection**: Raw PTY data is tested for cursor-repositioning sequences (`\e[A`, `\e[H`, `\e[J`) before ANSI stripping. If detected, the buffer is **replaced** (not appended) with the current chunk's stripped text, since TUI redraws overwrite existing content.
-- **Dedup**: Tracks last matched text + timestamp per trigger per tab. If the exact same text matches again within 10s (`DEDUP_WINDOW_MS`), the match is consumed from the buffer but the trigger doesn't fire. Prevents TUI apps (Claude Code / Ink) from re-triggering on redrawn content. On TUI redraws, the dedup timestamp is refreshed (`prev.ts = now`) so the window stays alive while redraws continue, but eventually expires for genuinely new matches.
-- **Auto-resume suppression**: Tabs with auto-resume commands use a 15s suppression window (vs 2s for normal tabs) before triggers start firing. This prevents false notifications from SSH + Claude auto-resume startup sequences.
-- **Buffer consumption**: Matched text is always consumed from the buffer, even when blocked by cooldown or dedup. This prevents stale matches from accumulating and re-firing after cooldown expires.
-- **Actions**: `notify` (dispatches via notification system), `send_command` (writes to PTY), `enable_auto_resume`, `set_tab_state`
-- **Variables**: Capture groups extracted into named variables (`%varName`), persisted per-tab via `trigger_variables`
-- **Variable interpolation**: `interpolateVariables(tabId, text)` replaces `%varName` tokens — used in tab titles, auto-resume commands, notification messages
-- **Cooldown**: Per-trigger per-tab, prevents rapid re-firing
-- **Default triggers** (`src/lib/triggers/defaults.ts`): 6+ app-provided templates with stable `default_id`:
-  - `claude-resume` — captures `claude --resume` command
-  - `claude-session-id` — extracts UUID from `/status` output
-  - `claude-question` — detects "Do you want to proceed?" prompts
-  - `claude-plan-ready` — detects plan ready message
-  - `claude-compacting` — notifies during context compaction
-  - `claude-compaction-complete` — alerts when compaction finishes
-  - `claude-auto-resume` — variable-mode trigger for auto-resume enablement
-- Seeded on Preferences page mount via `seedDefaultTriggers()`. Users can edit; "Reset" restores template values. Deleted defaults tracked in `hidden_default_triggers`.
 
 ## Notifications
 
@@ -504,11 +179,18 @@ Three-mode notification system controlled by `notification_mode` preference:
 
 Architecture: `notificationDispatch.ts` routes `dispatch(title, body, type, source?)` calls based on mode + focus state. Toast UI in `Toast.svelte` (rendered in `+layout.svelte`), store in `toasts.svelte.ts` (max 3 visible, configurable auto-dismiss).
 
-**Deep-linking**: Both toasts and OS notifications carry `source.tabId`. Clicking a toast calls `navigateToTab(tabId)` (exported from `workspaces.svelte.ts`). OS notifications pass `tabId` via the `extra` field; `+layout.svelte` registers an `onAction` listener to focus the window and navigate. **Note**: `onAction` only fires on mobile (iOS/Android) — on desktop, `tauri-plugin-notification` uses `notify_rust` which is fire-and-forget with no click callback. The `extra` data and listener are prep work for future mobile support.
+**Deep-linking**: Both toasts and OS notifications carry `source.tabId`. Clicking a toast calls `navigateToTab(tabId)`. **Note**: `onAction` only fires on mobile (iOS/Android) — desktop `notify_rust` is fire-and-forget.
 
-**Sound**: `playNotificationSound()` plays built-in chirp (Web Audio: two-tone 800Hz + 1200Hz) or system sound via Rust backend. Configurable sound choice and volume in preferences.
+**Command completion** (`notifications.svelte.ts`): Only notifies if tab is not visible and command duration exceeds `notify_min_duration` (default 30s).
 
-**Command completion** (`notifications.svelte.ts`): Self-initializing store that subscribes to `activityStore.onCommandStart/onCommandComplete`. Only notifies if tab is not visible and command duration exceeds `notify_min_duration` (default 30s).
+## Dev/Production Isolation
+
+Dev and production builds use **separate data directories** so they can run simultaneously without state corruption:
+
+- **Dev** (`tauri:dev`): `~/Library/Application Support/com.aiterm.dev/`
+- **Production** (`tauri:build`): `~/Library/Application Support/com.aiterm.app/`
+
+Controlled by `cfg!(debug_assertions)` in `state/persistence.rs` → `app_data_slug()`. **Do not** hardcode `com.aiterm.app` anywhere — always use `app_data_slug()` in Rust.
 
 ## Keyboard Shortcuts
 
@@ -517,29 +199,19 @@ Architecture: `notificationDispatch.ts` routes `dispatch(title, body, type, sour
 | Cmd+T | New tab |
 | Cmd+W | Close tab (or pane if last tab) |
 | Cmd+1-9 | Switch to tab |
-| Cmd+Shift+[ | Previous tab |
-| Cmd+Shift+] | Next tab |
+| Cmd+Shift+[ / ] | Previous / next tab |
 | Cmd+Shift+T | Duplicate tab |
 | Cmd+Shift+R | Reload tab (duplicate + close original) |
 | Cmd+D | Split pane (duplicate current tab) |
 | Cmd+N | New workspace |
-| Cmd+O | Open file in editor tab (native dialog, defaults to terminal CWD) |
+| Cmd+O | Open file in editor tab |
 | Cmd+S | Save file (editor tabs only) |
-| Cmd+F | Find/replace (editor tabs only; terminal search otherwise) |
+| Cmd+F | Find/replace (editor tabs) / terminal search |
 | Cmd+Shift+N | Toggle notes panel |
 | Cmd+, | Preferences |
 | Cmd+/ | Help |
 
-**Note**: Cmd+F, Cmd+K, Cmd+S, Cmd+D are intercepted by `+layout.svelte` in capture phase. When the active tab is an editor tab, these are passed through to CodeMirror by checking `activeTabIsEditor` and returning early.
-
-## xterm.js Notes
-
-- Terminal created with `new Terminal(options)` in TerminalPane
-- Required addons: FitAddon (resize), SerializeAddon (scrollback), WebLinksAddon (clickable links), WebglAddon (GPU rendering)
-- **WebGL renderer**: `@xterm/addon-webgl` provides GPU-accelerated rendering. Managed per-terminal visibility — loaded when tab becomes visible, disposed when hidden. Browsers cap WebGL contexts at ~8-16 per page, so only visible terminals hold contexts. `terminals.svelte.ts` tracks active WebGL tabs via a Set; sidebar footer shows a status dot (green=WebGL, yellow=DOM fallback) for the active tab. On context loss, the addon auto-disposes and falls back to DOM renderer.
-- Call `fitAddon.fit()` after container resize or font changes
-- Options can be updated at runtime via `terminal.options.propertyName`
-- Serialize scrollback with `serializeAddon.serialize()` for persistence
+Defined in `+layout.svelte` handleKeydown. Cmd+F/K/S/D intercepted in capture phase — returns early for editor tabs to let CodeMirror handle them.
 
 ## Type Safety
 
@@ -576,22 +248,9 @@ Architecture: `notificationDispatch.ts` routes `dispatch(title, body, type, sour
 
 Uses `tauri-plugin-log` — all logs go to a log file, stdout, and (in dev) browser devtools via `attachConsole()`. Rust and frontend share the same log file.
 
-**Rust** — use `log` crate macros (no `use` needed, `log` is a dependency):
-```rust
-log::info!("Loading state from {:?}", path);
-log::warn!("Backup failed: {}", e);
-log::error!("Fatal: {}", e);
-log::debug!("Verbose detail");  // only appears in dev builds
-```
-
-**Frontend** — import from `@tauri-apps/plugin-log`:
-```typescript
-import { error, info, warn, debug } from '@tauri-apps/plugin-log';
-error(`Failed to spawn PTY: ${e}`);
-info('State loaded');
-```
-
-Do **not** use `eprintln!()` or `console.error()` — they bypass the log file and are invisible in production.
+**Rust** — use `log` crate macros (`log::info!`, `log::warn!`, `log::error!`, `log::debug!`).
+**Frontend** — import from `@tauri-apps/plugin-log` (`error`, `info`, `warn`, `debug`).
+Do **not** use `eprintln!()` or `console.error()` — they bypass the log file.
 
 ### Log file locations
 
@@ -600,23 +259,6 @@ Do **not** use `eprintln!()` or `console.error()` — they bypass the log file a
 | **macOS** | `~/Library/Logs/com.aiterm.app/aiterm-dev.log` | `~/Library/Logs/com.aiterm.app/aiterm.log` |
 | **Linux** | `~/.config/aiterm/logs/aiterm-dev.log` | `~/.config/aiterm/logs/aiterm.log` |
 | **Windows** | `%APPDATA%\aiterm\logs\aiterm-dev.log` | `%APPDATA%\aiterm\logs\aiterm.log` |
-
-### Reading logs during development
-
-Logs also stream to stdout (the terminal running `npm run tauri:dev`). To tail the log file directly:
-
-```bash
-# macOS
-tail -f ~/Library/Logs/com.aiterm.app/aiterm-dev.log
-
-# Linux
-tail -f ~/.config/aiterm/logs/aiterm-dev.log
-
-# Windows (PowerShell)
-Get-Content "$env:APPDATA\aiterm\logs\aiterm-dev.log" -Wait
-```
-
-In dev builds, Rust-side logs also appear in the browser devtools console (via the `Webview` target + `attachConsole()` in `+layout.svelte`).
 
 ### State file
 
@@ -627,26 +269,10 @@ Check `~/Library/Application Support/com.aiterm.dev/aiterm-state.json` (dev) or 
 - **Async in onMount**: Don't make onMount async, use IIFE or fire-and-forget instead
 - **Effect cleanup**: Return cleanup function from `$effect()` when setting up intervals/listeners
 - **Map reactivity**: When mutating Maps in stores, create new Map: `instances = new Map(instances)`
-- **Terminal options**: Can update `terminal.options.*` at runtime, call `fitAddon.fit()` after font changes
 - **PTY lifecycle**: Kill PTY in onDestroy, save scrollback before disposal
-- **Single quotes prevent ~ expansion**: `cd '~/path'` fails on remote. Use `cd ~/'path'` instead
 - **`\u` in Svelte templates**: Interpreted as unicode escape. Use expression syntax: `{'\\u'}`
-- **Stale OSC 7 on SSH**: Local shell sets OSC 7 cwd before SSH starts. If remote doesn't emit OSC 7, the local value persists — compare with lsof cwd to detect
-- **Shell escaping layers**: JS → local shell → SSH → remote shell. `$SHELL` must not be escaped (remote needs to expand it). Single quotes protect from local expansion but prevent ~ expansion
-- **PROMPT_COMMAND guard flag must be last**: `__aiterm_at_prompt=1` MUST be the final item in PROMPT_COMMAND. If other commands follow it (e.g. title printf), the DEBUG trap fires spuriously during PROMPT_COMMAND and clears shell state.
-- **Bash parses all if/elif branches**: Even non-executed branches must be syntactically valid. Zsh function bodies `(){ cmd }` need `; }` to be valid bash syntax.
 - **Svelte $effect reactive loops with stores**: `clearFoo()` that reads `$state` inside `$effect` subscribes the effect to that state. Wrap in `untrack()` to prevent re-triggering.
-- **OSC 133 replayed from scrollback**: Restored scrollback replays OSC sequences. Gate the OSC 133 handler on `trackActivity` flag (delayed 2s after mount) to ignore stale sequences.
-- **`confirm()` doesn't work in Tauri webviews**: Use inline confirmation UI (e.g. "Save / Discard / Cancel" in tab area) instead of `window.confirm()`.
-- **Capture-phase keyboard shortcuts intercept CodeMirror**: `+layout.svelte` uses `addEventListener('keydown', handler, true)` (capture). For editor-specific shortcuts (Cmd+F, Cmd+K, Cmd+S, Cmd+D), check `activeTabIsEditor` and return early to let events propagate to CodeMirror.
-- **OSC 8 scrollback underlines**: Serialize addon emits SGR 4 for linked cells but strips urlId. Strip `4`/`24` from SGR parameter lists in serialized scrollback before writing to terminal on restore.
-- **Hover state cleared before context menu interaction**: If you snapshot reactive hover state when the context menu opens, the `leave` callback fires as the mouse moves to the menu, clearing it. Use a plain (non-reactive) variable for the snapshot, set it at open time.
-- **TUI redraws cause false triggers and activity**: TUI apps like Claude Code (Ink) redraw on the normal buffer using cursor-up sequences, sending the same stripped text repeatedly. This re-triggers pattern matches and falsely marks background tabs as active. Detect redraws via `\e[A`, `\e[H`, `\e[J` in the raw PTY data *before* ANSI stripping. In triggers: replace buffer instead of appending. In activity: skip `markActive()`. Note: the redraw check in TerminalPane's PTY listener decodes `data` to string separately from `processOutput()` — acceptable since it only runs for non-visible tabs, but worth consolidating if performance becomes a concern.
-- **TUI cursor-up causes viewport scroll jumps**: Ink-style TUI redraws on the normal buffer (not alternate screen) use cursor-up sequences that cause xterm.js to scroll the viewport into the scrollback region. Fix: save `distFromBottom = baseY - viewportY` before `terminal.write()`, restore via `scrollToLine(newBaseY - distFromBottom)` in the write callback. Do NOT use `scrollToBottom()` — that just creates rapid top/bottom flipping.
-- **Tauri PluginListener cleanup**: `onAction()` and similar Tauri plugin listener registrations return `PluginListener` objects, not functions. Clean up with `.unregister()`, not direct invocation.
-- **Tauri notification `onAction` is mobile-only**: `tauri-plugin-notification` v2 uses `notify_rust` on desktop, which is fire-and-forget — no click callback, `extra` data discarded. `onAction`/`onNotificationReceived` events only fire on iOS/Android. The `extra.tabId` and `onAction` listener in `+layout.svelte` are prep for future mobile support.
+- **`confirm()` doesn't work in Tauri webviews**: Use inline confirmation UI instead of `window.confirm()`.
+- **Tauri PluginListener cleanup**: `onAction()` and similar return `PluginListener` objects, not functions. Clean up with `.unregister()`.
 - **Serde round-trip pitfall**: Rust `skip_serializing_if = "Option::is_none"` omits null fields → loaded JS objects have `undefined` instead of `null`. Use field-by-field comparison with `?? null` normalization, NOT `JSON.stringify`.
-- **SSH ControlMaster on restore**: Users with `ControlMaster auto` get "socket already exists" warnings. `buildSshCommand()` injects `-o ControlMaster=no`, and `cleanSshCommand()` strips it (+ `-t`) before rebuilding to prevent flag accumulation across restore cycles.
-- **SSH ControlMaster mux silent output**: When SSH multiplexes through an existing master socket, `ssh -R 0:...` prints nothing to stdout or stderr without `-v`. The "Allocated port" message only appears with verbose mode. Additionally, the mux client exits immediately with code 0 after setting up the forwarding — the master process holds the tunnel. Background tunnel monitors must not clean up state on clean exit.
-- **SSH background command quoting**: Shell commands sent via `ssh user@host 'script'` must use newlines (not `;`) as separators — `do;`, `then;`, `else;` are syntax errors. JSON data should be stored in shell variables and passed to python3/jq via stdin to avoid nested quote hell.
-- **WebGL context limits**: Browsers cap WebGL contexts at ~8-16 per page. If all terminals load WebGL at once, older contexts are evicted and fall back to DOM renderer. Solution: only load WebGL addon on visible terminals, dispose when hidden. Track per-tab WebGL state via Set in `terminals.svelte.ts`.
+- **New workspace insert order**: New workspaces insert after the currently active workspace (not appended to end), persisted via `reorderWorkspaces`.

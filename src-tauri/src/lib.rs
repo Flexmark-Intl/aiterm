@@ -2,12 +2,13 @@ mod claude_code;
 mod commands;
 mod pty;
 mod state;
+mod terminal;
 
 pub const APP_DISPLAY_NAME: &str = if cfg!(debug_assertions) { "aiTermDev" } else { "aiTerm" };
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-use state::{load_state, AppState, WindowData, Workspace};
-use state::persistence::migrate_app_data;
+use state::{load_state, save_state, AppState, WindowData, Workspace};
+use state::persistence::{migrate_app_data, migrate_scrollback_to_db};
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
 use tauri::menu::{AboutMetadata, MenuBuilder, MenuItem, SubmenuBuilder};
@@ -41,13 +42,16 @@ fn build_log_plugin() -> tauri_plugin_log::Builder {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let app_state = Arc::new(AppState::default());
+    let app_state = Arc::new(AppState::new());
 
     // Load persisted state and run migration
     {
         let mut data = app_state.app_data.write();
         *data = load_state();
         migrate_app_data(&mut data);
+        migrate_scrollback_to_db(&mut data, &app_state.scrollback_db);
+        // Flush the cleaned JSON (scrollback stripped) to disk
+        let _ = save_state(&data);
 
         // Ensure at least one window exists (fresh install)
         if data.windows.is_empty() {
@@ -299,6 +303,20 @@ pub fn run() {
             commands::terminal::get_pty_info,
             commands::terminal::read_clipboard_file_paths,
             commands::terminal::detect_windows_shells,
+            commands::terminal::scroll_terminal,
+            commands::terminal::scroll_terminal_to,
+            commands::terminal::get_terminal_scrollback_info,
+            commands::terminal::search_terminal,
+            commands::terminal::serialize_terminal,
+            commands::terminal::restore_terminal_scrollback,
+            commands::terminal::resize_terminal_grid,
+            commands::terminal::clear_terminal_scrollback,
+            commands::terminal::get_terminal_selection_text,
+            commands::terminal::get_terminal_recent_text,
+            commands::terminal::save_terminal_scrollback,
+            commands::terminal::restore_terminal_from_saved,
+            commands::terminal::has_saved_scrollback,
+            commands::terminal::get_saved_scrollback_text,
             commands::workspace::get_app_data,
             commands::workspace::create_workspace,
             commands::workspace::delete_workspace,

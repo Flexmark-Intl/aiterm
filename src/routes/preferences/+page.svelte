@@ -104,16 +104,13 @@
 
   async function handleExportState() {
     try {
-      const compress = preferencesStore.backupCompress;
       const excludeScrollback = preferencesStore.backupExcludeScrollback;
-      const ext = compress ? 'gz' : 'json';
-      const filterName = compress ? 'Compressed JSON' : 'JSON';
       const path = await dialogSave({
-        defaultPath: backupFilename(compress),
-        filters: [{ name: filterName, extensions: [ext] }],
+        defaultPath: backupFilename(),
+        filters: [{ name: 'Compressed JSON', extensions: ['gz'] }],
       });
       if (path) {
-        await exportState(path, excludeScrollback, compress);
+        await exportState(path, excludeScrollback);
         backupStatus = 'State exported successfully.';
         setTimeout(() => { backupStatus = null; }, 3000);
       }
@@ -1589,6 +1586,48 @@
         {#if preferencesStore.claudeCodeIde}
           <div class="setting" style="align-items: flex-start;">
             <div>
+              <label for="claude-code-hooks">Enable Hooks Integration</label>
+              <p class="setting-hint">
+                Registers lifecycle hooks so Claude Code reports session state to aiTerm
+                (active/idle/permission tab indicators). Requires restart.
+              </p>
+            </div>
+            <button
+              id="claude-code-hooks"
+              class="toggle"
+              class:active={preferencesStore.claudeCodeHooks}
+              onclick={() => preferencesStore.setClaudeCodeHooks(!preferencesStore.claudeCodeHooks)}
+              aria-pressed={preferencesStore.claudeCodeHooks}
+              aria-label="Toggle hooks integration"
+            >
+              <span class="toggle-knob"></span>
+            </button>
+          </div>
+
+          {#if preferencesStore.claudeCodeHooks}
+            <div class="setting" style="align-items: flex-start;">
+              <div>
+                <label for="claude-code-auto-resume">Enable Auto-Resume via Hooks</label>
+                <p class="setting-hint">
+                  Automatically captures session IDs and configures auto-resume when Claude starts.
+                  No screen-scraping triggers needed.
+                </p>
+              </div>
+              <button
+                id="claude-code-auto-resume"
+                class="toggle"
+                class:active={preferencesStore.claudeCodeAutoResume}
+                onclick={() => preferencesStore.setClaudeCodeAutoResume(!preferencesStore.claudeCodeAutoResume)}
+                aria-pressed={preferencesStore.claudeCodeAutoResume}
+                aria-label="Toggle hooks-based auto-resume"
+              >
+                <span class="toggle-knob"></span>
+              </button>
+            </div>
+          {/if}
+
+          <div class="setting" style="align-items: flex-start;">
+            <div>
               <label for="claude-code-ide-ssh">Enable IDE Integration over SSH</label>
               <p class="setting-hint">
                 Automatically creates a secure reverse SSH tunnel when you connect to a remote server,
@@ -1619,22 +1658,6 @@
         <p class="section-desc">
           These settings apply to both manual exports and scheduled backups.
         </p>
-
-        <div class="setting">
-          <div>
-            <label for="backup-compress">Compress</label>
-            <p class="setting-hint">Save as .json.gz instead of .json</p>
-          </div>
-          <button
-            class="toggle"
-            class:active={preferencesStore.backupCompress}
-            onclick={() => preferencesStore.setBackupCompress(!preferencesStore.backupCompress)}
-            aria-pressed={preferencesStore.backupCompress}
-            aria-label="Toggle backup compression"
-          >
-            <span class="toggle-knob"></span>
-          </button>
-        </div>
 
         <div class="setting">
           <div>

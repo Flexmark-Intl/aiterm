@@ -660,6 +660,12 @@ pub struct Preferences {
     /// Enable MCP bridge over SSH (reverse tunnel to expose local MCP tools to remote Claude Code).
     #[serde(default = "default_true")]
     pub claude_code_ide_ssh: bool,
+    /// Enable Claude Code hooks integration (registers lifecycle hooks in ~/.claude/settings.json).
+    #[serde(default = "default_true")]
+    pub claude_code_hooks: bool,
+    /// Enable hooks-based auto-resume (initSession sets session ID, auto-configures resume).
+    #[serde(default)]
+    pub claude_code_auto_resume: bool,
     /// Windows shell preference: "powershell", "pwsh", "cmd", "gitbash", "wsl"
     #[serde(default = "default_windows_shell")]
     pub windows_shell: String,
@@ -672,8 +678,9 @@ pub struct Preferences {
     /// Scheduled backup interval: "off", "hourly", "daily", "weekly", "monthly"
     #[serde(default)]
     pub backup_interval: String,
-    /// Compress backups with gzip
-    #[serde(default = "default_true")]
+    /// Deprecated: exports are always compressed now. Kept for deserialization compat.
+    #[serde(default = "default_true", skip_serializing)]
+    #[allow(dead_code)]
     pub backup_compress: bool,
     /// Exclude terminal scrollback from backups
     #[serde(default = "default_backup_exclude_scrollback")]
@@ -736,6 +743,8 @@ impl Default for Preferences {
             claude_triggers_prompted: false,
             claude_code_ide: true,
             claude_code_ide_ssh: true,
+            claude_code_hooks: true,
+            claude_code_auto_resume: false,
             windows_shell: default_windows_shell(),
             file_link_action: default_file_link_action(),
             backup_directory: None,

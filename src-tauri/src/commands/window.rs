@@ -91,6 +91,18 @@ pub fn duplicate_window(
             }
         }
 
+        // Move scrollback from cloned tabs into SQLite
+        for ws in &mut new_win.workspaces {
+            for pane in &mut ws.panes {
+                for tab in &mut pane.tabs {
+                    if let Some(ref sb) = tab.scrollback {
+                        let _ = state.scrollback_db.save(&tab.id, sb);
+                        tab.scrollback = None;
+                    }
+                }
+            }
+        }
+
         app_data.windows.push(new_win);
         app_data.clone()
     };

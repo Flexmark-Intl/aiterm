@@ -8,7 +8,30 @@ use crate::state::{save_state, AppState, Pane, Preferences, Tab, Workspace};
 use crate::state::workspace::WorkspaceNote;
 use crate::state::persistence::{app_data_slug, parse_state};
 use crate::state::workspace::{EditorFileInfo, SplitDirection};
+use crate::state::ScrollbackDb;
 use crate::commands::window::{TabContext, clone_workspace_with_id_mapping};
+
+/// Extract any scrollback from imported AppData tabs into SQLite and clear from structs.
+fn migrate_imported_scrollback(data: &mut crate::state::AppData, db: &ScrollbackDb) {
+    for win in &mut data.windows {
+        for ws in &mut win.workspaces {
+            for pane in &mut ws.panes {
+                for tab in &mut pane.tabs {
+                    if let Some(ref sb) = tab.scrollback {
+                        let _ = db.save(&tab.id, sb);
+                        tab.scrollback = None;
+                    }
+                }
+            }
+            for tab in &mut ws.archived_tabs {
+                if let Some(ref sb) = tab.scrollback {
+                    let _ = db.save(&tab.id, sb);
+                    tab.scrollback = None;
+                }
+            }
+        }
+    }
+}
 
 #[tauri::command]
 pub fn exit_app(app: tauri::AppHandle, state: State<'_, Arc<AppState>>) {
@@ -18,8 +41,9 @@ pub fn exit_app(app: tauri::AppHandle, state: State<'_, Arc<AppState>>) {
         let _ = tx.send(true);
     }
     let port = *state.claude_code_port.read();
+    let auth = state.claude_code_auth.read().clone().unwrap_or_default();
     if let Some(port) = port {
-        crate::claude_code::lockfile::delete_lockfile(port);
+        crate::claude_code::lockfile::delete_lockfile(port, &auth);
     }
 
     // Kill all SSH MCP tunnels
@@ -75,9 +99,17 @@ pub fn create_workspace(window: tauri::Window, state: State<'_, Arc<AppState>>, 
 #[tauri::command]
 pub fn delete_workspace(window: tauri::Window, state: State<'_, Arc<AppState>>, workspace_id: String) -> Result<(), String> {
     let label = window.label().to_string();
-    let data_clone = {
+    let (data_clone, tab_ids) = {
         let mut app_data = state.app_data.write();
         let win = app_data.window_mut(&label).ok_or("Window not found")?;
+        // Collect all tab IDs (active + archived) before removal for SQLite cleanup
+        let tab_ids: Vec<String> = win.workspaces.iter()
+            .filter(|w| w.id == workspace_id)
+            .flat_map(|w| {
+                w.panes.iter().flat_map(|p| p.tabs.iter().map(|t| t.id.clone()))
+                    .chain(w.archived_tabs.iter().map(|t| t.id.clone()))
+            })
+            .collect();
         let old_index = win.workspaces.iter().position(|w| w.id == workspace_id).unwrap_or(0);
         win.workspaces.retain(|w| w.id != workspace_id);
         if win.active_workspace_id.as_ref() == Some(&workspace_id) {
@@ -85,8 +117,12 @@ pub fn delete_workspace(window: tauri::Window, state: State<'_, Arc<AppState>>, 
             let adjacent = old_index.min(win.workspaces.len().saturating_sub(1));
             win.active_workspace_id = win.workspaces.get(adjacent).map(|w| w.id.clone());
         }
-        app_data.clone()
+        (app_data.clone(), tab_ids)
     };
+    // Clean up scrollback from SQLite
+    for id in &tab_ids {
+        let _ = state.scrollback_db.delete(id);
+    }
     save_state(&data_clone)
 }
 
@@ -120,7 +156,7 @@ pub fn split_pane(
     editor_file: Option<EditorFileInfo>,
 ) -> Result<Pane, String> {
     let label = window.label().to_string();
-    let mut new_pane = if let Some(file_info) = editor_file {
+    let new_pane = if let Some(file_info) = editor_file {
         let name = file_info
             .file_path
             .rsplit('/')
@@ -139,8 +175,8 @@ pub fn split_pane(
         Pane::new("Terminal".to_string())
     };
     if let Some(ref sb) = scrollback {
-        if let Some(tab) = new_pane.tabs.first_mut() {
-            tab.scrollback = Some(sb.clone());
+        if let Some(tab) = new_pane.tabs.first() {
+            let _ = state.scrollback_db.save(&tab.id, sb);
         }
     }
     let data_clone = {
@@ -170,9 +206,16 @@ pub fn delete_pane(
     pane_id: String,
 ) -> Result<(), String> {
     let label = window.label().to_string();
-    let data_clone = {
+    let (data_clone, tab_ids) = {
         let mut app_data = state.app_data.write();
         let win = app_data.window_mut(&label).ok_or("Window not found")?;
+        // Collect tab IDs before removal for SQLite cleanup
+        let tab_ids: Vec<String> = win.workspaces.iter()
+            .filter(|w| w.id == workspace_id)
+            .flat_map(|w| w.panes.iter())
+            .filter(|p| p.id == pane_id)
+            .flat_map(|p| p.tabs.iter().map(|t| t.id.clone()))
+            .collect();
         if let Some(workspace) = win.workspaces.iter_mut().find(|w| w.id == workspace_id) {
             if let Some(ref root) = workspace.split_root {
                 workspace.split_root = root.remove_pane(&pane_id);
@@ -182,8 +225,12 @@ pub fn delete_pane(
                 workspace.active_pane_id = workspace.panes.first().map(|p| p.id.clone());
             }
         }
-        app_data.clone()
+        (app_data.clone(), tab_ids)
     };
+    // Clean up scrollback from SQLite
+    for id in &tab_ids {
+        let _ = state.scrollback_db.delete(id);
+    }
     save_state(&data_clone)
 }
 
@@ -278,6 +325,8 @@ pub fn delete_tab(
         }
         app_data.clone()
     };
+    // Clean up scrollback from SQLite
+    let _ = state.scrollback_db.delete(&tab_id);
     save_state(&data_clone)
 }
 
@@ -488,24 +537,14 @@ pub fn set_split_ratio(
 
 #[tauri::command]
 pub fn set_tab_scrollback(
-    window: tauri::Window,
     state: State<'_, Arc<AppState>>,
-    workspace_id: String,
-    pane_id: String,
     tab_id: String,
     scrollback: Option<String>,
 ) -> Result<(), String> {
-    let label = window.label().to_string();
-    let mut app_data = state.app_data.write();
-    let win = app_data.window_mut(&label).ok_or("Window not found")?;
-    if let Some(workspace) = win.workspaces.iter_mut().find(|w| w.id == workspace_id) {
-        if let Some(pane) = workspace.panes.iter_mut().find(|p| p.id == pane_id) {
-            if let Some(tab) = pane.tabs.iter_mut().find(|t| t.id == tab_id) {
-                tab.scrollback = scrollback;
-            }
-        }
+    match scrollback {
+        Some(ref data) => state.scrollback_db.save(&tab_id, data),
+        None => state.scrollback_db.delete(&tab_id),
     }
-    Ok(())
 }
 
 #[tauri::command]
@@ -774,7 +813,18 @@ pub fn duplicate_workspace(
             .ok_or("Workspace not found")?
             .clone();
 
-        let (cloned, tab_id_map) = clone_workspace_with_id_mapping(&source, &tab_contexts);
+        let (mut cloned, tab_id_map) = clone_workspace_with_id_mapping(&source, &tab_contexts);
+
+        // Move scrollback from cloned tabs into SQLite
+        for pane in &mut cloned.panes {
+            for tab in &mut pane.tabs {
+                if let Some(ref sb) = tab.scrollback {
+                    let _ = state.scrollback_db.save(&tab.id, sb);
+                    tab.scrollback = None;
+                }
+            }
+        }
+
         let result = DuplicateWorkspaceResult {
             workspace: cloned.clone(),
             tab_id_map,
@@ -1165,7 +1215,11 @@ pub fn archive_tab(
         // Store resolved display name for the archive list; preserve original name/custom_name
         tab.archived_name = Some(display_name);
         tab.pty_id = None;
-        tab.scrollback = scrollback;
+        // Write scrollback to SQLite, not the JSON state
+        if let Some(ref sb) = scrollback {
+            let _ = state.scrollback_db.save(&tab.id, sb);
+        }
+        tab.scrollback = None;
         tab.restore_cwd = cwd;
         tab.restore_ssh_command = ssh_command;
         tab.restore_remote_cwd = remote_cwd;
@@ -1238,11 +1292,14 @@ pub fn delete_archived_tab(
         workspace.archived_tabs.retain(|t| t.id != tab_id);
         app_data.clone()
     };
+    // Clean up scrollback from SQLite
+    let _ = state.scrollback_db.delete(&tab_id);
     save_state(&data_clone)
 }
 
 /// Clone app_data and filter out ephemeral diff tabs + optionally strip scrollback.
-pub fn prepare_export(data: &crate::state::AppData, exclude_scrollback: bool) -> crate::state::AppData {
+/// When `!exclude_scrollback`, populates `tab.scrollback` from SQLite so exports include it.
+pub fn prepare_export(data: &crate::state::AppData, exclude_scrollback: bool, db: &crate::state::ScrollbackDb) -> crate::state::AppData {
     let mut filtered = data.clone();
     for win in &mut filtered.windows {
         for ws in &mut win.workspaces {
@@ -1253,15 +1310,20 @@ pub fn prepare_export(data: &crate::state::AppData, exclude_scrollback: bool) ->
                         pane.active_tab_id = pane.tabs.last().map(|t| t.id.clone());
                     }
                 }
-                if exclude_scrollback {
-                    for tab in &mut pane.tabs {
+                for tab in &mut pane.tabs {
+                    if exclude_scrollback {
                         tab.scrollback = None;
+                    } else {
+                        // Populate from SQLite for export
+                        tab.scrollback = db.load(&tab.id).unwrap_or(None);
                     }
                 }
             }
-            if exclude_scrollback {
-                for tab in &mut ws.archived_tabs {
+            for tab in &mut ws.archived_tabs {
+                if exclude_scrollback {
                     tab.scrollback = None;
+                } else {
+                    tab.scrollback = db.load(&tab.id).unwrap_or(None);
                 }
             }
         }
@@ -1270,26 +1332,22 @@ pub fn prepare_export(data: &crate::state::AppData, exclude_scrollback: bool) ->
 }
 
 #[tauri::command]
-pub fn export_state(state: State<'_, Arc<AppState>>, path: String, exclude_scrollback: bool, compress: bool) -> Result<(), String> {
+pub fn export_state(state: State<'_, Arc<AppState>>, path: String, exclude_scrollback: bool) -> Result<(), String> {
     let app_data = state.app_data.read();
-    let filtered = prepare_export(&app_data, exclude_scrollback);
+    let filtered = prepare_export(&app_data, exclude_scrollback, &state.scrollback_db);
 
     let json = serde_json::to_string_pretty(&filtered).map_err(|e| e.to_string())?;
 
-    if compress {
-        use flate2::write::GzEncoder;
-        use flate2::Compression;
-        use std::io::Write;
-        let file = std::fs::File::create(&path)
-            .map_err(|e| format!("Failed to create export file: {}", e))?;
-        let mut encoder = GzEncoder::new(file, Compression::default());
-        encoder.write_all(json.as_bytes())
-            .map_err(|e| format!("Failed to write compressed export: {}", e))?;
-        encoder.finish()
-            .map_err(|e| format!("Failed to finish compression: {}", e))?;
-    } else {
-        std::fs::write(&path, json).map_err(|e| format!("Failed to write export file: {}", e))?;
-    }
+    use flate2::write::GzEncoder;
+    use flate2::Compression;
+    use std::io::Write;
+    let file = std::fs::File::create(&path)
+        .map_err(|e| format!("Failed to create export file: {}", e))?;
+    let mut encoder = GzEncoder::new(file, Compression::default());
+    encoder.write_all(json.as_bytes())
+        .map_err(|e| format!("Failed to write compressed export: {}", e))?;
+    encoder.finish()
+        .map_err(|e| format!("Failed to finish compression: {}", e))?;
 
     log::info!("State exported to {}", path);
     Ok(())
@@ -1309,32 +1367,25 @@ pub fn run_scheduled_backup(state: State<'_, Arc<AppState>>) -> Result<String, S
             .map_err(|e| format!("Failed to create backup directory: {}", e))?;
     }
 
-    let filtered = prepare_export(&app_data, prefs.backup_exclude_scrollback);
+    let filtered = prepare_export(&app_data, prefs.backup_exclude_scrollback, &state.scrollback_db);
     let json = serde_json::to_string_pretty(&filtered).map_err(|e| e.to_string())?;
 
     let (y, mo, da, h, m, _) = now_utc_parts();
     let timestamp = format!("{:04}{:02}{:02}_{:02}{:02}", y, mo, da, h, m);
 
-    let compress = prefs.backup_compress;
-    let ext = if compress { "json.gz" } else { "json" };
-    let filename = format!("aiterm_backup_{}.{}", timestamp, ext);
+    let filename = format!("aiterm_backup_{}.json.gz", timestamp);
     let file_path = dir_path.join(&filename);
 
-    if compress {
-        use flate2::write::GzEncoder;
-        use flate2::Compression;
-        use std::io::Write;
-        let file = std::fs::File::create(&file_path)
-            .map_err(|e| format!("Failed to create backup file: {}", e))?;
-        let mut encoder = GzEncoder::new(file, Compression::default());
-        encoder.write_all(json.as_bytes())
-            .map_err(|e| format!("Failed to write compressed backup: {}", e))?;
-        encoder.finish()
-            .map_err(|e| format!("Failed to finish compression: {}", e))?;
-    } else {
-        std::fs::write(&file_path, json)
-            .map_err(|e| format!("Failed to write backup file: {}", e))?;
-    }
+    use flate2::write::GzEncoder;
+    use flate2::Compression;
+    use std::io::Write;
+    let file = std::fs::File::create(&file_path)
+        .map_err(|e| format!("Failed to create backup file: {}", e))?;
+    let mut encoder = GzEncoder::new(file, Compression::default());
+    encoder.write_all(json.as_bytes())
+        .map_err(|e| format!("Failed to write compressed backup: {}", e))?;
+    encoder.finish()
+        .map_err(|e| format!("Failed to finish compression: {}", e))?;
 
     let path_str = file_path.to_string_lossy().to_string();
     log::info!("Scheduled backup written to {}", path_str);
@@ -1509,6 +1560,9 @@ pub fn import_state_selective(
 ) -> Result<(), String> {
     let mut imported = read_backup_file(&path)?;
 
+    // Extract any scrollback from imported JSON into SQLite
+    migrate_imported_scrollback(&mut imported, &state.scrollback_db);
+
     // Filter to selected workspaces only
     for win in &mut imported.windows {
         win.workspaces.retain(|ws| config.selected_workspace_ids.contains(&ws.id));
@@ -1638,7 +1692,10 @@ pub fn import_state_selective(
 /// Legacy full-replace import (kept for File menu backward compat)
 #[tauri::command]
 pub fn import_state(app: tauri::AppHandle, state: State<'_, Arc<AppState>>, path: String) -> Result<(), String> {
-    let imported = read_backup_file(&path)?;
+    let mut imported = read_backup_file(&path)?;
+
+    // Extract any scrollback from imported JSON into SQLite
+    migrate_imported_scrollback(&mut imported, &state.scrollback_db);
 
     {
         let mut app_data = state.app_data.write();

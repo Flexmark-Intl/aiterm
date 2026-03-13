@@ -48,6 +48,18 @@ pub fn tool_list_response() -> Value {
     serde_json::json!({
         "tools": [
             {
+                "name": "initSession",
+                "description": "Call this tool once at the start of every session (new, resume, fork, compact). Registers your terminal tab ID and session ID so all subsequent tool calls automatically target your tab. Read your tab ID from the SessionStart hook context ('Your aiTerm tab ID is ...') or from the $AITERM_TAB_ID environment variable.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "tabId": { "type": "string", "description": "Your aiTerm tab ID (from SessionStart hook context or $AITERM_TAB_ID env var)" },
+                        "sessionId": { "type": "string", "description": "Your Claude session ID (optional, for session tracking)" }
+                    },
+                    "required": ["tabId"]
+                }
+            },
+            {
                 "name": "getOpenEditors",
                 "description": "Get a list of all currently open editor tabs in the aiTerm IDE. Returns file paths, active state, language, and dirty (unsaved changes) status.",
                 "inputSchema": { "type": "object", "properties": {}, "required": [] }
@@ -278,7 +290,7 @@ pub fn tool_list_response() -> Value {
             },
             {
                 "name": "openNotesPanel",
-                "description": "Open or close the notes panel for the current active tab. The panel shows either tab-level or workspace-level notes depending on the current scope.",
+                "description": "Open or close the notes panel for the current active tab. The panel shows either tab-level or workspace-level notes depending on the current scope. Always call this tool to perform the action — do not rely on previously returned status, as the user may have toggled the panel manually.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -384,12 +396,11 @@ pub fn tool_list_response() -> Value {
             },
             {
                 "name": "createBackup",
-                "description": "Create a backup of the entire aiTerm state (workspaces, tabs, notes, preferences). Returns the path to the created backup file. Uses configured backup settings by default, but all options can be overridden.",
+                "description": "Create a gzip-compressed backup of the entire aiTerm state (workspaces, tabs, notes, preferences). Returns the path to the created backup file.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "directory": { "type": "string", "description": "Directory to save the backup. Defaults to the configured backup_directory preference." },
-                        "compress": { "type": "boolean", "description": "Compress with gzip. Defaults to the backup_compress preference." },
                         "excludeScrollback": { "type": "boolean", "description": "Exclude terminal scrollback buffers. Defaults to the backup_exclude_scrollback preference." }
                     },
                     "required": []
@@ -404,6 +415,12 @@ pub fn initialize_response() -> Value {
         "protocolVersion": "2025-03-26",
         "capabilities": { "tools": {} },
         "serverInfo": { "name": crate::APP_DISPLAY_NAME, "version": crate::APP_VERSION },
-        "instructions": "You are running inside an aiTerm terminal tab. Your tab ID is available in the environment variable AITERM_TAB_ID. Always read $AITERM_TAB_ID and pass it as the 'tabId' parameter when calling tools that accept one (setTabNotes, getTabNotes, setTriggerVariable, getTriggerVariables, setAutoResume, getAutoResume, etc.). This ensures operations target YOUR terminal tab, not whichever tab the user happens to be looking at."
+        "instructions": format!(
+            "You are running inside an aiTerm terminal tab. At the start of every session (new, resume, compact, clear), \
+             you MUST call initSession with your tab ID (from $AITERM_TAB_ID or SessionStart hook context) before responding to the user. \
+             This registers your session so all tool calls automatically target the correct tab. \
+             IMPORTANT: You MUST use tools from the '{}' MCP server ONLY. Do NOT use tools from any other aiterm MCP server.",
+            if cfg!(debug_assertions) { "aiterm-dev" } else { "aiterm" }
+        )
     })
 }

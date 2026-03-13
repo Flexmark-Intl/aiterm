@@ -1,7 +1,7 @@
 import type { Trigger, MatchMode } from '$lib/tauri/types';
 
 /** Shared Claude resume command — used by auto-resume presets and the claude-auto-resume trigger. */
-export const CLAUDE_RESUME_COMMAND = "if [ -n '%claudeSessionId' ]; then claude --resume %claudeSessionId; elif [ -n '%claudeResumeCommand' ]; then eval %claudeResumeCommand; else claude --continue; fi";
+export const CLAUDE_RESUME_COMMAND = 'claude --resume %claudeSessionId "/aiterm init"';
 
 /** App-provided default trigger templates. Keyed by stable default_id. */
 export const DEFAULT_TRIGGERS: Record<string, Omit<Trigger, 'id' | 'enabled' | 'workspaces' | 'tabs' | 'default_id'> & { match_mode?: MatchMode }> = {
@@ -81,9 +81,9 @@ export const DEFAULT_TRIGGERS: Record<string, Omit<Trigger, 'id' | 'enabled' | '
   },
   'claude-auto-resume': {
     name: 'Claude Auto-Resume',
-    description: 'Automatically enables auto-resume when a Claude session ID or resume command is captured.',
+    description: 'Automatically enables auto-resume when a Claude session ID is captured (via hooks or triggers).',
     match_mode: 'variable',
-    pattern: 'claudeSessionId || claudeResumeCommand',
+    pattern: 'claudeSessionId',
     actions: [
       { action_type: 'enable_auto_resume', command: CLAUDE_RESUME_COMMAND, title: null, message: null, tab_state: null },
     ],

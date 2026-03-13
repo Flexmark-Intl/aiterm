@@ -78,24 +78,6 @@ function allTabNames(ws: Workspace): string[] {
 
 const RECENT_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
 
-/**
- * Strip scrollback strings from workspace data for terminals that already have
- * a live xterm instance.  The scrollback is only needed for initial restore —
- * after that it's dead weight in the reactive state that gets duplicated through
- * every `workspaces.map()` mutation and can add up to tens of MB.
- */
-function stripMountedScrollback(wsList: Workspace[]): Workspace[] {
-  for (const ws of wsList) {
-    for (const pane of ws.panes) {
-      for (const tab of pane.tabs) {
-        if (tab.scrollback && terminalsStore.get(tab.id)) {
-          tab.scrollback = null;
-        }
-      }
-    }
-  }
-  return wsList;
-}
 
 function createWorkspacesStore() {
   let windowId = $state<string>('');
@@ -158,7 +140,7 @@ function createWorkspacesStore() {
       const data = await commands.getWindowData();
       windowId = data.id;
       windowLabel = data.label;
-      workspaces = stripMountedScrollback(data.workspaces);
+      workspaces = data.workspaces;
       activeWorkspaceId = data.active_workspace_id;
       sidebarWidth = data.sidebar_width || 180;
       sidebarCollapsed = data.sidebar_collapsed ?? false;
@@ -311,14 +293,11 @@ function createWorkspacesStore() {
           const instance = terminalsStore.get(tab.id);
           if (!instance) continue;
 
-          // Save scrollback (skip alternate screen — TUI content isn't useful)
+          // Save scrollback directly in Rust (no WebView round-trip)
           try {
-            if (instance.terminal.buffer.active.type !== 'alternate') {
-              const scrollback = instance.serializeAddon.serialize();
-              await commands.setTabScrollback(ws.id, pane.id, tab.id, scrollback);
-            }
-          } catch (e) {
-            logError(`suspend: scrollback save failed for ${tab.id}: ${e}`);
+            await commands.saveTerminalScrollback(instance.ptyId, tab.id);
+          } catch {
+            // Alternate screen active or terminal gone — skip
           }
 
           // Snapshot CWD/SSH for restore
@@ -402,14 +381,11 @@ function createWorkspacesStore() {
           const instance = terminalsStore.get(tab.id);
           if (!instance) continue;
 
-          // Save scrollback
+          // Save scrollback directly in Rust (no WebView round-trip)
           try {
-            if (instance.terminal.buffer.active.type !== 'alternate') {
-              const scrollback = instance.serializeAddon.serialize();
-              await commands.setTabScrollback(ws.id, pane.id, tab.id, scrollback);
-            }
-          } catch (e) {
-            logError(`suspendOtherTabs: scrollback save failed for ${tab.id}: ${e}`);
+            await commands.saveTerminalScrollback(instance.ptyId, tab.id);
+          } catch {
+            // Alternate screen active or terminal gone — skip
           }
 
           // Snapshot CWD/SSH
@@ -471,7 +447,7 @@ function createWorkspacesStore() {
       const data = await commands.getWindowData();
       const ws = data.workspaces.find(w => w.id === workspaceId);
       if (ws) {
-        workspaces = workspaces.map(w => w.id === workspaceId ? (stripMountedScrollback([ws]), ws) : w);
+        workspaces = workspaces.map(w => w.id === workspaceId ? ws : w);
       }
       return pane;
     },
@@ -501,7 +477,7 @@ function createWorkspacesStore() {
         const data = await commands.getWindowData();
         const ws = data.workspaces.find(w => w.id === workspaceId);
         if (ws) {
-          workspaces = workspaces.map(w => w.id === workspaceId ? (stripMountedScrollback([ws]), ws) : w);
+          workspaces = workspaces.map(w => w.id === workspaceId ? ws : w);
         }
         return newPane;
       }
@@ -516,7 +492,8 @@ function createWorkspacesStore() {
         // Serialize current scrollback
         if (preferencesStore.cloneScrollback) {
           try {
-            scrollback = instance.serializeAddon.serialize();
+            const bytes = await commands.serializeTerminal(instance.ptyId);
+            scrollback = new TextDecoder().decode(new Uint8Array(bytes));
           } catch (e) {
             logError(`Failed to serialize scrollback for split: ${e}`);
           }
@@ -619,7 +596,7 @@ function createWorkspacesStore() {
       const data = await commands.getWindowData();
       const ws = data.workspaces.find(w => w.id === workspaceId);
       if (ws) {
-        workspaces = workspaces.map(w => w.id === workspaceId ? (stripMountedScrollback([ws]), ws) : w);
+        workspaces = workspaces.map(w => w.id === workspaceId ? ws : w);
       }
       return newPane;
     },
@@ -630,7 +607,7 @@ function createWorkspacesStore() {
       const data = await commands.getWindowData();
       const ws = data.workspaces.find(w => w.id === workspaceId);
       if (ws) {
-        workspaces = workspaces.map(w => w.id === workspaceId ? (stripMountedScrollback([ws]), ws) : w);
+        workspaces = workspaces.map(w => w.id === workspaceId ? ws : w);
       }
     },
 
@@ -1046,25 +1023,6 @@ function createWorkspacesStore() {
       });
     },
 
-    /**
-     * Release the scrollback string from the frontend store after the terminal
-     * has consumed it for restore.  Backend state is untouched — it already holds
-     * a separate copy.  This frees ~100-500 KB per tab of dead strings from the
-     * reactive state, preventing them from being carried around (and duplicated)
-     * through every `workspaces.map()` mutation.
-     */
-    releaseScrollback(tabId: string) {
-      for (const ws of workspaces) {
-        for (const pane of ws.panes) {
-          const tab = pane.tabs.find(t => t.id === tabId);
-          if (tab && tab.scrollback) {
-            tab.scrollback = null;
-            return;
-          }
-        }
-      }
-    },
-
     async setTabPtyId(workspaceId: string, paneId: string, tabId: string, ptyId: string) {
       await commands.setTabPtyId(workspaceId, paneId, tabId, ptyId);
       workspaces = workspaces.map(w => {
@@ -1160,7 +1118,8 @@ function createWorkspacesStore() {
       if (instance) {
         if (preferencesStore.cloneScrollback) {
           try {
-            scrollback = instance.serializeAddon.serialize();
+            const bytes = await commands.serializeTerminal(instance.ptyId);
+            scrollback = new TextDecoder().decode(new Uint8Array(bytes));
           } catch (e) {
             logError(`Failed to serialize scrollback: ${e}`);
           }
@@ -1235,7 +1194,7 @@ function createWorkspacesStore() {
 
       // Set scrollback on the new tab
       if (scrollback) {
-        await commands.setTabScrollback(targetWsId, targetPane.id, newTab.id, scrollback);
+        await commands.setTabScrollback(newTab.id, scrollback);
       }
 
       // Copy custom name
@@ -1291,7 +1250,7 @@ function createWorkspacesStore() {
 
       // Reload all workspaces
       const data = await commands.getWindowData();
-      workspaces = stripMountedScrollback(data.workspaces);
+      workspaces = data.workspaces;
     },
 
     /**
@@ -1336,9 +1295,9 @@ function createWorkspacesStore() {
         }
         // Re-fetch after cleanup
         const data2 = await commands.getWindowData();
-        workspaces = stripMountedScrollback(data2.workspaces);
+        workspaces = data2.workspaces;
       } else {
-        workspaces = stripMountedScrollback(data.workspaces);
+        workspaces = data.workspaces;
       }
 
       // Update the terminal store's workspace/pane references for the moved tab
@@ -1407,7 +1366,7 @@ function createWorkspacesStore() {
 
       // 5. Reload all workspaces to get consistent state
       const data = await commands.getWindowData();
-      workspaces = stripMountedScrollback(data.workspaces);
+      workspaces = data.workspaces;
     },
 
     async duplicateTab(workspaceId: string, paneId: string, tabId: string, opts?: { shallow?: boolean }) {
@@ -1436,7 +1395,7 @@ function createWorkspacesStore() {
 
       // 5. Set scrollback (skip in shallow mode)
       if (!shallow && scrollback) {
-        await commands.setTabScrollback(workspaceId, paneId, newTab.id, scrollback);
+        await commands.setTabScrollback(newTab.id, scrollback);
       }
 
       // 6. Copy history
@@ -1497,7 +1456,7 @@ function createWorkspacesStore() {
       const data = await commands.getWindowData();
       const updatedWs = data.workspaces.find(w => w.id === workspaceId);
       if (updatedWs) {
-        workspaces = workspaces.map(w => w.id === workspaceId ? (stripMountedScrollback([updatedWs]), updatedWs) : w);
+        workspaces = workspaces.map(w => w.id === workspaceId ? updatedWs : w);
       }
     },
 
@@ -1563,7 +1522,7 @@ function createWorkspacesStore() {
       const data = await commands.getWindowData();
       const updatedWs = data.workspaces.find(w => w.id === workspaceId);
       if (updatedWs) {
-        workspaces = workspaces.map(w => w.id === workspaceId ? (stripMountedScrollback([updatedWs]), updatedWs) : w);
+        workspaces = workspaces.map(w => w.id === workspaceId ? updatedWs : w);
       }
     },
 

@@ -19,6 +19,7 @@
   import type { ClaudeCodeToolRequest, Preferences } from '$lib/tauri/types';
   import type { ImportPreview } from '$lib/tauri/commands';
   import { claudeCodeStore } from '$lib/stores/claudeCode.svelte';
+  import { claudeStateStore } from '$lib/stores/claudeState.svelte';
   import { toastStore } from '$lib/stores/toasts.svelte';
   import { isModKey, isMac } from '$lib/utils/platform';
   import { open as dialogOpen, save as dialogSave } from '@tauri-apps/plugin-dialog';
@@ -234,6 +235,9 @@
     listen<{ connected: boolean }>('claude-code-connection', (event) => {
       claudeCodeStore.setConnected(event.payload.connected);
     }).then(unlisten => { unlistenClaudeConnection = unlisten; });
+
+    // Claude Code state tracking (hook events → per-tab Claude state)
+    claudeStateStore.init();
 
     // OS notification click → deep-link to workspace+tab.
     // NOTE: onAction only fires on mobile (iOS/Android). On desktop (macOS/Linux/Windows),
@@ -655,6 +659,7 @@
       unlistenStateImported?.();
       unlistenClaudeTool?.();
       unlistenClaudeConnection?.();
+      claudeStateStore.destroy();
       unlistenNotificationAction?.unregister();
       unlistenFocus?.();
       unlistenPrefs?.();

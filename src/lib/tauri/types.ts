@@ -173,11 +173,12 @@ export interface Preferences {
   claude_triggers_prompted: boolean;
   claude_code_ide: boolean;
   claude_code_ide_ssh: boolean;
+  claude_code_hooks: boolean;
+  claude_code_auto_resume: boolean;
   windows_shell: string;
   file_link_action: string;
   backup_directory: string | null;
   backup_interval: string;
-  backup_compress: boolean;
   backup_exclude_scrollback: boolean;
   backup_trim_enabled: boolean;
   backup_trim_age: string;
@@ -208,6 +209,39 @@ export interface ShellInfo {
   name: string;
   path: string;
 }
+
+// Terminal backend types (alacritty_terminal)
+export interface TerminalFrame {
+  ansi: number[];
+  cursor_x: number;
+  cursor_y: number;
+  cursor_visible: boolean;
+  display_offset: number;
+  total_lines: number;
+  alternate_screen: boolean;
+}
+
+export interface ScrollInfo {
+  display_offset: number;
+  total_lines: number;
+  viewport_rows: number;
+}
+
+export interface SearchMatch {
+  line: number;
+  start_col: number;
+  end_col: number;
+  text: string;
+}
+
+export interface SearchResult {
+  matches: SearchMatch[];
+  total_count: number;
+}
+
+// OSC events from Rust
+export interface OscCwdEvent { cwd: string; host: string | null; }
+export interface OscShellEvent { cmd: string; exit_code: number | null; }
 
 export interface ClaudeCodeToolRequest {
   request_id: string;

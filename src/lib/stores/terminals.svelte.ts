@@ -1,7 +1,5 @@
 import type { Terminal } from '@xterm/xterm';
-import type { SerializeAddon } from '@xterm/addon-serialize';
-import type { SearchAddon } from '@xterm/addon-search';
-import { setTabScrollback, killTerminal } from '$lib/tauri/commands';
+import { setTabScrollback, killTerminal, serializeTerminal, searchTerminal, clearTerminalScrollback, saveTerminalScrollback } from '$lib/tauri/commands';
 import { error as logError } from '@tauri-apps/plugin-log';
 import { getCompiledTitlePatterns } from '$lib/utils/promptPattern';
 import { preferencesStore } from '$lib/stores/preferences.svelte';
@@ -29,8 +27,6 @@ export interface OscState {
 interface TerminalInstance {
   terminal: Terminal;
   ptyId: string;
-  serializeAddon: SerializeAddon;
-  searchAddon: SearchAddon;
   workspaceId: string;
   paneId: string;
   tabId: string;
@@ -97,14 +93,12 @@ function createTerminalsStore() {
       tabId: string,
       terminal: Terminal,
       ptyId: string,
-      serializeAddon: SerializeAddon,
-      searchAddon: SearchAddon,
       workspaceId: string,
       paneId: string
     ) {
       instances = new Map(instances);
       instances.set(tabId, {
-        terminal, ptyId, serializeAddon, searchAddon,
+        terminal, ptyId,
         workspaceId, paneId, tabId,
         osc: { title: null, cwd: null, cwdHost: null, promptCwd: null },
       });
@@ -166,12 +160,13 @@ function createTerminalsStore() {
     async clearTerminal(tabId: string) {
       const instance = instances.get(tabId);
       if (!instance) return;
-      // Clear xterm's scrollback buffer while keeping the current screen (prompt) visible.
-      instance.terminal.clear();
-      // Serialize the now-empty state and persist it, so auto-save
-      // and saveAllScrollback don't re-save stale content
-      const scrollback = instance.serializeAddon.serialize();
-      await setTabScrollback(instance.workspaceId, instance.paneId, instance.tabId, scrollback);
+      // Clear the Rust alacritty_terminal scrollback buffer.
+      // The command emits a fresh frame so xterm.js updates automatically.
+      try {
+        await clearTerminalScrollback(instance.ptyId);
+        // Persist the cleared state so auto-save doesn't re-save stale content
+        await saveTerminalScrollback(instance.ptyId, instance.tabId);
+      } catch { /* terminal may have been killed */ }
       dirtyTabs.delete(tabId);
     },
 
@@ -185,7 +180,6 @@ function createTerminalsStore() {
       }
       const instance = instances.get(tabId);
       if (instance) {
-        instance.searchAddon.clearDecorations();
         instance.terminal.focus();
       }
     },
@@ -198,17 +192,21 @@ function createTerminalsStore() {
       }
     },
 
-    findNext(tabId: string, query: string) {
+    async findNext(tabId: string, query: string) {
       const instance = instances.get(tabId);
       if (instance && query) {
-        instance.searchAddon.findNext(query);
+        try {
+          await searchTerminal(instance.ptyId, query, false);
+        } catch { /* terminal may have been killed */ }
       }
     },
 
-    findPrevious(tabId: string, query: string) {
+    async findPrevious(tabId: string, query: string) {
       const instance = instances.get(tabId);
       if (instance && query) {
-        instance.searchAddon.findPrevious(query);
+        try {
+          await searchTerminal(instance.ptyId, query, false);
+        } catch { /* terminal may have been killed */ }
       }
     },
 
@@ -222,32 +220,21 @@ function createTerminalsStore() {
     async saveAllScrollback(): Promise<void> {
       _shuttingDown = true;
 
-      // Serialize all terminals synchronously first to avoid interleaving
-      const toSave: { workspaceId: string; paneId: string; tabId: string; scrollback: string }[] = [];
+      // Serialize all terminals via Rust backend
+      const saves: Promise<void>[] = [];
       for (const [tabId, instance] of instances) {
-        try {
-          // Skip serialization when a full-screen app (nano, vim, less, etc.)
-          // is using the alternate screen buffer — that content isn't useful
-          // for restore and produces artifacts like baked-in nano UI.
-          if (instance.terminal.buffer.active.type === 'alternate') continue;
-          const scrollback = instance.serializeAddon.serialize();
-          toSave.push({
-            workspaceId: instance.workspaceId,
-            paneId: instance.paneId,
-            tabId: instance.tabId,
-            scrollback,
-          });
-        } catch (e) {
-          logError(`saveAllScrollback: FAILED ${tabId} - ${e}`);
-        }
+        saves.push(
+          (async () => {
+            try {
+              await saveTerminalScrollback(instance.ptyId, instance.tabId);
+            } catch (e) {
+              logError(`saveAllScrollback: FAILED ${tabId} - ${e}`);
+            }
+          })()
+        );
       }
 
-      // Now send all saves to backend
-      const results = await Promise.allSettled(
-        toSave.map(({ workspaceId, paneId, tabId, scrollback }) =>
-          setTabScrollback(workspaceId, paneId, tabId, scrollback)
-        )
-      );
+      const results = await Promise.allSettled(saves);
       for (const r of results) {
         if (r.status === 'rejected') logError(`Failed to save scrollback: ${r.reason}`);
       }

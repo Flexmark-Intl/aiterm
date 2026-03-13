@@ -2,8 +2,12 @@ use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicU64;
 use std::sync::mpsc::Sender;
+use std::time::Instant;
 
+use super::persistence::app_data_slug;
+use super::scrollback_db::ScrollbackDb;
 use super::workspace::AppData;
+use crate::terminal::handle::TerminalHandle;
 
 pub enum PtyCommand {
     Write(Vec<u8>),
@@ -50,8 +54,27 @@ pub struct SshTunnel {
     pub tab_ids: std::collections::HashSet<String>,
 }
 
+/// Tracked Claude Code session (registered via hooks).
+pub struct ClaudeSessionInfo {
+    pub tab_id: String,
+    pub cwd: Option<String>,
+    pub state: ClaudeSessionState,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ClaudeSessionState {
+    Active,
+    WaitingInput,
+    WaitingPermission,
+    Stopped,
+}
+
 pub struct AppState {
+    pub scrollback_db: ScrollbackDb,
     pub pty_registry: RwLock<HashMap<String, PtyHandle>>,
+    /// alacritty_terminal instances keyed by pty_id
+    pub terminal_registry: RwLock<HashMap<String, TerminalHandle>>,
     /// Maps tab_id → pty_id so we can auto-kill a previous PTY when a new one
     /// is spawned for the same tab (e.g. HMR remount, frontend crash recovery).
     pub tab_pty_map: RwLock<HashMap<String, String>>,
@@ -73,12 +96,25 @@ pub struct AppState {
     // Diagnostics
     pub pty_stats: RwLock<HashMap<String, PtyStats>>,
     pub memory_samples: RwLock<Vec<MemorySample>>,
+    // Claude Code hook sessions: session_id → session info
+    pub claude_sessions: RwLock<HashMap<String, ClaudeSessionInfo>>,
+    // Pending session IDs from SessionStart HTTP hooks awaiting initSession to assign a tab
+    pub pending_hook_sessions: RwLock<Vec<(String, Option<String>, Instant)>>, // (session_id, cwd, timestamp)
 }
 
-impl Default for AppState {
-    fn default() -> Self {
+impl AppState {
+    pub fn new() -> Self {
+        let db_path = dirs::data_dir()
+            .expect("No data directory found")
+            .join(app_data_slug())
+            .join("aiterm-scrollback.db");
+        let scrollback_db = ScrollbackDb::open(db_path)
+            .expect("Failed to open scrollback database");
+
         Self {
+            scrollback_db,
             pty_registry: RwLock::new(HashMap::new()),
+            terminal_registry: RwLock::new(HashMap::new()),
             tab_pty_map: RwLock::new(HashMap::new()),
             app_data: RwLock::new(AppData::default()),
             file_watchers: RwLock::new(HashMap::new()),
@@ -93,6 +129,8 @@ impl Default for AppState {
             remote_watcher_running: std::sync::atomic::AtomicBool::new(false),
             pty_stats: RwLock::new(HashMap::new()),
             memory_samples: RwLock::new(Vec::new()),
+            claude_sessions: RwLock::new(HashMap::new()),
+            pending_hook_sessions: RwLock::new(Vec::new()),
         }
     }
 }

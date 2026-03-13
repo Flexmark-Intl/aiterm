@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { AppData, DiffContext, DuplicateWorkspaceResult, EditorFileInfo, Pane, Preferences, ShellInfo, SplitDirection, Tab, WindowData, Workspace, WorkspaceNote } from './types';
+import type { AppData, DiffContext, DuplicateWorkspaceResult, EditorFileInfo, Pane, Preferences, ScrollInfo, SearchResult, ShellInfo, SplitDirection, Tab, TerminalFrame, WindowData, Workspace, WorkspaceNote } from './types';
 
 // Terminal commands
 export async function spawnTerminal(ptyId: string, tabId: string, cols: number, rows: number, cwd?: string | null): Promise<void> {
@@ -113,6 +113,63 @@ export async function detectWindowsShells(): Promise<ShellInfo[]> {
   return invoke('detect_windows_shells');
 }
 
+// Terminal backend commands (alacritty_terminal)
+export async function scrollTerminal(ptyId: string, delta: number): Promise<TerminalFrame> {
+  return invoke('scroll_terminal', { ptyId, delta });
+}
+
+export async function scrollTerminalTo(ptyId: string, offset: number): Promise<TerminalFrame> {
+  return invoke('scroll_terminal_to', { ptyId, offset });
+}
+
+export async function getTerminalScrollbackInfo(ptyId: string): Promise<ScrollInfo> {
+  return invoke('get_terminal_scrollback_info', { ptyId });
+}
+
+export async function searchTerminal(ptyId: string, query: string, caseSensitive: boolean): Promise<SearchResult> {
+  return invoke('search_terminal', { ptyId, query, caseSensitive });
+}
+
+export async function serializeTerminal(ptyId: string): Promise<number[]> {
+  return invoke('serialize_terminal', { ptyId });
+}
+
+export async function restoreTerminalScrollback(ptyId: string, scrollback: number[]): Promise<void> {
+  return invoke('restore_terminal_scrollback', { ptyId, scrollback });
+}
+
+export async function resizeTerminalGrid(ptyId: string, cols: number, rows: number): Promise<void> {
+  return invoke('resize_terminal_grid', { ptyId, cols, rows });
+}
+
+export async function clearTerminalScrollback(ptyId: string): Promise<void> {
+  return invoke('clear_terminal_scrollback', { ptyId });
+}
+
+export async function getTerminalSelectionText(ptyId: string, startX: number, startY: number, endX: number, endY: number): Promise<string> {
+  return invoke('get_terminal_selection_text', { ptyId, startX, startY, endX, endY });
+}
+
+export async function getTerminalRecentText(ptyId: string, lineCount: number): Promise<string> {
+  return invoke('get_terminal_recent_text', { ptyId, lineCount });
+}
+
+export async function saveTerminalScrollback(ptyId: string, tabId: string): Promise<void> {
+  return invoke('save_terminal_scrollback', { ptyId, tabId });
+}
+
+export async function restoreTerminalFromSaved(ptyId: string, tabId: string): Promise<void> {
+  return invoke('restore_terminal_from_saved', { ptyId, tabId });
+}
+
+export async function hasSavedScrollback(tabId: string): Promise<boolean> {
+  return invoke('has_saved_scrollback', { tabId });
+}
+
+export async function getSavedScrollbackText(tabId: string, lineCount: number): Promise<string | null> {
+  return invoke('get_saved_scrollback_text', { tabId, lineCount });
+}
+
 // Workspace commands
 export async function getAppData(): Promise<AppData> {
   return invoke('get_app_data');
@@ -194,8 +251,8 @@ export async function setSplitRatio(workspaceId: string, splitId: string, ratio:
   return invoke('set_split_ratio', { workspaceId, splitId, ratio });
 }
 
-export async function setTabScrollback(workspaceId: string, paneId: string, tabId: string, scrollback: string | null): Promise<void> {
-  return invoke('set_tab_scrollback', { workspaceId, paneId, tabId, scrollback });
+export async function setTabScrollback(tabId: string, scrollback: string | null): Promise<void> {
+  return invoke('set_tab_scrollback', { tabId, scrollback });
 }
 
 export async function setTabNotes(workspaceId: string, paneId: string, tabId: string, notes: string | null): Promise<void> {
@@ -471,18 +528,17 @@ export async function deleteArchivedTab(
   return invoke('delete_archived_tab', { workspaceId, tabId });
 }
 
-/** Generate default backup filename: aiterm_backup_YYYYMMDD_HHMM.json(.gz) */
-export function backupFilename(compress: boolean = false): string {
+/** Generate default backup filename: aiterm_backup_YYYYMMDD_HHMM.json.gz */
+export function backupFilename(): string {
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
   const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`;
-  const ext = compress ? 'json.gz' : 'json';
-  return `aiterm_backup_${stamp}.${ext}`;
+  return `aiterm_backup_${stamp}.json.gz`;
 }
 
 // State backup commands
-export async function exportState(path: string, excludeScrollback: boolean = false, compress: boolean = false): Promise<void> {
-  return invoke('export_state', { path, excludeScrollback, compress });
+export async function exportState(path: string, excludeScrollback: boolean = false): Promise<void> {
+  return invoke('export_state', { path, excludeScrollback });
 }
 
 export async function importState(path: string): Promise<void> {
