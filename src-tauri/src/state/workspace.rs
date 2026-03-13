@@ -302,6 +302,15 @@ pub struct Workspace {
     pub pane_sizes: Option<PaneSizes>,
 }
 
+/// Saved window geometry (logical pixels) for a specific monitor configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WindowGeometry {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WindowData {
     pub id: String,
@@ -312,6 +321,19 @@ pub struct WindowData {
     pub sidebar_width: u32,
     #[serde(default)]
     pub sidebar_collapsed: bool,
+    /// Window geometry per monitor count (e.g. "1" for single monitor, "2" for dual).
+    /// When monitors change, the window repositions to the saved geometry for that count.
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub window_geometry: std::collections::HashMap<String, WindowGeometry>,
+    // Legacy flat fields — migrated to window_geometry on first save
+    #[serde(default, skip_serializing)]
+    window_x: Option<f64>,
+    #[serde(default, skip_serializing)]
+    window_y: Option<f64>,
+    #[serde(default, skip_serializing)]
+    window_width: Option<f64>,
+    #[serde(default, skip_serializing)]
+    window_height: Option<f64>,
 }
 
 impl WindowData {
@@ -323,6 +345,29 @@ impl WindowData {
             active_workspace_id: None,
             sidebar_width: default_sidebar_width(),
             sidebar_collapsed: false,
+            window_geometry: std::collections::HashMap::new(),
+            window_x: None,
+            window_y: None,
+            window_width: None,
+            window_height: None,
+        }
+    }
+
+    /// Get geometry for a given monitor count, falling back to legacy fields.
+    pub fn geometry_for(&self, monitor_count: usize) -> Option<&WindowGeometry> {
+        self.window_geometry.get(&monitor_count.to_string())
+    }
+
+    /// Migrate legacy flat fields into the geometry map (called on first save).
+    pub fn migrate_legacy_geometry(&mut self, monitor_count: usize) {
+        if let (Some(x), Some(y), Some(w), Some(h)) = (self.window_x, self.window_y, self.window_width, self.window_height) {
+            self.window_geometry.entry(monitor_count.to_string()).or_insert(WindowGeometry {
+                x, y, width: w, height: h,
+            });
+            self.window_x = None;
+            self.window_y = None;
+            self.window_width = None;
+            self.window_height = None;
         }
     }
 }

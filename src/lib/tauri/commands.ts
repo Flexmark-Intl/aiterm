@@ -401,6 +401,18 @@ export async function closeWindow(): Promise<void> {
   return invoke('close_window');
 }
 
+export async function saveWindowGeometry(monitorCount: number): Promise<void> {
+  return invoke('save_window_geometry', { monitorCount });
+}
+
+export async function getMonitorCount(): Promise<number> {
+  return invoke('get_monitor_count');
+}
+
+export async function restoreWindowGeometry(monitorCount: number): Promise<boolean> {
+  return invoke('restore_window_geometry', { monitorCount });
+}
+
 export async function resetWindow(): Promise<void> {
   return invoke('reset_window');
 }

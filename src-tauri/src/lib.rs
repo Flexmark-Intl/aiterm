@@ -99,8 +99,20 @@ pub fn run() {
             // Window title is set dynamically from the frontend (workspace name)
 
             // Restore additional windows beyond "main"
+            // Determine current monitor count for geometry lookup
+            let monitor_count = app.primary_monitor()
+                .ok()
+                .flatten()
+                .and_then(|_| app.available_monitors().ok())
+                .map(|m| m.len())
+                .unwrap_or(1);
+
             let extra_windows: Vec<String> = {
-                let data = app_state.app_data.read();
+                let mut data = app_state.app_data.write();
+                // Migrate legacy flat fields into geometry map
+                for w in &mut data.windows {
+                    w.migrate_legacy_geometry(monitor_count);
+                }
                 data.windows.iter()
                     .skip(1) // skip "main" — already created by Tauri
                     .map(|w| w.label.clone())
@@ -116,9 +128,18 @@ pub fn run() {
                 // Title is set dynamically from the frontend (workspace name)
                 let title = if cfg!(debug_assertions) { "aiTerm (Dev)" } else { "aiTerm" };
 
+                let geometry = {
+                    let data = app_state.app_data.read();
+                    data.window(&label).and_then(|w| w.geometry_for(monitor_count)).cloned()
+                };
+
+                let (w, h) = geometry.as_ref()
+                    .map(|g| (g.width, g.height))
+                    .unwrap_or((1200.0, 800.0));
+
                 let mut builder = WebviewWindowBuilder::new(app, &label, url)
                     .title(title)
-                    .inner_size(1200.0, 800.0)
+                    .inner_size(w, h)
                     .min_inner_size(800.0, 600.0)
                     .resizable(true)
                     .fullscreen(false);
@@ -130,9 +151,22 @@ pub fn run() {
                         .title_bar_style(tauri::TitleBarStyle::Overlay);
                 }
 
-                if let Err(e) = builder.build()
-                {
-                    log::error!("Failed to restore window '{}': {}", label, e);
+                match builder.build() {
+                    Ok(win) => {
+                        if let Some(ref geom) = geometry {
+                            log::info!("Restoring window '{}' at ({}, {}) size {}x{} (monitors={})",
+                                label, geom.x, geom.y, w, h, monitor_count);
+                            let scale = win.scale_factor().unwrap_or(1.0);
+                            let phys_x = (geom.x * scale) as i32;
+                            let phys_y = (geom.y * scale) as i32;
+                            if let Err(e) = win.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(phys_x, phys_y))) {
+                                log::warn!("Failed to set position for '{}': {}", label, e);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("Failed to restore window '{}': {}", label, e);
+                    }
                 }
             }
 
@@ -365,6 +399,9 @@ pub fn run() {
             commands::window::create_window,
             commands::window::duplicate_window,
             commands::window::close_window,
+            commands::window::save_window_geometry,
+            commands::window::get_monitor_count,
+            commands::window::restore_window_geometry,
             commands::window::reset_window,
             commands::window::get_window_count,
             commands::window::open_preferences_window,

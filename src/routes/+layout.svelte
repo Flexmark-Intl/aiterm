@@ -163,6 +163,9 @@
     let unlistenQuit: (() => void) | undefined;
     listen('quit-requested', async () => {
       logInfo('quit-requested — saving scrollback before exit');
+      // Save window geometry before exit (don't wait for debounce)
+      clearTimeout(geometryTimer);
+      await commands.saveWindowGeometry(currentMonitorCount).catch(() => {});
       await terminalsStore.saveAllScrollback();
       try {
         await invoke('sync_state');
@@ -177,6 +180,42 @@
     appWindow.onFocusChanged(({ payload: focused }) => {
       toastStore.setWindowFocused(focused);
     }).then(unlisten => { unlistenFocus = unlisten; });
+
+    // Save window geometry per monitor count on resize/move (debounced).
+    // Polls for monitor changes to auto-reposition windows when docking/undocking.
+    let currentMonitorCount = 1;
+    let geometryTimer: ReturnType<typeof setTimeout> | undefined;
+    let monitorPollTimer: ReturnType<typeof setInterval> | undefined;
+
+    // Initialize monitor count
+    commands.getMonitorCount().then(count => {
+      currentMonitorCount = count;
+
+      // Poll for monitor changes (handles dock/undock)
+      monitorPollTimer = setInterval(async () => {
+        const count = await commands.getMonitorCount().catch(() => currentMonitorCount);
+        if (count !== currentMonitorCount) {
+          const oldCount = currentMonitorCount;
+          currentMonitorCount = count;
+          logInfo(`Monitor count changed: ${oldCount} → ${count}, repositioning window`);
+          // Save current position under old monitor count before repositioning
+          await commands.saveWindowGeometry(oldCount).catch(() => {});
+          // Restore saved geometry for the new monitor count (if any)
+          await commands.restoreWindowGeometry(count).catch(() => {});
+        }
+      }, 2000);
+    });
+
+    function saveGeometryDebounced() {
+      clearTimeout(geometryTimer);
+      geometryTimer = setTimeout(() => {
+        commands.saveWindowGeometry(currentMonitorCount).catch(() => {});
+      }, 500);
+    }
+    let unlistenResize: (() => void) | undefined;
+    let unlistenMove: (() => void) | undefined;
+    appWindow.onResized(saveGeometryDebounced).then(u => { unlistenResize = u; });
+    appWindow.onMoved(saveGeometryDebounced).then(u => { unlistenMove = u; });
 
     // Listen for reload-tab menu event — duplicate tab with same context, close old
     let unlistenReloadTab: (() => void) | undefined;
@@ -666,6 +705,10 @@
       claudeStateStore.destroy();
       unlistenNotificationAction?.unregister();
       unlistenFocus?.();
+      unlistenResize?.();
+      unlistenMove?.();
+      clearTimeout(geometryTimer);
+      clearInterval(monitorPollTimer);
       unlistenPrefs?.();
       detachConsole?.();
     };

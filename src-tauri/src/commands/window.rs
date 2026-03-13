@@ -133,6 +133,65 @@ pub fn close_window(window: tauri::Window, state: State<'_, Arc<AppState>>) -> R
 }
 
 #[tauri::command]
+pub fn save_window_geometry(window: tauri::Window, state: State<'_, Arc<AppState>>, monitor_count: usize) -> Result<(), String> {
+    let label = window.label().to_string();
+    let scale = window.scale_factor().unwrap_or(1.0);
+
+    let pos = window.outer_position().map_err(|e| e.to_string())?;
+    let size = window.inner_size().map_err(|e| e.to_string())?;
+
+    let geom = crate::state::WindowGeometry {
+        x: pos.x as f64 / scale,
+        y: pos.y as f64 / scale,
+        width: size.width as f64 / scale,
+        height: size.height as f64 / scale,
+    };
+
+    let data_clone = {
+        let mut app_data = state.app_data.write();
+        let win = app_data.window_mut(&label).ok_or("Window not found")?;
+        // Migrate legacy flat fields if present
+        win.migrate_legacy_geometry(monitor_count);
+        win.window_geometry.insert(monitor_count.to_string(), geom);
+        app_data.clone()
+    };
+    save_state(&data_clone)?;
+    Ok(())
+}
+
+/// Get the number of connected monitors.
+#[tauri::command]
+pub fn get_monitor_count(window: tauri::Window) -> usize {
+    window.available_monitors()
+        .map(|m| m.len())
+        .unwrap_or(1)
+}
+
+/// Restore window geometry for the given monitor count.
+/// Returns true if geometry was found and applied, false otherwise.
+#[tauri::command]
+pub fn restore_window_geometry(window: tauri::Window, state: State<'_, Arc<AppState>>, monitor_count: usize) -> bool {
+    let label = window.label().to_string();
+    let geometry = {
+        let data = state.app_data.read();
+        data.window(&label).and_then(|w| w.geometry_for(monitor_count)).cloned()
+    };
+
+    if let Some(geom) = geometry {
+        let scale = window.scale_factor().unwrap_or(1.0);
+        let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize::new(geom.width, geom.height)));
+        let phys_x = (geom.x * scale) as i32;
+        let phys_y = (geom.y * scale) as i32;
+        let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(phys_x, phys_y)));
+        log::info!("Restored geometry for '{}' (monitors={}) at ({}, {}) {}x{}",
+            label, monitor_count, geom.x, geom.y, geom.width, geom.height);
+        true
+    } else {
+        false
+    }
+}
+
+#[tauri::command]
 pub fn reset_window(window: tauri::Window, state: State<'_, Arc<AppState>>) -> Result<(), String> {
     let label = window.label().to_string();
     let data_clone = {
@@ -271,9 +330,27 @@ fn build_window_sync(app: &tauri::AppHandle, label: &str) -> Result<(), String> 
 
     let title = if cfg!(debug_assertions) { "aiTerm (Dev)" } else { "aiTerm" };
 
+    // Read saved geometry for current monitor count
+    let monitor_count = app.primary_monitor()
+        .ok()
+        .flatten()
+        .and_then(|_| app.available_monitors().ok())
+        .map(|m| m.len())
+        .unwrap_or(1);
+
+    let geometry = app.try_state::<Arc<AppState>>().and_then(|state| {
+        let data = state.app_data.read();
+        let win = data.window(label)?;
+        win.geometry_for(monitor_count).cloned()
+    });
+
+    let (w, h) = geometry.as_ref()
+        .map(|g| (g.width, g.height))
+        .unwrap_or((1200.0, 800.0));
+
     let mut builder = WebviewWindowBuilder::new(app, label, url)
         .title(title)
-        .inner_size(1200.0, 800.0)
+        .inner_size(w, h)
         .min_inner_size(800.0, 600.0)
         .resizable(true)
         .fullscreen(false);
@@ -285,8 +362,15 @@ fn build_window_sync(app: &tauri::AppHandle, label: &str) -> Result<(), String> 
             .title_bar_style(tauri::TitleBarStyle::Overlay);
     }
 
-    builder.build()
+    let win = builder.build()
         .map_err(|e| format!("Failed to create window: {}", e))?;
+
+    if let Some(ref geom) = geometry {
+        let scale = win.scale_factor().unwrap_or(1.0);
+        let phys_x = (geom.x * scale) as i32;
+        let phys_y = (geom.y * scale) as i32;
+        let _ = win.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(phys_x, phys_y)));
+    }
 
     Ok(())
 }
