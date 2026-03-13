@@ -1,6 +1,8 @@
 import { listen } from '@tauri-apps/api/event';
 import { info as logInfo } from '@tauri-apps/plugin-log';
 import { setVariable, handleEnableAutoResume } from './triggers.svelte';
+import { terminalsStore } from './terminals.svelte';
+import { workspacesStore } from './workspaces.svelte';
 import { dispatch } from './notificationDispatch';
 import { CLAUDE_RESUME_COMMAND } from '$lib/triggers/defaults';
 
@@ -112,7 +114,21 @@ function createClaudeStateStore() {
       const u6 = await listen<{ tab_id: string; session_id: string }>('claude-init-session', (e) => {
         const { tab_id, session_id } = e.payload;
         if (!tab_id || !session_id) return;
+        // Always set the variable so pinned commands can reference %claudeSessionId
         setVariable(tab_id, 'claudeSessionId', session_id);
+
+        // Skip auto-resume setup if the tab has a pinned auto-resume — don't overwrite user's config
+        const instance = terminalsStore.get(tab_id);
+        if (instance) {
+          const ws = workspacesStore.workspaces.find(w => w.id === instance.workspaceId);
+          const pane = ws?.panes.find(p => p.id === instance.paneId);
+          const tab = pane?.tabs.find(t => t.id === tab_id);
+          if (tab?.auto_resume_pinned) {
+            logInfo(`Claude init: tab ${tab_id.slice(0, 8)} has pinned auto-resume, skipping`);
+            return;
+          }
+        }
+
         handleEnableAutoResume(tab_id, CLAUDE_RESUME_COMMAND);
         logInfo(`Claude init: set claudeSessionId for tab ${tab_id.slice(0, 8)} = ${session_id.slice(0, 8)}`);
       });
