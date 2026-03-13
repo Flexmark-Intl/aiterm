@@ -3,6 +3,7 @@ import { info as logInfo } from '@tauri-apps/plugin-log';
 import { setVariable, handleEnableAutoResume } from './triggers.svelte';
 import { terminalsStore } from './terminals.svelte';
 import { workspacesStore } from './workspaces.svelte';
+import { activityStore } from './activity.svelte';
 import { dispatch } from './notificationDispatch';
 import { CLAUDE_RESUME_COMMAND } from '$lib/triggers/defaults';
 
@@ -85,6 +86,14 @@ function createClaudeStateStore() {
     sessions = new Map(sessions);
     sessions.set(tabId, { sessionId, state, toolName, toolDetail });
 
+    // Propagate permission state to activityStore tab state so workspace sidebar shows alert.
+    // Clear alert when leaving permission state (but only if we set it).
+    if (state === 'permission') {
+      activityStore.setTabState(tabId, 'alert');
+    } else if (current?.state === 'permission') {
+      activityStore.clearTabState(tabId);
+    }
+
     // Manage stale tool timer
     clearStaleTimer(tabId);
     if (toolName) {
@@ -109,8 +118,13 @@ function createClaudeStateStore() {
   function removeSession(tabId: string) {
     if (!sessions.has(tabId)) return;
     clearStaleTimer(tabId);
+    const was = sessions.get(tabId);
     sessions = new Map(sessions);
     sessions.delete(tabId);
+    // Clean up tab state if session ended while in permission state
+    if (was?.state === 'permission') {
+      activityStore.clearTabState(tabId);
+    }
   }
 
   return {
@@ -182,7 +196,10 @@ function createClaudeStateStore() {
           dispatch('Claude Code', 'Needs permission approval', 'info', { tabId: tab_id });
         } else if (notification_type === 'idle_prompt') {
           setState(tab_id, session_id, 'idle');
-          dispatch('Claude Code', 'Waiting for input', 'info', { tabId: tab_id });
+          // Notification disabled — the Stop hook already notifies when Claude finishes,
+          // and this fires at awkward moments (e.g. between tool calls). Re-enable if we
+          // find a case where idle_prompt provides value beyond what Stop covers.
+          // dispatch('Claude Code', 'Waiting for input', 'info', { tabId: tab_id });
         }
       });
       unlisteners.push(u5);
