@@ -5,18 +5,6 @@ export const CLAUDE_RESUME_COMMAND = 'claude --resume %claudeSessionId "/aiterm 
 
 /** App-provided default trigger templates. Keyed by stable default_id. */
 export const DEFAULT_TRIGGERS: Record<string, Omit<Trigger, 'id' | 'enabled' | 'workspaces' | 'tabs' | 'default_id'> & { match_mode?: MatchMode }> = {
-  'claude-plan-ready': {
-    name: 'Claude Plan Ready',
-    description: 'Detects when Claude has a plan ready for review. Sets the tab to "alert" state and sends a notification so you know to switch back.',
-    pattern: 'has written up a plan and is ready to execute',
-    actions: [
-      { action_type: 'set_tab_state', command: null, title: null, message: null, tab_state: 'alert' },
-      { action_type: 'notify', command: null, title: null, message: 'Claude has a plan ready for review', tab_state: null },
-    ],
-    cooldown: 0.3,
-    variables: [],
-    plain_text: true,
-  },
 };
 
 /**
