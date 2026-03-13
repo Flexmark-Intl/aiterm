@@ -7,13 +7,14 @@ A terminal emulator built with Tauri 2 + Svelte 5, designed to make terminal-bas
 
 Our initial focus is on **Claude Code** integrations:
 
-- **Auto-capture session IDs** — triggers detect Claude's resume commands and session UUIDs so you never lose a session
-- **Auto-resume** — automatically reconnects to your last Claude session when you open a tab
-- **Tab state awareness** — know at a glance which tabs have Claude waiting for input, reviewing a plan, or compacting context
+- **Real-time session tracking** — hooks report Claude's state (active, idle, needs permission) with live tab indicators
+- **Auto-resume** — automatically reconnects to your last Claude session when you open a tab, using hooks-captured session IDs
+- **Tab state awareness** — know at a glance which tabs have Claude thinking (pulsing dot), waiting for input (green dot), or needing permission (lock icon)
 - **Workspace organization** — group related Claude sessions by project; split panes to run multiple agents side by side
-- **Scrollback persistence** — full terminal state survives restarts, so you never lose Claude's output
+- **Scrollback persistence** — full terminal state in SQLite survives restarts, so you never lose Claude's output
 - **SSH session cloning** — split into a second shell at the same remote CWD while Claude works in the first
-- **IDE integration** — exposes MCP tools to Claude Code CLI for file operations, diff review, and editor control
+- **IDE integration** — MCP server with 25+ tools for file operations, diff review, editor control, notes, and multi-agent coordination
+- **SSH MCP bridge** — reverse SSH tunnel exposes local IDE tools to Claude Code running on remote servers
 
 aiTerm is fully written by AI (Claude), with human engineering direction and architectural rails.
 
@@ -55,7 +56,7 @@ Every tab maintains its own shell history. Clone a tab and its history comes wit
 
 ### Auto-resume: never lose a session
 
-Reboot your machine, restart aiTerm — everything comes back. Terminal scrollback, tab layout, workspace state. Configure triggers to automatically resume Claude Code sessions, reconnect SSH sessions to the right remote CWD, and pick up exactly where you left off.
+Reboot your machine, restart aiTerm — everything comes back. Terminal scrollback, tab layout, workspace state. Claude Code sessions auto-resume using hooks-captured session IDs — no manual setup needed. SSH sessions reconnect to the right remote CWD. Pick up exactly where you left off.
 
 ### Archive and restore tabs
 
@@ -68,11 +69,13 @@ Triggers watch your terminal output for patterns — Claude asking a question, a
 ## Features
 
 ### Terminal
-- **xterm.js** — full terminal emulator with scrollback, selection, and WebGL rendering
+- **alacritty_terminal + xterm.js** — Rust-based VTE parser and buffer management with xterm.js as thin WebGL renderer (~60fps ANSI frames)
 - **Split panes** — horizontal and vertical splits, drag to resize, fully recursive
 - **Multiple workspaces** — named workspaces with independent pane layouts, reorderable via drag and drop
+- **Workspace suspend/resume** — suspend idle workspaces to free resources, auto-suspend after configurable timeout
+- **Lazy terminal activation** — PTYs only spawn when a tab becomes visible
 - **Multiple tabs** — per-pane tabs with activity indicators and completion detection
-- **Scrollback persistence** — saves and restores terminal state across restarts
+- **Scrollback persistence** — SQLite (WAL mode) with dirty tracking and staggered saves
 - **SSH session cloning** — split an SSH session to get a second shell at the same remote CWD
 - **Multi-window** — open additional windows, duplicate windows with full tab context
 
@@ -99,9 +102,14 @@ Triggers watch your terminal output for patterns — Claude asking a question, a
 - **Portal pattern** — editor survives split tree changes (same as terminals)
 
 ### Claude Code IDE Integration
-- **MCP server** — WebSocket + SSE server exposes tools to Claude Code CLI
-- **11 tools** — getOpenEditors, getWorkspaceFolders, getDiagnostics, checkDocumentDirty, saveDocument, getCurrentSelection, getLatestSelection, openFile, openDiff, closeAllDiffTabs
+- **MCP server** — WebSocket, SSE, and Streamable HTTP transports expose 25+ tools to Claude Code CLI
+- **Hooks integration** — HTTP lifecycle hooks (SessionStart/End, PreToolUse/PostToolUse, Stop, Notification, PreCompact) provide real-time session state tracking
+- **Tab indicators** — pulsing accent dot (Claude active/thinking), green dot (idle/waiting for input), lock icon (needs permission)
+- **Auto-resume** — hooks capture session IDs automatically; tabs resume Claude sessions on restart
 - **Diff review** — Claude proposes file changes; you accept or reject in a side-by-side diff tab
+- **Notes & workspace tools** — per-tab notes, workspace notes, note search, notes panel control via MCP
+- **Multi-agent coordination** — `getClaudeSessions` exposes all active Claude sessions (state, tool, model, cwd) across tabs
+- **SSH MCP bridge** — reverse SSH tunnel (`-R 0:localhost:port`) exposes local IDE tools to remote Claude Code; ControlMaster mux support, bridge status indicator
 - **Auto-discovery** — writes lock file to `~/.claude/ide/` and registers in `~/.claude.json` for automatic connection
 - **Dev/prod isolation** — dev builds register as `aiterm-dev` with display name "aiTermDev"
 
@@ -111,8 +119,8 @@ Triggers watch your terminal output for patterns — Claude asking a question, a
 - **Actions** — `notify` (toast or OS notification), `send_command` (write to PTY), `enable_auto_resume`, `set_tab_state`
 - **Variables** — capture groups mapped to named variables (`%varName`), persisted per tab
 - **Variable interpolation** — used in tab titles, auto-resume commands, notification bodies
-- **Default triggers** — 6+ built-in Claude Code triggers (resume, session-id, question, plan-ready, compacting, auto-resume)
 - **Variable conditions** — expression parser supporting `&&`, `||`, `!`, `==`, `!=` operators
+- **Custom triggers** — Claude-specific triggers replaced by hooks; trigger engine available for user-defined patterns
 
 ### Notifications
 - **Three modes** — `auto` (in-app when focused, OS when not), `in_app`, `native`, `disabled`
@@ -242,12 +250,14 @@ src/                          # Frontend (Svelte 5 / TypeScript)
     │   ├── triggers.svelte.ts
     │   ├── activity.svelte.ts
     │   ├── claudeCode.svelte.ts    # Claude Code IDE tool handler
+    │   ├── claudeState.svelte.ts   # Claude session state from hooks
+    │   ├── sshMcpBridge.svelte.ts  # SSH MCP bridge orchestration
     │   ├── editorRegistry.svelte.ts # Editor state tracking
     │   ├── notifications.svelte.ts  # Command completion notifications
     │   ├── toasts.svelte.ts
     │   └── notificationDispatch.ts
     ├── triggers/
-    │   ├── defaults.ts       # Built-in Claude Code triggers
+    │   ├── defaults.ts       # Trigger defaults (empty — Claude triggers replaced by hooks)
     │   └── variableCondition.ts  # Variable expression parser
     ├── themes/
     │   └── index.ts          # Theme definitions + application
@@ -273,9 +283,15 @@ src-tauri/src/                # Backend (Rust)
 │   ├── window.rs             # Multi-window management
 │   └── claude_code.rs        # Claude Code tool response handler
 ├── claude_code/              # Claude Code IDE integration
-│   ├── server.rs             # WebSocket + SSE MCP server
+│   ├── server.rs             # WebSocket + SSE + Streamable HTTP MCP server
 │   ├── protocol.rs           # JSON-RPC protocol, tool definitions
-│   └── lockfile.rs           # Lock file + MCP server registration
+│   └── lockfile.rs           # Lock file, MCP registration, hook settings
+├── terminal/                 # Terminal backend (alacritty_terminal)
+│   ├── handle.rs             # TerminalHandle, VTE processor
+│   ├── render.rs             # Grid → ANSI viewport renderer (~60fps)
+│   ├── osc.rs                # OscInterceptor (OSC 7/9/133/633/1337)
+│   ├── search.rs             # Buffer search via RegexSearch
+│   └── serialize.rs          # Buffer serialization/restore
 ├── state/
 │   ├── workspace.rs          # Data structures
 │   ├── app_state.rs          # Global state container
@@ -290,9 +306,10 @@ src-tauri/src/                # Backend (Rust)
 |-------|-----------|
 | Frontend | Svelte 5 (runes), SvelteKit, TypeScript |
 | Backend | Rust, Tauri 2 |
-| Terminal | xterm.js (FitAddon, SerializeAddon, WebLinksAddon) |
+| Terminal | alacritty_terminal (Rust VTE parser + buffer) with xterm.js as thin WebGL renderer |
 | Editor | CodeMirror 6 (+ MergeView for diffs) |
 | PTY | portable-pty |
+| Scrollback | SQLite (WAL mode) via rusqlite |
 | State | parking_lot RwLock |
 
 ## Data Model
@@ -332,7 +349,7 @@ Preferences
 ├── clone_*, notification_mode, shell_integration
 ├── notification_sound, notification_volume, toast_duration
 ├── prompt_patterns, triggers
-├── claude_code_ide
+├── claude_code_ide, claude_code_ide_ssh
 └── workspace sidebar options
 ```
 
