@@ -3,7 +3,7 @@ title: Triggers & Automation
 description: Regex triggers that watch terminal output and fire actions — notifications, commands, and variable capture.
 ---
 
-Triggers watch your terminal output for patterns and fire actions automatically. They're the backbone of aiTerm's Claude Code integration, but work for any terminal workflow.
+Triggers watch your terminal output for patterns and fire actions automatically. Claude Code tracking has moved to [hooks](/aiterm/features/claude-code/#claude-code-hooks), but the trigger engine is fully available for your own custom automation.
 
 ## How Triggers Work
 
@@ -51,21 +51,15 @@ Capture groups in regex patterns can be mapped to named variables:
 - Used in tab titles, auto-resume commands, notification messages
 - Cloned when duplicating tabs
 
-## Built-in Triggers
+## Use Cases
 
-aiTerm ships with default triggers for Claude Code workflows:
+With Claude Code tracking now handled by [hooks](/aiterm/features/claude-code/#claude-code-hooks), triggers are best used for your own custom automation:
 
-| Trigger | Purpose |
-|---------|---------|
-| `claude-resume` | Captures `claude --resume` command |
-| `claude-session-id` | Extracts UUID from `/status` output |
-| `claude-question` | Detects "Do you want to proceed?" prompts |
-| `claude-plan-ready` | Detects plan ready message |
-| `claude-compacting` | Notifies during context compaction |
-| `claude-compaction-complete` | Alerts when compaction finishes |
-| `claude-auto-resume` | Variable-mode trigger for auto-resume |
-
-Default triggers are seeded automatically and can be customized or deleted. Deleted defaults are tracked so they don't reappear.
+- Watch for build failures and send a notification
+- Detect SSH disconnects and auto-reconnect
+- Capture environment variables from command output
+- Fire a command when a deploy prompt appears
+- Set tab state indicators based on output patterns
 
 ## Tab-Level Scoping
 

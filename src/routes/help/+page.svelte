@@ -44,7 +44,12 @@
   let openAccordions = $state<Record<string, boolean>>({});
 
   function toggleAccordion(id: string) {
-    openAccordions = { ...openAccordions, [id]: !openAccordions[id] };
+    // Only one accordion open at a time — close others when opening
+    if (openAccordions[id]) {
+      openAccordions = { ...openAccordions, [id]: false };
+    } else {
+      openAccordions = { [id]: true };
+    }
   }
 
   let copied = $state(false);
@@ -171,6 +176,42 @@
         </div>
 
       {:else if activeSection === 'claude'}
+        <button class="accordion" class:open={openAccordions['c-hooks']} onclick={() => toggleAccordion('c-hooks')}>
+          <span class="chevron">&#x203A;</span> Hooks & Session Tracking
+        </button>
+        {#if openAccordions['c-hooks']}
+          <div class="accordion-body" transition:slide={{ duration: 150 }}>
+            <p class="description">
+              aiTerm integrates with Claude Code's hook system for real-time session awareness. Hooks fire on lifecycle events and report state back to aiTerm automatically.
+            </p>
+            <div class="tip-box">
+              <strong>Important:</strong> Claude must run <code>/aiterm init</code> at the start of each session to activate the integration. Auto-resume injects this automatically, so if you have auto-resume enabled you don't need to do anything. For new sessions without auto-resume, run <code>/aiterm init</code> manually.
+            </div>
+            <div class="trigger-list">
+              <div class="trigger-item">
+                <strong>Session lifecycle</strong>
+                <span>&mdash; Tracks session start, end, and compaction events. Sets up auto-resume automatically.</span>
+              </div>
+              <div class="trigger-item">
+                <strong>Active tool overlay</strong>
+                <span>&mdash; See what Claude is doing right now (editing files, running bash, etc.) in the terminal corner via PreToolUse/PostToolUse hooks.</span>
+              </div>
+              <div class="trigger-item">
+                <strong>Permission alerts</strong>
+                <span>&mdash; Workspace sidebar shows an alert indicator when Claude needs permission approval.</span>
+              </div>
+              <div class="trigger-item">
+                <strong>Tab indicators</strong>
+                <span>&mdash; Pulsing dot (active/thinking), green dot (idle/waiting), lock icon (needs permission).</span>
+              </div>
+              <div class="trigger-item">
+                <strong>Compaction notifications</strong>
+                <span>&mdash; Alerts during and after context compaction.</span>
+              </div>
+            </div>
+          </div>
+        {/if}
+
         <button class="accordion" class:open={openAccordions['c-auto-resume']} onclick={() => toggleAccordion('c-auto-resume')}>
           <span class="chevron">&#x203A;</span> Auto-Resume
         </button>
@@ -181,54 +222,18 @@
             </p>
             <h4>How it works</h4>
             <ol class="steps">
-              <li>When Claude Code exits, it prints a <code>claude --resume &lt;id&gt;</code> command. A built-in trigger captures this automatically.</li>
-              <li>Once captured, aiTerm configures auto-resume for that tab. If the tab is reloaded or the terminal restarts, it runs the resume command to reconnect.</li>
-              <li>Toggle auto-resume on or off with <kbd>{modLabel}</kbd> + <kbd>R</kbd>. A <code>&#x25B6;</code> indicator appears on the tab when active.</li>
+              <li>When Claude Code starts, aiTerm's SessionStart hook captures the session ID automatically and configures auto-resume.</li>
+              <li>If the tab is reloaded or the terminal restarts, aiTerm runs the resume command to reconnect.</li>
+              <li>Toggle auto-resume on or off with <kbd>{modLabel}</kbd> + <kbd>R</kbd>. Right-click a tab for "Edit Auto-resume..." to modify settings.</li>
             </ol>
-            <h4>Keeping it in sync</h4>
+            <h4>Pinned settings</h4>
             <p class="description">
-              Actions like <code>/rewind</code> or anything that forks the conversation create a new session ID. The old resume command will reconnect to the pre-fork session, not the current one. Run <code>/status</code> after forking to capture the new session ID — the "Claude Session ID" trigger picks it up and updates auto-resume automatically.
+              Check "Pin these settings" to prevent hooks from overwriting your custom SSH, CWD, or command values. Pinned tabs keep your configuration across restarts and replays.
             </p>
+            <h4>Replay</h4>
             <p class="description">
-              This is also useful if automatic capture didn't trigger (e.g. you cleared the terminal before Claude exited). You can also right-click a tab to inspect or set a custom resume command directly.
+              Use <kbd>{modLabel}</kbd> + <kbd>{altLabel}</kbd> + <kbd>R</kbd> to replay the auto-resume command without restarting the terminal. This handles SSH reconnection and CWD navigation before running the resume command.
             </p>
-          </div>
-        {/if}
-
-        <button class="accordion" class:open={openAccordions['c-triggers']} onclick={() => toggleAccordion('c-triggers')}>
-          <span class="chevron">&#x203A;</span> Triggers
-        </button>
-        {#if openAccordions['c-triggers']}
-          <div class="accordion-body" transition:slide={{ duration: 150 }}>
-            <p class="description">
-              Built-in triggers watch Claude Code's terminal output for key events. Triggers can be scoped to specific workspaces and/or tabs in <strong>Preferences &rsaquo; Triggers</strong>.
-            </p>
-            <div class="trigger-list">
-              <div class="trigger-item">
-                <strong>Claude Resume</strong>
-                <span>&mdash; Captures the <code>claude --resume</code> command and session ID when Claude exits.</span>
-              </div>
-              <div class="trigger-item">
-                <strong>Claude Session ID</strong>
-                <span>&mdash; Captures the session UUID from <code>/status</code> output.</span>
-              </div>
-              <div class="trigger-item">
-                <strong>Claude Asking Question</strong>
-                <span>&mdash; Notifies when Claude needs confirmation. Sets the tab state to "question".</span>
-              </div>
-              <div class="trigger-item">
-                <strong>Claude Plan Ready</strong>
-                <span>&mdash; Alerts when Claude has a plan ready for review.</span>
-              </div>
-              <div class="trigger-item">
-                <strong>Claude Compacting / Complete</strong>
-                <span>&mdash; Notifies during and after conversation compaction.</span>
-              </div>
-              <div class="trigger-item">
-                <strong>Claude Auto-Resume</strong>
-                <span>&mdash; Automatically enables auto-resume when a session ID or resume command is captured.</span>
-              </div>
-            </div>
           </div>
         {/if}
 
@@ -238,16 +243,58 @@
         {#if openAccordions['c-ide']}
           <div class="accordion-body" transition:slide={{ duration: 150 }}>
             <p class="description">
-              aiTerm runs a built-in MCP server that Claude Code discovers automatically. This gives Claude IDE-like tools for working with your editor tabs and files. Enable or disable in <strong>Preferences &rsaquo; Claude Code</strong>.
+              aiTerm runs a built-in MCP server that Claude Code discovers automatically. This gives Claude 30+ tools for working with your editor, workspaces, notes, and more. Enable or disable in <strong>Preferences &rsaquo; Claude Code</strong>.
             </p>
+            <h4>Editor tools</h4>
             <div class="tool-list">
               <div class="tool"><code>openFile</code> <span>Open files in editor tabs with optional line selection</span></div>
               <div class="tool"><code>openDiff</code> <span>Show side-by-side diffs for you to accept or reject</span></div>
               <div class="tool"><code>saveDocument</code> <span>Save open editor tabs to disk</span></div>
               <div class="tool"><code>getOpenEditors</code> <span>List open tabs, their languages, and unsaved status</span></div>
               <div class="tool"><code>getCurrentSelection</code> <span>Read your current text selection and cursor position</span></div>
-              <div class="tool"><code>getDiagnostics</code> <span>Get editor warnings and errors for a file</span></div>
+              <div class="tool"><code>checkDocumentDirty</code> <span>Check if a file has unsaved changes</span></div>
             </div>
+            <h4>Workspace & navigation</h4>
+            <div class="tool-list">
+              <div class="tool"><code>listWorkspaces</code> <span>Browse all workspaces, panes, and tabs with Claude state</span></div>
+              <div class="tool"><code>listWindows</code> <span>List all windows with workspace summaries</span></div>
+              <div class="tool"><code>switchTab</code> <span>Navigate to any tab by ID</span></div>
+              <div class="tool"><code>getActiveTab</code> <span>Get the currently active tab, pane, and workspace</span></div>
+              <div class="tool"><code>getTabContext</code> <span>Get recent terminal output or editor content for tab discovery</span></div>
+            </div>
+            <h4>Multi-agent coordination</h4>
+            <div class="tool-list">
+              <div class="tool"><code>getClaudeSessions</code> <span>List all active Claude sessions across tabs with state, tool, and model</span></div>
+            </div>
+            <h4>Preferences & diagnostics</h4>
+            <div class="tool-list">
+              <div class="tool"><code>getPreferences</code> <span>Read aiTerm preferences</span></div>
+              <div class="tool"><code>setPreference</code> <span>Update an aiTerm preference</span></div>
+              <div class="tool"><code>getDiagnostics</code> <span>App diagnostics &mdash; version, PTY stats, memory, WebGL state</span></div>
+              <div class="tool"><code>readLogs</code> <span>Tail the log file with level filter and search</span></div>
+              <div class="tool"><code>createBackup</code> <span>Create a state backup on demand</span></div>
+              <div class="tool"><code>sendNotification</code> <span>Send a toast or OS notification</span></div>
+            </div>
+          </div>
+        {/if}
+
+        <button class="accordion" class:open={openAccordions['c-ssh']} onclick={() => toggleAccordion('c-ssh')}>
+          <span class="chevron">&#x203A;</span> SSH MCP Bridge
+        </button>
+        {#if openAccordions['c-ssh']}
+          <div class="accordion-body" transition:slide={{ duration: 150 }}>
+            <p class="description">
+              When you're SSH'd into a remote server, aiTerm can bridge the MCP connection so Claude Code running remotely still has access to all IDE tools.
+            </p>
+            <h4>How it works</h4>
+            <ol class="steps">
+              <li>aiTerm detects an SSH session and sets up a reverse tunnel automatically in the background.</li>
+              <li>Hooks and environment variables are injected into the remote shell so Claude Code can connect back.</li>
+              <li>A bolt icon appears in the tab bar &mdash; green when connected, dim when disconnected.</li>
+            </ol>
+            <p class="description">
+              Enable or disable in <strong>Preferences &rsaquo; Claude Code &rsaquo; SSH MCP Bridge</strong>.
+            </p>
           </div>
         {/if}
 
@@ -274,15 +321,13 @@
               <li><em>"Save this plan as a workspace note"</em></li>
               <li><em>"Move my tab notes to a workspace note"</em></li>
               <li><em>"What notes do I have in this workspace?"</em></li>
+              <li><em>"Search all my notes for deployment steps"</em></li>
               <li><em>"Switch to the tab where I was working on the auth refactor"</em></li>
-              <li><em>"Switch to the tab called dev-server"</em></li>
               <li><em>"List all my workspaces and their tabs"</em></li>
-              <li><em>"Open the notes panel and show workspace notes"</em></li>
+              <li><em>"What are the other Claude sessions doing right now?"</em></li>
             </ul>
             <h4>Available tools</h4>
             <div class="tool-list">
-              <div class="tool"><code>listWorkspaces</code> <span>Browse all workspaces, panes, and tabs with IDs and names</span></div>
-              <div class="tool"><code>switchTab</code> <span>Navigate to any tab by ID</span></div>
               <div class="tool"><code>getTabNotes</code> <span>Read notes from a tab</span></div>
               <div class="tool"><code>setTabNotes</code> <span>Write or clear tab notes</span></div>
               <div class="tool"><code>listWorkspaceNotes</code> <span>List workspace-level notes with previews</span></div>
@@ -290,7 +335,7 @@
               <div class="tool"><code>writeWorkspaceNote</code> <span>Create or update a workspace note</span></div>
               <div class="tool"><code>deleteWorkspaceNote</code> <span>Delete a workspace note</span></div>
               <div class="tool"><code>moveNote</code> <span>Move notes between tab and workspace levels</span></div>
-              <div class="tool"><code>getTabContext</code> <span>Get recent terminal output to find tabs by what you were doing</span></div>
+              <div class="tool"><code>findNotes</code> <span>Search all tabs and workspaces for notes in one call</span></div>
               <div class="tool"><code>openNotesPanel</code> <span>Open, close, or toggle the notes panel</span></div>
               <div class="tool"><code>setNotesScope</code> <span>Switch between tab and workspace note views</span></div>
             </div>
