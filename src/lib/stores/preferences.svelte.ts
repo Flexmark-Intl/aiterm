@@ -51,7 +51,7 @@ function createPreferencesStore() {
   let claudeCodeIde = $state(false);
   let claudeCodeIdeSsh = $state(true);
   let claudeCodeHooks = $state(true);
-  let claudeCodeAutoResume = $state(false);
+  let claudeCodeAutoResume = $state(true);
   let windowsShell = $state('powershell');
   let fileLinkAction = $state('modifier_click');
   let backupDirectory = $state<string | null>(null);
@@ -175,7 +175,7 @@ function createPreferencesStore() {
       claudeCodeIde = prefs.claude_code_ide ?? false;
       claudeCodeIdeSsh = prefs.claude_code_ide_ssh ?? true;
       claudeCodeHooks = prefs.claude_code_hooks ?? true;
-      claudeCodeAutoResume = prefs.claude_code_auto_resume ?? false;
+      claudeCodeAutoResume = prefs.claude_code_auto_resume ?? true;
       windowsShell = prefs.windows_shell ?? 'powershell';
       fileLinkAction = prefs.file_link_action ?? 'modifier_click';
       backupDirectory = prefs.backup_directory ?? null;
@@ -512,7 +512,7 @@ function createPreferencesStore() {
       claudeCodeIde = prefs.claude_code_ide ?? false;
       claudeCodeIdeSsh = prefs.claude_code_ide_ssh ?? true;
       claudeCodeHooks = prefs.claude_code_hooks ?? true;
-      claudeCodeAutoResume = prefs.claude_code_auto_resume ?? false;
+      claudeCodeAutoResume = prefs.claude_code_auto_resume ?? true;
       windowsShell = prefs.windows_shell ?? 'powershell';
       fileLinkAction = prefs.file_link_action ?? 'modifier_click';
       backupDirectory = prefs.backup_directory ?? null;

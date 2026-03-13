@@ -1612,7 +1612,7 @@
               <div>
                 <label for="claude-code-auto-resume">Enable Auto-Resume via Hooks</label>
                 <p class="setting-hint">
-                  Automatically captures session IDs and configures auto-resume when Claude starts.
+                  Automatically captures session IDs and configures auto-resume when Claude initializes its aiTerm session.
                   No screen-scraping triggers needed.
                 </p>
               </div>

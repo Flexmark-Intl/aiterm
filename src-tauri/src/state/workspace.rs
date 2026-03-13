@@ -709,7 +709,7 @@ pub struct Preferences {
     #[serde(default = "default_true")]
     pub claude_code_hooks: bool,
     /// Enable hooks-based auto-resume (initSession sets session ID, auto-configures resume).
-    #[serde(default)]
+    #[serde(default = "default_true")]
     pub claude_code_auto_resume: bool,
     /// Windows shell preference: "powershell", "pwsh", "cmd", "gitbash", "wsl"
     #[serde(default = "default_windows_shell")]
@@ -789,7 +789,7 @@ impl Default for Preferences {
             claude_code_ide: true,
             claude_code_ide_ssh: true,
             claude_code_hooks: true,
-            claude_code_auto_resume: false,
+            claude_code_auto_resume: true,
             windows_shell: default_windows_shell(),
             file_link_action: default_file_link_action(),
             backup_directory: None,
