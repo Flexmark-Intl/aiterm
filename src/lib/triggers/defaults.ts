@@ -19,6 +19,16 @@ export function seedDefaultTriggers(
   let list = [...existing];
   let changed = false;
 
+  // Remove unmodified triggers whose default_id no longer exists in DEFAULT_TRIGGERS
+  const before = list.length;
+  list = list.filter(t => {
+    if (!t.default_id) return true; // user-created
+    if (t.default_id in DEFAULT_TRIGGERS) return true; // still active
+    if (t.user_modified) return true; // user customized it — keep
+    return false; // stale default — remove
+  });
+  if (list.length !== before) changed = true;
+
   for (const [defaultId, tmpl] of Object.entries(DEFAULT_TRIGGERS)) {
     if (hiddenIds.includes(defaultId)) continue;
 
