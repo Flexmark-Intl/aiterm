@@ -185,9 +185,12 @@
     const updated = preferencesStore.triggers.map(t => {
       if (t.id !== id) return t;
       const merged = { ...t, ...patch };
-      // Mark default triggers as user-modified (unless the patch explicitly sets user_modified)
+      // Mark default triggers as user-modified when content changes (not just enabled toggle)
       if (merged.default_id && !('user_modified' in patch)) {
-        merged.user_modified = true;
+        const isContentChange = Object.keys(patch).some(k => k !== 'enabled');
+        if (isContentChange) {
+          merged.user_modified = true;
+        }
       }
       return merged;
     });
