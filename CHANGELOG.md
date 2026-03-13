@@ -1,5 +1,25 @@
 # Changelog
 
+## v1.7.0 — Performance overhaul for heavy workloads
+
+- Move terminal backend to alacritty_terminal — all VTE parsing and buffer management in Rust, xterm.js as thin renderer (~60fps ANSI frames)
+- Move scrollback persistence from JSON state to SQLite (WAL mode) — crash-safe, state file drops from ~25MB to ~32KB
+- Fix critical UTF-8 corruption in scrollback restore (multi-byte chars split into C1 control sequences)
+- Reduce scrollback memory pressure with dirty tracking and staggered saves
+- Add lazy terminal tab activation — only spawn PTYs when tab becomes active
+- Add workspace suspend/resume with auto-suspend timeout, sidebar controls, and context menus
+- Add Claude Code hooks integration — replace trigger-based tracking with HTTP hooks (PreToolUse, PostToolUse, PreCompact, SessionStart/End, Stop, Notification)
+- Add SSH MCP bridge — reverse tunnel for remote IDE tools with ControlMaster mux support and bridge status indicator
+- Add Streamable HTTP MCP transport (POST /mcp), replacing legacy SSE
+- Add per-monitor-count window geometry persistence with auto-repositioning on monitor changes
+- Add remote file watching via SSH stat polling with host batching and backoff
+- Add Claude session MCP tools (getClaudeSessions) for multi-agent coordination
+- Add third-party license generation for Rust and npm dependencies
+- Add UI font size preference with proportional rem-based scaling
+- Improve notification system: sequential toast countdown, window focus awareness, dual toast + OS when unfocused
+- Migrate auto-resume from triggers to hooks with old pattern detection and auto-migration
+- Fix Preferences and Help windows not loading in production builds (missing .html extension)
+
 ## v1.6.2
 
 - Preserve PTY when moving tabs between workspaces (drag to another workspace keeps the running session)
