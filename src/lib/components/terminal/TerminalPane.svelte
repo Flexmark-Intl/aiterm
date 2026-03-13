@@ -321,9 +321,14 @@
       const { cmd, exit_code } = event.payload;
       if (cmd === 'A') {
         activityStore.setShellState(tabId, 'prompt');
-        // Local shell prompt means SSH session ended — tear down bridge
+        // Local shell prompt means SSH session ended — tear down bridge.
+        // But remote shells also emit OSC 133 A, so verify SSH is actually gone.
         if (hasBridge(tabId)) {
-          disableBridge(tabId).catch(() => {});
+          getPtyInfo(ptyId).then(info => {
+            if (!info.foreground_command) {
+              disableBridge(tabId).catch(() => {});
+            }
+          }).catch(() => {});
         }
       } else if (cmd === 'D') {
         const elapsed = commandStartedAt ? Date.now() - commandStartedAt : 0;
@@ -407,30 +412,40 @@
     }
 
     // If the source pane was running SSH (or last session had SSH), replay the command.
-    // The auto-resume command (if any) is sent immediately after — the TTY buffers it
-    // until SSH connects and the remote shell reads from forwarded stdin.
+    // SSH command sent immediately; auto-resume deferred until after bridge setup so
+    // AITERM_TAB_ID env var is available in the remote shell when Claude starts.
     // Skip all of this when reattaching to an existing PTY (e.g. tab moved between workspaces).
     if (!reattaching) {
       if (ctx?.sshCommand) {
-        // Small delay to let the local shell prompt initialize before sending
+        // Send SSH command first — small delay for local shell to initialize
         setTimeout(async () => {
           try {
             const cmd = buildSshCommand(ctx.sshCommand, ctx.remoteCwd);
-            let payload = cmd + '\n';
-            if ((autoResumeEnabled ?? true) && autoResumeCommand) {
-              payload += interpolateVariables(tabId, autoResumeCommand, true) + '\n';
-            }
-            const bytes = Array.from(new TextEncoder().encode(payload));
+            const bytes = Array.from(new TextEncoder().encode(cmd + '\n'));
             await writeTerminal(ptyId, bytes);
           } catch (e) {
             logError(`Failed to replay SSH command: ${e}`);
           }
         }, 500);
 
-        // Enable SSH MCP bridge after SSH connection establishes (~5s)
+        // Enable SSH MCP bridge after SSH connection establishes (~5s).
+        // Then send auto-resume AFTER bridge injects env vars, so Claude
+        // has AITERM_TAB_ID available when the session starts.
         if (ctx.sshCommand) {
-          setTimeout(() => {
-            if (!destroyed) enableBridge(tabId, ctx.sshCommand!).catch(() => {});
+          setTimeout(async () => {
+            if (destroyed) return;
+            await enableBridge(tabId, ctx.sshCommand!, ptyId).catch(() => {});
+            if (destroyed) return;
+            if ((autoResumeEnabled ?? true) && autoResumeCommand) {
+              try {
+                // Small delay after env injection for shell to process the export
+                await new Promise(r => setTimeout(r, 500));
+                const bytes = Array.from(new TextEncoder().encode(interpolateVariables(tabId, autoResumeCommand, true) + '\n'));
+                await writeTerminal(ptyId, bytes);
+              } catch (e) {
+                logError(`Failed to send auto-resume after bridge: ${e}`);
+              }
+            }
           }, 5000);
         }
       } else if ((autoResumeEnabled ?? true) && autoResumeCommand && (!splitCtx || splitCtx.fireAutoResume)) {
@@ -450,7 +465,7 @@
           try {
             const info = await getPtyInfo(ptyId);
             if (info.foreground_command) {
-              enableBridge(tabId, info.foreground_command).catch(() => {});
+              enableBridge(tabId, info.foreground_command, ptyId).catch(() => {});
             }
           } catch { /* tab may be gone */ }
         }, 10000);
@@ -1118,7 +1133,7 @@
               try {
                 const info = await getPtyInfo(ptyId);
                 if (info.foreground_command) {
-                  await enableBridge(tabId, info.foreground_command);
+                  await enableBridge(tabId, info.foreground_command, ptyId);
                 } else {
                   dispatch('MCP Bridge', 'No SSH session detected — connect via SSH first', 'info');
                 }

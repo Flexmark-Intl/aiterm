@@ -109,9 +109,11 @@ Remote Claude Code → discovers ~/.claude/ide/{port}.lock → connects through 
 
 **Auto-enable:** SSH sessions detected via `getPtyInfo()` foreground_command. For restore/clone SSH: 5s delay after SSH replay. For ad-hoc SSH: 10s delayed check. Manual via context menu.
 
-**Remote setup:** Lockfile and `~/.claude.json` registration are written via a separate background SSH connection (`ssh_run_setup`), **not** through the user's interactive PTY. This prevents command injection into running programs (e.g. Claude Code). The setup script uses shell variables for JSON data to avoid nested quoting issues, and pipes JSON to python3/jq via stdin.
+**Remote setup:** Lockfile, `~/.claude.json`, and hooks (`~/.claude/settings.json`) are written via a separate background SSH connection (`ssh_run_setup`), **not** through the user's interactive PTY. This prevents command injection into running programs (e.g. Claude Code). The setup script uses shell variables for JSON data to avoid nested quoting issues, and pipes JSON to python3/jq via stdin. After setup, `AITERM_TAB_ID` and `AITERM_PORT` env vars are injected into the remote shell via PTY write (leading space suppresses shell history).
 
-**Remote cleanup:** Stale lockfile detection on reconnect tests dead ports via `/dev/tcp/localhost/{port}`. No EXIT trap (background SSH has no persistent shell on remote).
+**Remote hooks:** All hook events (SessionStart, SessionEnd, Notification, Stop, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact) are registered on the remote with HTTP hooks pointing to `127.0.0.1:{remotePort}/hooks`. These tunnel back through the SSH reverse tunnel to the local MCP server's hooks handler. A command hook on SessionStart reads `$AITERM_TAB_ID` (from env var injection) and echoes the tab ID into Claude's context. Hooks require python3 on the remote for the settings.json merge.
+
+**Remote cleanup:** Stale lockfile detection on reconnect tests dead ports via `/dev/tcp/localhost/{port}`. No EXIT trap (background SSH has no persistent shell on remote). Stale hooks with dead port URLs are harmless (fail silently) and cleaned up on next bridge setup.
 
 **Port allocation:** `ssh -v -R 0:...` lets SSH pick a free remote port. The `-v` flag is required because ControlMaster mux clients print nothing without it. Port parsed from both stdout and stderr (direct connections use stderr, mux clients use stderr with `-v`). Uses `tokio::select!` to read both streams concurrently.
 

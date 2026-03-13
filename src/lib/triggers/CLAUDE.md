@@ -45,13 +45,11 @@ Per-trigger per-tab, prevents rapid re-firing.
 
 ## Default Triggers
 
-`src/lib/triggers/defaults.ts`: 6+ app-provided templates with stable `default_id`:
-- `claude-resume` — captures `claude --resume` command
-- `claude-session-id` — extracts UUID from `/status` output
-- `claude-question` — detects "Do you want to proceed?" prompts
-- `claude-plan-ready` — detects plan ready message
-- `claude-compacting` — notifies during context compaction
-- `claude-compaction-complete` — alerts when compaction finishes
-- `claude-auto-resume` — variable-mode trigger for auto-resume enablement
+`src/lib/triggers/defaults.ts`: `DEFAULT_TRIGGERS` is currently empty — all Claude-related triggers have been replaced by hooks integration (PreToolUse, PostToolUse, PreCompact, SessionStart, Stop, Notification).
 
-Seeded on Preferences page mount via `seedDefaultTriggers()`. Users can edit; "Reset" restores template values. Deleted defaults tracked in `hidden_default_triggers`.
+`seedDefaultTriggers()` runs at app startup (`+layout.svelte` onMount) and on Preferences page mount. It:
+1. Removes triggers whose `default_id` is not in `DEFAULT_TRIGGERS` (stale cleanup)
+2. Seeds any new defaults that don't exist yet
+3. Auto-updates unmodified defaults to latest template values
+
+Users can create custom triggers. Deleted defaults tracked in `hidden_default_triggers`.

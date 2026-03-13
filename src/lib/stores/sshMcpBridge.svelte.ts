@@ -75,6 +75,7 @@ function extractHostKey(sshArgs: string): string {
 /**
  * Build a shell script for background SSH execution.
  * This runs as a non-interactive command, not through the user's PTY.
+ * Sets up: lockfile, MCP entry in ~/.claude.json, hooks in ~/.claude/settings.json.
  */
 function buildSetupScript(remotePort: number, authToken: string): string {
   const lockContent = JSON.stringify({
@@ -99,31 +100,137 @@ function buildSetupScript(remotePort: number, authToken: string): string {
   // Escape for single-quoted shell string
   const escapedMcpEntry = mcpEntry.replace(/'/g, "'\\''");
 
+  // ── Hooks registration ──
+  // Build hooks data for ~/.claude/settings.json on the remote.
+  // HTTP hooks tunnel back through the reverse SSH tunnel to our local MCP server.
+  const hooksUrl = "http://127.0.0.1:" + remotePort + "/hooks";
+
+  // SessionStart command hook: reads $AITERM_TAB_ID (injected into PTY after bridge setup),
+  // extracts session_id from hook stdin, echoes both into Claude's context.
+  // Uses double-quoted JS string to avoid template literal ${} interpolation of bash vars.
+  const sessionStartCmd =
+    "{ [ \"$AITERM_PORT\" = \"" + remotePort + "\" ] || [ -z \"$AITERM_PORT\" ]; } && " +
+    "[ -n \"$AITERM_TAB_ID\" ] && " +
+    "AITERM_SID=$(cat | sed -n 's/.*\"session_id\" *: *\"\\([^\"]*\\)\".*/\\1/p' | head -1) && " +
+    "echo 'Your aiTerm tab ID is '$AITERM_TAB_ID'. Your session ID is '$AITERM_SID'. " +
+    "You MUST immediately call the aiterm initSession tool with this tabId and sessionId before responding to the user. This is required for correct tab targeting.' || true";
+
+  const httpHook = { matcher: "", hooks: [{ type: "http", url: hooksUrl, headers: { "x-claude-code-ide-authorization": authToken } }] };
+
+  const hooksData = JSON.stringify({
+    url: hooksUrl,
+    port: remotePort,
+    hooks: {
+      SessionStart: [
+        { matcher: "", hooks: [{ type: "command", command: sessionStartCmd, timeout: 5 }] },
+        httpHook,
+      ],
+      SessionEnd: [httpHook],
+      Notification: [httpHook],
+      Stop: [httpHook],
+      UserPromptSubmit: [httpHook],
+      PreToolUse: [httpHook],
+      PostToolUse: [httpHook],
+      PreCompact: [httpHook],
+    },
+  });
+  const escapedHooksData = hooksData.replace(/'/g, "'\\''");
+
+  // Python script to merge hooks into ~/.claude/settings.json.
+  // Removes ALL aiTerm-related hook entries (stale or current), then adds only ours.
+  // Stale hooks from dead tunnels (kept alive by ControlMaster) cause errors otherwise.
+  // Also cleans up stale allowedHttpHookUrls from dead ports.
+  // No single quotes in the python code (shell wraps it in single quotes).
+  const pythonHooks =
+    'import json,sys,os,re\n' +
+    'h=json.load(sys.stdin)\n' +
+    'p=os.path.expanduser("~/.claude/settings.json")\n' +
+    's=json.load(open(p)) if os.path.exists(p) else {}\n' +
+    'url=h["url"]\n' +
+    'def is_aiterm(e):\n' +
+    ' for hk in e.get("hooks",[]):\n' +
+    '  u=hk.get("url","")\n' +
+    '  if re.search(r"127\\.0\\.0\\.1:\\d+/hooks",u):return True\n' +
+    '  if hk.get("type")=="command" and "AITERM" in hk.get("command",""):return True\n' +
+    ' return False\n' +
+    'for ev,entries in h["hooks"].items():\n' +
+    ' existing=[e for e in s.get("hooks",{}).get(ev,[]) if not is_aiterm(e)]\n' +
+    ' existing.extend(entries)\n' +
+    ' s.setdefault("hooks",{})[ev]=existing\n' +
+    'a=[u for u in s.get("allowedHttpHookUrls",[]) if not re.search(r"127\\.0\\.0\\.1:\\d+/hooks",u)]\n' +
+    'a.append(url)\n' +
+    's["allowedHttpHookUrls"]=a\n' +
+    'open(p,"w").write(json.dumps(s,indent=2))';
+
   // Build script with newline separators (semicolons after `do`/`then`/`else` are syntax errors).
   // All JSON data is passed via shell variables to avoid quoting issues with python/jq.
   const script = [
     // Store JSON in shell variables to avoid nested quote hell
     `__lock='${escapedLockContent}'`,
     `__mcp='${escapedMcpEntry}'`,
-    // Stale lockfile cleanup
+    `__hooks='${escapedHooksData}'`,
+    // Stale lockfile cleanup — uses curl to verify the server responds with HTTP.
+    // /dev/tcp is unreliable with ControlMaster: dead tunnels appear alive because
+    // the master keeps old port forwardings open even after the bridge process exits.
     'for __f in ~/.claude/ide/*.lock; do',
     '[ -f "$__f" ] || continue',
     'grep -q aiTerm "$__f" 2>/dev/null || continue',
     '__p=$(grep -o \'"serverPort":[0-9]*\' "$__f" 2>/dev/null | grep -o \'[0-9]*\')',
-    '[ -n "$__p" ] && ! (echo >/dev/tcp/localhost/$__p) 2>/dev/null && rm -f "$__f"',
+    '__t=$(grep -o \'"authToken":"[^"]*"\' "$__f" 2>/dev/null | cut -d\'"\'  -f4)',
+    '[ -n "$__p" ] && [ "$__p" != "' + remotePort + '" ] && {',
+    '__code=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 2 -X POST -H "x-claude-code-ide-authorization: $__t" "http://127.0.0.1:$__p/hooks" 2>/dev/null)',
+    '[ "$__code" = "000" ] || [ "$__code" = "" ] && rm -f "$__f"',
+    '} 2>/dev/null',
     'done',
     // Write lockfile
     'mkdir -p ~/.claude/ide',
     `printf '%s' "$__lock" > ~/.claude/ide/${remotePort}.lock`,
-    // Register in ~/.claude.json — pipe JSON via stdin to avoid quoting issues
+    // Register MCP in ~/.claude.json + hooks in ~/.claude/settings.json
     'if command -v python3 >/dev/null 2>&1; then',
     'printf \'%s\' "$__mcp" | python3 -c \'import json,sys,os; e=json.load(sys.stdin); p=os.path.expanduser("~/.claude.json"); d=json.load(open(p)) if os.path.exists(p) else {}; d.setdefault("mcpServers",{})["aiterm"]=e; open(p,"w").write(json.dumps(d,indent=2))\'',
+    "printf '%s' \"$__hooks\" | python3 -c '" + pythonHooks + "'",
     'elif command -v jq >/dev/null 2>&1; then',
     '[ -f ~/.claude.json ] || echo \'{}\' > ~/.claude.json',
     'jq --argjson entry "$__mcp" \'.mcpServers.aiterm = $entry\' ~/.claude.json > ~/.claude.json.tmp && mv ~/.claude.json.tmp ~/.claude.json',
     'else',
     '[ -f ~/.claude.json ] || echo \'{}\' > ~/.claude.json',
     'fi',
+    // Install /aiterm skill on the remote
+    'mkdir -p ~/.claude/skills/aiterm',
+    "cat > ~/.claude/skills/aiterm/SKILL.md << 'SKILLEOF'\n" +
+    '---\n' +
+    'name: aiterm\n' +
+    'description: Quick aiTerm terminal operations — /aiterm notes, /aiterm diag, /aiterm tabs, etc.\n' +
+    '---\n' +
+    '\n' +
+    'Execute the aiTerm MCP tool for the requested operation. Use the aiterm MCP server. If you have not initialized yet, call initSession first.\n' +
+    '\n' +
+    '## Command reference\n' +
+    '\n' +
+    '| Command | MCP Tool | Parameters |\n' +
+    '|---------|----------|------------|\n' +
+    '| `notes` | openNotesPanel | `{ "open": true }` |\n' +
+    '| `notes close` | openNotesPanel | `{ "open": false }` |\n' +
+    '| `notes read` | getTabNotes | `{}` |\n' +
+    '| `notes write <content>` | setTabNotes | `{ "notes": "<content>" }` |\n' +
+    '| `tabs` | listWorkspaces | `{}` |\n' +
+    '| `tab` | getActiveTab | `{}` |\n' +
+    '| `diag` | getDiagnostics | `{}` |\n' +
+    '| `vars` | getTriggerVariables | `{}` |\n' +
+    '| `var <name> <value>` | setTriggerVariable | `{ "name": "<name>", "value": "<value>" }` |\n' +
+    '| `resume on` | setAutoResume | `{ "enabled": true }` |\n' +
+    '| `resume off` | setAutoResume | `{ "enabled": false }` |\n' +
+    '| `resume` | getAutoResume | `{}` |\n' +
+    '| `notify <title> <body>` | sendNotification | `{ "title": "<title>", "body": "<body>" }` |\n' +
+    '| `logs` | readLogs | `{}` |\n' +
+    '| `logs <search>` | readLogs | `{ "search": "<search>" }` |\n' +
+    '| `init` | initSession | `{ "tabId": "$AITERM_TAB_ID", "sessionId": "<from SessionStart hook>" }` |\n' +
+    '\n' +
+    'Call the exact MCP tool listed above with the specified parameters. Do not ask for clarification — just execute.\n' +
+    'For `init`: read tabId from $AITERM_TAB_ID env var and sessionId from your SessionStart hook context.\n' +
+    '\n' +
+    '$ARGUMENTS\n' +
+    'SKILLEOF',
   ];
 
   return script.join('\n');
@@ -131,9 +238,13 @@ function buildSetupScript(remotePort: number, authToken: string): string {
 
 /**
  * Enable the MCP bridge for an SSH tab.
- * Spawns (or reuses) a reverse tunnel and writes the lockfile via background SSH.
+ * Spawns (or reuses) a reverse tunnel, writes lockfile + hooks via background SSH,
+ * and injects AITERM_TAB_ID / AITERM_PORT env vars into the remote shell.
+ *
+ * @param ptyId — if provided, injects env vars into the remote shell via PTY write.
+ *   Leading space prevents the command from appearing in shell history.
  */
-export async function enableBridge(tabId: string, sshArgs: string): Promise<boolean> {
+export async function enableBridge(tabId: string, sshArgs: string, ptyId?: string): Promise<boolean> {
   if (!preferencesStore.claudeCodeIde || !preferencesStore.claudeCodeIdeSsh) {
     return false;
   }
@@ -155,7 +266,7 @@ export async function enableBridge(tabId: string, sshArgs: string): Promise<bool
     const tunnelInfo = await commands.startSshTunnel(sshArgs, hostKey, tabId, localPort);
     logInfo(`SSH MCP bridge: tunnel to ${hostKey} on remote port ${tunnelInfo.remote_port}`);
 
-    // Write lockfile on remote via a separate background SSH connection
+    // Write lockfile + MCP entry + hooks on remote via a separate background SSH connection
     const setupScript = buildSetupScript(tunnelInfo.remote_port, authToken);
     await commands.sshRunSetup(sshArgs, setupScript);
 
@@ -167,6 +278,19 @@ export async function enableBridge(tabId: string, sshArgs: string): Promise<bool
 
     // Listen for tunnel process death from Rust — clears indicator in real-time
     listenForTunnelDown(tabId).catch(() => {});
+
+    // Inject AITERM_TAB_ID and AITERM_PORT into the remote shell so hooks can read them.
+    // Leading space suppresses shell history (bash HISTCONTROL=ignorespace, zsh HIST_IGNORE_SPACE).
+    if (ptyId) {
+      try {
+        const envCmd = " export AITERM_TAB_ID=" + tabId + " AITERM_PORT=" + tunnelInfo.remote_port + "\n";
+        const bytes = Array.from(new TextEncoder().encode(envCmd));
+        await commands.writeTerminal(ptyId, bytes);
+        logInfo("SSH MCP bridge: injected env vars into remote shell for tab " + tabId);
+      } catch (e) {
+        logError("SSH MCP bridge: failed to inject env vars: " + e);
+      }
+    }
 
     logInfo(`SSH MCP bridge enabled for tab ${tabId} → ${hostKey}:${tunnelInfo.remote_port}`);
     return true;

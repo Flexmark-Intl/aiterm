@@ -661,9 +661,9 @@
         {:else if claudeState?.state === 'permission'}
           <Tooltip text="Claude needs permission"><span class="indicator claude-permission"><Icon name="warning" size={11} /></span></Tooltip>
         {:else if claudeState?.state === 'active'}
-          <Tooltip text={claudeState.toolName ? `Claude: ${claudeState.toolName}${claudeState.toolDetail ? ': ' + claudeState.toolDetail : ''}` : 'Claude is working'}><span class="indicator claude-active"><Icon name="circle" size={8} /></span></Tooltip>
+          <Tooltip text={claudeState.toolName ? `Claude: ${claudeState.toolName}${claudeState.toolDetail ? ': ' + claudeState.toolDetail : ''}` : 'Claude is working'}><span class="indicator claude-active"><Icon name="circle" size={10} /></span></Tooltip>
         {:else if claudeState?.state === 'idle'}
-          <Tooltip text="Claude waiting for input"><span class="indicator claude-idle"><Icon name="circle" size={8} /></span></Tooltip>
+          <Tooltip text="Claude waiting for input"><span class="indicator claude-idle"><Icon name="circle" size={10} /></span></Tooltip>
         {:else if shellState?.state === 'completed'}
           <span class="indicator" class:completed-indicator={shellState.exitCode === 0} class:failed-indicator={shellState.exitCode !== 0}>{#if shellState.exitCode === 0}<Icon name="check" size={11} />{:else}<Icon name="cross" size={11} />{/if}</span>
         {:else if hasActivity}
@@ -948,8 +948,8 @@
   }
 
   @keyframes claude-pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.3; }
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.3; transform: scale(0.7); }
   }
 
   .tab-name {

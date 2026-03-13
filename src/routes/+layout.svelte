@@ -131,6 +131,10 @@
 
     // Load preferences, then check if Claude integration prompt is needed
     preferencesStore.load().then(() => {
+      // Clean up stale default triggers on startup
+      const seeded = seedDefaultTriggers(preferencesStore.triggers, preferencesStore.hiddenDefaultTriggers);
+      if (seeded) preferencesStore.setTriggers(seeded);
+
       if (!preferencesStore.claudeTriggersPrompted) {
         const defaults = preferencesStore.triggers.filter(t => t.default_id);
         const allDisabled = defaults.length === 0 || defaults.every(t => !t.enabled);

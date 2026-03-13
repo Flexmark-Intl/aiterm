@@ -1,6 +1,7 @@
 import { preferencesStore } from './preferences.svelte';
 import { toastStore } from './toasts.svelte';
 import type { Toast, ToastSource } from './toasts.svelte';
+import { workspacesStore } from './workspaces.svelte';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import {
   isPermissionGranted,
@@ -99,6 +100,16 @@ function playNotificationSound() {
   }
 }
 
+/** Check if a tab belongs to the current window's workspaces. */
+function tabBelongsToWindow(tabId: string): boolean {
+  for (const ws of workspacesStore.workspaces) {
+    for (const pane of ws.panes) {
+      if (pane.tabs.some(t => t.id === tabId)) return true;
+    }
+  }
+  return false;
+}
+
 /**
  * Central notification dispatch. Routes to in-app toast or OS notification
  * based on the user's notification_mode preference and window focus state.
@@ -112,6 +123,10 @@ export async function dispatch(
   const mode = preferencesStore.notificationMode;
 
   if (mode === 'disabled') return;
+
+  // If the notification is scoped to a specific tab, only show it in the window that owns that tab.
+  // Tauri events broadcast to all windows, so without this check every window would show the toast.
+  if (source?.tabId && !tabBelongsToWindow(source.tabId)) return;
 
   playNotificationSound();
 
