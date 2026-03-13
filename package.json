@@ -10,7 +10,8 @@
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "tauri": "tauri",
     "tauri:dev": "lsof -ti :1420 | xargs kill -9 2>/dev/null; tauri dev --features mcp-bridge --config src-tauri/tauri.dev.conf.json",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "licenses": "./scripts/generate-licenses.sh"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.8",

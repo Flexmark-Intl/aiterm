@@ -3,6 +3,7 @@ name = "aiterm"
 version = "1.6.2"
 description = "A Tauri-based terminal organizer"
 authors = ["you"]
+license = "LicenseRef-Proprietary"
 edition = "2021"
 
 [lib]

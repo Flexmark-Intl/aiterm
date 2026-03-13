@@ -1,0 +1,11 @@
+Third-Party Licenses (Rust Dependencies)
+=========================================
+{{#each licenses}}
+{{name}} ({{id}})
+{{#each used_by}}  - {{crate.name}} v{{crate.version}}{{#if crate.repository}} ({{crate.repository}}){{/if}}
+{{/each}}
+
+{{{text}}}
+
+---
+{{/each}}
