@@ -405,6 +405,11 @@ pub fn tool_list_response() -> Value {
                     },
                     "required": []
                 }
+            },
+            {
+                "name": "getClaudeSessions",
+                "description": "Get all active Claude Code sessions across all tabs. Returns session IDs, states (active/waiting_input/waiting_permission/stopped), current tool being executed, model, working directory, and tab/workspace names. Use this for multi-agent coordination — check if Claude is running in other tabs before starting work, avoid conflicting edits, or wait for another session to finish.",
+                "inputSchema": { "type": "object", "properties": {}, "required": [] }
             }
         ]
     })

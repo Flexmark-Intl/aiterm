@@ -413,6 +413,40 @@ fn handle_backend_tool(tool_name: &str, arguments: &Value, state: &Arc<AppState>
             log::info!("MCP backup created: {}", path_str);
             Some(serde_json::json!({ "success": true, "path": path_str, "excludedScrollback": exclude_scrollback }))
         }
+        "getClaudeSessions" => {
+            let sessions = state.claude_sessions.read();
+            let app_data = state.app_data.read();
+
+            // Build a map of tab_id → (tab_name, workspace_name) for enrichment
+            let mut tab_info: std::collections::HashMap<&str, (&str, &str)> = std::collections::HashMap::new();
+            for window in &app_data.windows {
+                for ws in &window.workspaces {
+                    for pane in &ws.panes {
+                        for tab in &pane.tabs {
+                            tab_info.insert(&tab.id, (&tab.name, &ws.name));
+                        }
+                    }
+                }
+            }
+
+            let entries: Vec<Value> = sessions.iter().map(|(sid, info)| {
+                let (tab_name, ws_name) = tab_info.get(info.tab_id.as_str())
+                    .copied()
+                    .unwrap_or(("unknown", "unknown"));
+                serde_json::json!({
+                    "sessionId": sid,
+                    "tabId": info.tab_id,
+                    "tabName": tab_name,
+                    "workspaceName": ws_name,
+                    "state": info.state,
+                    "cwd": info.cwd,
+                    "toolName": info.tool_name,
+                    "model": info.model,
+                })
+            }).collect();
+
+            Some(serde_json::json!({ "sessions": entries, "count": entries.len() }))
+        }
         _ => None,
     }
 }
@@ -759,12 +793,16 @@ async fn process_message(
                         // If Claude passed sessionId explicitly, use that
                         if !session_id.is_empty() {
                             let mut sessions = state.claude_sessions.write();
+                            // Preserve existing fields (model, tool_name) if session already registered
+                            let existing = sessions.remove(&session_id);
                             sessions.insert(
                                 session_id.clone(),
                                 ClaudeSessionInfo {
                                     tab_id: tab_id.clone(),
-                                    cwd: None,
+                                    cwd: existing.as_ref().and_then(|e| e.cwd.clone()),
                                     state: ClaudeSessionState::Active,
+                                    tool_name: existing.as_ref().and_then(|e| e.tool_name.clone()),
+                                    model: existing.and_then(|e| e.model),
                                 },
                             );
                         }
@@ -785,6 +823,8 @@ async fn process_message(
                                         tab_id: tab_id.clone(),
                                         cwd: pending_cwd,
                                         state: ClaudeSessionState::Active,
+                                        tool_name: None,
+                                        model: None,
                                     },
                                 );
                                 log::info!("initSession: linked pending session {} → tab {}",
@@ -839,6 +879,7 @@ async fn process_message(
                         "getOpenEditors", "getWorkspaceFolders", "getDiagnostics",
                         "sendNotification", "readLogs", "listWindows", "listWorkspaces",
                         "getPreferences", "setPreference", "createBackup",
+                        "getClaudeSessions",
                     ];
                     if !global_tools.contains(&tool_name.as_str())
                         && arguments.get("tabId").and_then(|v| v.as_str()).map_or(true, |s| s.is_empty())
@@ -1032,6 +1073,7 @@ async fn hooks_handler(
         "SessionStart" => {
             let tab_id = tab_id_from_param.clone().unwrap_or_default();
             let cwd = event.get("cwd").and_then(|v| v.as_str()).map(String::from);
+            let model = event.get("model").and_then(|v| v.as_str()).map(String::from);
 
             if !session_id.is_empty() && !tab_id.is_empty() {
                 use crate::state::app_state::{ClaudeSessionInfo, ClaudeSessionState};
@@ -1042,6 +1084,8 @@ async fn hooks_handler(
                         tab_id: tab_id.clone(),
                         cwd: cwd.clone(),
                         state: ClaudeSessionState::Active,
+                        tool_name: None,
+                        model: model.clone(),
                     },
                 );
                 log::info!("Claude hook: session {} started for tab {}", session_id, tab_id);
@@ -1123,12 +1167,13 @@ async fn hooks_handler(
             }
             .or(tab_id_from_param);
 
-            // Update session state to stopped (waiting for next user prompt)
+            // Update session state to stopped + clear tool
             if !session_id.is_empty() {
                 use crate::state::app_state::ClaudeSessionState;
                 let mut sessions = srv.state.claude_sessions.write();
                 if let Some(session) = sessions.get_mut(&session_id) {
                     session.state = ClaudeSessionState::Stopped;
+                    session.tool_name = None;
                 }
             }
 
@@ -1175,12 +1220,13 @@ async fn hooks_handler(
                 .unwrap_or("")
                 .to_string();
 
-            // Update session state back to active (tool execution = working)
+            // Update session state back to active + track current tool
             if !session_id.is_empty() {
                 use crate::state::app_state::ClaudeSessionState;
                 let mut sessions = srv.state.claude_sessions.write();
                 if let Some(session) = sessions.get_mut(&session_id) {
                     session.state = ClaudeSessionState::Active;
+                    session.tool_name = if tool_name.is_empty() { None } else { Some(tool_name.clone()) };
                 }
             }
 
@@ -1206,6 +1252,14 @@ async fn hooks_handler(
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
+
+            // Clear current tool (back to thinking)
+            if !session_id.is_empty() {
+                let mut sessions = srv.state.claude_sessions.write();
+                if let Some(session) = sessions.get_mut(&session_id) {
+                    session.tool_name = None;
+                }
+            }
 
             log::debug!("Claude hook: PostToolUse tool='{}' session={} (tab {:?})",
                 tool_name, &session_id[..session_id.len().min(8)], tab_id);

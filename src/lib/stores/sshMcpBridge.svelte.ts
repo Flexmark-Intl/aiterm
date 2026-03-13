@@ -224,6 +224,7 @@ function buildSetupScript(remotePort: number, authToken: string): string {
     '| `notify <title> <body>` | sendNotification | `{ "title": "<title>", "body": "<body>" }` |\n' +
     '| `logs` | readLogs | `{}` |\n' +
     '| `logs <search>` | readLogs | `{ "search": "<search>" }` |\n' +
+    '| `sessions` | getClaudeSessions | `{}` |\n' +
     '| `init` | initSession | `{ "tabId": "$AITERM_TAB_ID", "sessionId": "<from SessionStart hook>" }` |\n' +
     '\n' +
     'Call the exact MCP tool listed above with the specified parameters. Do not ask for clarification — just execute.\n' +

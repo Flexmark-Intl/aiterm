@@ -7,6 +7,7 @@ import { interpolateVariables, getVariables, setVariable, handleEnableAutoResume
 import { CLAUDE_RESUME_COMMAND } from '$lib/triggers/defaults';
 import { preferencesStore } from '$lib/stores/preferences.svelte';
 import { dispatch as dispatchNotification } from '$lib/stores/notificationDispatch';
+import { claudeStateStore } from '$lib/stores/claudeState.svelte';
 import { error as logError, info as logInfo } from '@tauri-apps/plugin-log';
 
 export interface PendingSelection {
@@ -443,13 +444,17 @@ function createClaudeCodeStore() {
           id: pane.id,
           name: pane.name,
           isActive: pane.id === ws.active_pane_id,
-          tabs: pane.tabs.map(tab => ({
-            id: tab.id,
-            displayName: tabDisplayName(tab),
-            tabType: tab.tab_type ?? 'terminal',
-            isActive: tab.id === pane.active_tab_id,
-            hasNotes: !!tab.notes,
-          })),
+          tabs: pane.tabs.map(tab => {
+            const claude = claudeStateStore.getState(tab.id);
+            return {
+              id: tab.id,
+              displayName: tabDisplayName(tab),
+              tabType: tab.tab_type ?? 'terminal',
+              isActive: tab.id === pane.active_tab_id,
+              hasNotes: !!tab.notes,
+              ...(claude ? { claudeState: claude.state, claudeTool: claude.toolName } : {}),
+            };
+          }),
         })),
       })),
     };
@@ -777,6 +782,7 @@ function createClaudeCodeStore() {
       }
       // diff tabs: no context extraction needed
 
+      const claude = claudeStateStore.getState(tab.id);
       return {
         tabId: tab.id,
         displayName: tabDisplayName(tab),
@@ -787,6 +793,7 @@ function createClaudeCodeStore() {
         isActive: tab.id === pane.active_tab_id && workspace.id === workspacesStore.activeWorkspaceId,
         hasNotes: !!tab.notes,
         ...(tab.editor_file ? { filePath: tab.editor_file.file_path } : {}),
+        ...(claude ? { claudeState: claude.state, claudeTool: claude.toolName } : {}),
         content,
       };
     }));
@@ -835,6 +842,7 @@ function createClaudeCodeStore() {
     if (!pane) return { error: 'No active pane' };
     const tab = pane.tabs.find(t => t.id === pane.active_tab_id);
     if (!tab) return { error: 'No active tab' };
+    const claude = claudeStateStore.getState(tab.id);
     return {
       windowId: workspacesStore.windowId,
       windowLabel: workspacesStore.windowLabel,
@@ -846,6 +854,7 @@ function createClaudeCodeStore() {
         tabType: tab.tab_type ?? 'terminal',
         hasNotes: !!tab.notes,
         notesOpen: !!tab.notes_open,
+        ...(claude ? { claudeState: claude.state, claudeTool: claude.toolName } : {}),
       },
     };
   }

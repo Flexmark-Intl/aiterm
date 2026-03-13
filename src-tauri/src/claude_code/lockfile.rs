@@ -565,6 +565,7 @@ Execute the aiTerm MCP tool for the requested operation. Use whichever aiterm MC
 | `notify <title> <body>` | sendNotification | `{ "title": "<title>", "body": "<body>" }` |
 | `logs` | readLogs | `{}` |
 | `logs <search>` | readLogs | `{ "search": "<search>" }` |
+| `sessions` | getClaudeSessions | `{}` |
 | `init` | initSession | `{ "tabId": "$AITERM_TAB_ID", "sessionId": "<from SessionStart hook>" }` |
 
 Call the exact MCP tool listed above with the specified parameters. Do not ask for clarification — just execute.

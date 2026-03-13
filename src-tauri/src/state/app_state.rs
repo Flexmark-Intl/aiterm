@@ -59,6 +59,10 @@ pub struct ClaudeSessionInfo {
     pub tab_id: String,
     pub cwd: Option<String>,
     pub state: ClaudeSessionState,
+    /// Current tool being executed (set by PreToolUse, cleared by PostToolUse/Stop)
+    pub tool_name: Option<String>,
+    /// Model used in this session (set by SessionStart)
+    pub model: Option<String>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, serde::Serialize)]
