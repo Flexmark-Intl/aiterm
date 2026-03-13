@@ -223,7 +223,7 @@ pub fn open_preferences_window(window: tauri::WebviewWindow, app: tauri::AppHand
     let url = if cfg!(debug_assertions) {
         tauri::WebviewUrl::External("http://localhost:1420/preferences".parse().unwrap())
     } else {
-        tauri::WebviewUrl::App("preferences.html".into())
+        tauri::WebviewUrl::App("preferences".into())
     };
 
     let title = if cfg!(debug_assertions) { "Preferences (Dev)" } else { "Preferences" };
@@ -275,17 +275,14 @@ pub fn open_help_window(window: tauri::WebviewWindow, app: tauri::AppHandle, sec
         return Ok(());
     }
 
+    let path = match &section {
+        Some(s) => format!("help?section={}", s),
+        None => "help".to_string(),
+    };
+
     let url = if cfg!(debug_assertions) {
-        let path = match &section {
-            Some(s) => format!("help?section={}", s),
-            None => "help".to_string(),
-        };
         tauri::WebviewUrl::External(format!("http://localhost:1420/{}", path).parse().unwrap())
     } else {
-        let path = match &section {
-            Some(s) => format!("help.html?section={}", s),
-            None => "help.html".to_string(),
-        };
         tauri::WebviewUrl::App(path.into())
     };
 
