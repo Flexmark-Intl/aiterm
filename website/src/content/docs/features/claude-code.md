@@ -8,10 +8,14 @@ aiTerm exposes an MCP server that Claude Code CLI discovers and connects to auto
 ## How It Works
 
 ```
-Claude Code CLI ←→ WebSocket/SSE ←→ axum server (Rust) ←→ Tauri events ←→ Frontend (Svelte)
+Claude Code CLI ←→ Streamable HTTP ←→ axum server (Rust) ←→ Tauri events ←→ Frontend (Svelte)
 ```
 
 The MCP server starts automatically when aiTerm launches (configurable in preferences). It writes a lock file to `~/.claude/ide/` and registers in `~/.claude.json` for automatic discovery by Claude Code.
+
+### SSH MCP Bridge
+
+When you're SSH'd into a remote server, aiTerm can bridge the MCP connection so Claude Code running remotely still has access to all IDE tools. A reverse SSH tunnel is set up automatically in the background — no manual port forwarding needed. The bridge status is shown in the tab bar with a bolt icon (green = connected).
 
 ## Available Tools
 
@@ -66,21 +70,25 @@ The MCP server starts automatically when aiTerm launches (configurable in prefer
 | `findNotes` | Search all tabs and workspaces for notes in one call |
 | `getDiagnostics` | App diagnostics — version, PTY stats, memory, WebGL state |
 | `readLogs` | Tail the log file with level filter and search |
+| `getClaudeSessions` | List all active Claude sessions across tabs with state, tool, and model info |
+| `listWindows` | List all aiTerm windows with workspace summaries |
+| `createBackup` | Create a state backup on demand |
+| `sendNotification` | Send a toast or OS notification from Claude Code |
 
 ### Tab Context Discovery
 
 The `getTabContext` tool lets Claude Code peek at what's happening in your tabs — recent terminal output or editor file content. If you have fewer than 10 tabs, it automatically returns context for all of them, making it easy for Claude to find the right tab without you having to specify. For larger workspaces, you can pass specific tab IDs.
 
-## Claude Code Triggers
+## Claude Code Hooks
 
-aiTerm ships with 6+ built-in triggers designed for Claude Code workflows:
+aiTerm integrates with Claude Code's hook system for real-time session awareness — no regex triggers needed:
 
-- **Auto-capture session IDs** — detects Claude's resume commands and session UUIDs
-- **Auto-resume** — automatically reconnects to your last Claude session when you open a tab
-- **Question detection** — notifies when Claude asks "Do you want to proceed?"
-- **Plan ready** — alerts when Claude has a plan ready for review
-- **Context compaction** — notifies during and after context compaction
-- **Tab state awareness** — know at a glance which tabs have Claude waiting for input
+- **Session lifecycle** — tracks session start, end, and compaction events
+- **Active tool overlay** — see what Claude is doing right now (editing files, running bash, etc.) in the terminal corner
+- **Permission alerts** — workspace sidebar shows an alert indicator when Claude needs permission approval
+- **Auto-resume** — automatically captures session IDs and reconnects on tab restore
+- **Multi-agent awareness** — `getClaudeSessions` tool lets any Claude session discover all other active sessions across tabs for coordination
+- **Compaction notifications** — alerts during and after context compaction
 
 ## Dev/Production Isolation
 

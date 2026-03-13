@@ -18,6 +18,8 @@ Group your terminals by project. Each workspace has its own pane layout, tabs, a
 - **Tab count** — optional display of tab count after workspace names
 - **Recent workspaces** — collapsible section, toggleable in preferences
 - **Workspace notes** — markdown notes scoped to the whole workspace
+- **Suspend & resume** — suspend inactive workspaces to free resources (PTYs are killed, memory released). Resume instantly with full state. Auto-suspend after configurable timeout (15/30/60 min)
+- **Multi-window** — open additional windows with independent workspace layouts; window positions remembered per monitor configuration
 
 ## Panes
 

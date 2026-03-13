@@ -3,11 +3,11 @@ title: Terminal
 description: Full-featured terminal emulator with xterm.js, scrollback persistence, and shell integration.
 ---
 
-aiTerm's terminal is built on xterm.js with WebGL rendering, providing a fast and capable terminal experience.
+aiTerm's terminal is powered by alacritty_terminal for Rust-native VTE parsing and buffer management, with xterm.js as a thin WebGL renderer. Scrollback is stored in SQLite for crash-safe persistence — the state file stays tiny (~32KB) regardless of how much scrollback you have.
 
 ## Core Features
 
-- **xterm.js** — full terminal emulator with scrollback, selection, and WebGL rendering
+- **alacritty_terminal + xterm.js** — Rust-native VTE parsing with GPU-accelerated WebGL rendering
 - **Split panes** — horizontal and vertical splits, drag to resize, fully recursive binary tree layout
 - **Multiple tabs** — per-pane tabs with activity indicators and completion detection
 - **Scrollback persistence** — saves and restores terminal state across restarts
@@ -35,6 +35,10 @@ Duplicate a tab and get *everything*: scrollback history, CWD, SSH session, Clau
 ## Archive and Restore
 
 Done with a session but not ready to lose it? Archive the tab. It disappears from your tab bar but preserves everything — scrollback, notes, trigger state. Restore it later and resume right where you left off.
+
+## Workspace Suspend & Resume
+
+Suspend inactive workspaces to free resources — PTYs are killed and memory is released, but scrollback, CWD, SSH info, and all state are preserved. Click a suspended workspace to resume it instantly. Suspend individually, suspend all others, or configure auto-suspend after a timeout (15/30/60 min of inactivity).
 
 ## State Backup & Import
 
