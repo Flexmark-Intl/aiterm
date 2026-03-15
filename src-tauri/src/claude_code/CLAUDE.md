@@ -73,6 +73,8 @@ Hooks registered in `~/.claude/settings.json` on MCP server startup, cleaned up 
 - Prevents wrong-tab targeting when user switches tabs while Claude is working
 - Connection affinity cleaned up on disconnect (WS close, SSE drop)
 
+**SSE reconnect recovery:** SSE connections over SSH tunnels flap frequently (disconnect/reconnect every few seconds). Each reconnect creates a new SSE session ID, clearing the old `connection_tabs` entry. Without recovery, every tool call after a reconnect fails with "Session not initialized." Fix: when a tool call arrives with no connection affinity, `claude_sessions` is checked for active sessions. If exactly one active session exists, its tab_id is used to auto-restore affinity for the new connection. This avoids requiring Claude to re-call `initSession` after every SSE reconnect.
+
 **Dev/prod isolation:**
 - PTY env vars: `AITERM_TAB_ID` (tab ID), `AITERM_PORT` (server port) — set at spawn in `pty/manager.rs`
 - Command hook gates on `$AITERM_PORT` match
@@ -108,9 +110,15 @@ Remote Claude Code → discovers ~/.claude/ide/{port}.lock → connects through 
 
 **Tunnel sharing:** One tunnel per `host_key` (user@host), ref-counted by tab IDs. Last tab detaches → tunnel killed.
 
-**Auto-enable:** SSH sessions detected via `getPtyInfo()` foreground_command. For restore/clone SSH: 5s delay after SSH replay. For ad-hoc SSH: 10s delayed check. Manual via context menu.
+**Auto-enable:** SSH sessions detected reactively via terminal title changes — when a title change fires, `getPtyInfo()` checks for a foreground SSH command and enables/disables the bridge accordingly. For restore/clone SSH: polls `getPtyInfo()` every 500ms until SSH is detected (max 15s). `enableBridge` sets a `'pending'` state immediately to prevent race conditions from concurrent title-change calls.
 
-**Remote setup:** Lockfile, `~/.claude.json`, and hooks (`~/.claude/settings.json`) are written via a separate background SSH connection (`ssh_run_setup`), **not** through the user's interactive PTY. This prevents command injection into running programs (e.g. Claude Code). The setup script uses shell variables for JSON data to avoid nested quoting issues, and pipes JSON to python3/jq via stdin. After setup, `AITERM_TAB_ID` and `AITERM_PORT` env vars are injected into the remote shell via PTY write (leading space suppresses shell history).
+**Remote setup:** Lockfile, `~/.claude.json`, hooks (`~/.claude/settings.json`), skill (`~/.claude/skills/aiterm/SKILL.md`), and `~/.aiterm` env file are written via a separate background SSH connection (`ssh_run_setup`), **not** through the user's interactive PTY. This prevents command injection into running programs (e.g. Claude Code). The setup script uses shell variables for JSON data to avoid nested quoting issues, and pipes JSON to python3/jq via stdin. After setup, `AITERM_TAB_ID` and `AITERM_PORT` env vars are injected into the remote shell via PTY write (leading space suppresses shell history).
+
+**`~/.aiterm` env file:** Written during bridge setup with `export AITERM_TAB_ID=... AITERM_PORT=...`. Sourced as a fallback by the SessionStart hook when `$AITERM_TAB_ID` is empty (e.g. inside tmux where env vars weren't inherited). Users can manually `source ~/.aiterm` in any shell. Overwritten on each bridge connect — self-correcting for stale values.
+
+**Context menu items (SSH tabs with active bridge):**
+- "Inject aiTerm Env Vars" — re-writes `export AITERM_TAB_ID=... AITERM_PORT=...` to the PTY for the current shell (useful after tmux attach, sudo, su)
+- "Install MCP for Current User" — writes the full setup script (lockfile, MCP, hooks, skill) to the PTY, executing as the current user. Needed after `sudo -i` or `su -l otheruser` where `~/` changed but the tunnel is still accessible on localhost.
 
 **Remote hooks:** All hook events (SessionStart, SessionEnd, Notification, Stop, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact) are registered on the remote with HTTP hooks pointing to `127.0.0.1:{remotePort}/hooks`. These tunnel back through the SSH reverse tunnel to the local MCP server's hooks handler. A command hook on SessionStart reads `$AITERM_TAB_ID` (from env var injection) and echoes the tab ID into Claude's context. Hooks require python3 on the remote for the settings.json merge.
 
@@ -120,7 +128,7 @@ Remote Claude Code → discovers ~/.claude/ide/{port}.lock → connects through 
 
 **ControlMaster mux:** Tunnel and setup SSH commands do **not** use `-o ControlMaster=no` — this lets them multiplex over the user's existing authenticated socket (free auth for password/passphrase users). Mux clients exit immediately after setup (the master holds the forwarding), so the background process monitor only removes tunnel state on error exits, not clean exits.
 
-**Bridge status UI:** Reactive `$state` Map in `sshMcpBridge.svelte.ts` drives a bolt icon in TerminalTabs (green=connected, dim=failed). Failure dispatches an in-app notification via `notificationDispatch`.
+**Bridge status UI:** Reactive `$state` Map in `sshMcpBridge.svelte.ts` drives a bolt icon in TerminalTabs (green=connected, dim/fg-dim=pending, dim=failed). Failure dispatches an in-app notification via `notificationDispatch`.
 
 ## SSH-Specific Pitfalls
 
