@@ -234,14 +234,16 @@
       window.location.reload();
     }).then(unlisten => { unlistenStateImported = unlisten; });
 
-    // Claude Code IDE integration event listeners
+    // Claude Code IDE integration event listeners.
+    // Use appWindow.listen() (not global listen) — global listen catches both
+    // window-targeted and global events in Tauri 2, causing duplicate callbacks.
     let unlistenClaudeTool: (() => void) | undefined;
-    listen<ClaudeCodeToolRequest>('claude-code-tool', (event) => {
+    appWindow.listen<ClaudeCodeToolRequest>('claude-code-tool', (event) => {
       claudeCodeStore.handleToolRequest(event.payload);
     }).then(unlisten => { unlistenClaudeTool = unlisten; });
 
     let unlistenClaudeConnection: (() => void) | undefined;
-    listen<{ connected: boolean }>('claude-code-connection', (event) => {
+    appWindow.listen<{ connected: boolean }>('claude-code-connection', (event) => {
       claudeCodeStore.setConnected(event.payload.connected);
     }).then(unlisten => { unlistenClaudeConnection = unlisten; });
 

@@ -461,10 +461,14 @@ fn collect_workspace_folders(_state: &Arc<AppState>) -> Vec<String> {
 
 fn set_connected(srv: &ServerState, connected: bool) {
     *srv.state.claude_code_connected.write() = connected;
-    let _ = srv.app_handle.emit(
-        "claude-code-connection",
-        serde_json::json!({ "connected": connected }),
-    );
+    // Emit to each known terminal window individually.
+    // app_handle.emit() broadcasts globally and listen() catches both global + window
+    // events in Tauri 2, causing duplicate callbacks per webview.
+    let payload = serde_json::json!({ "connected": connected });
+    let app_data = srv.state.app_data.read();
+    for win in &app_data.windows {
+        let _ = srv.app_handle.emit_to(&win.label, "claude-code-connection", payload.clone());
+    }
 }
 
 // ─── WebSocket handler (IDE integration via lock file) ─────────────────────
