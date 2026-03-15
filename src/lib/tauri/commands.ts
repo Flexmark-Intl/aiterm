@@ -376,6 +376,10 @@ export async function playSystemSound(name: string, volume: number): Promise<voi
   return invoke('play_system_sound', { name, volume });
 }
 
+export async function playBellSound(): Promise<void> {
+  return invoke('play_bell_sound');
+}
+
 // Window commands
 export async function getWindowData(): Promise<WindowData> {
   return invoke('get_window_data');

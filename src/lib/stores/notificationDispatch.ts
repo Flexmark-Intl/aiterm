@@ -85,8 +85,8 @@ export function playNotificationSoundPreview() {
   playNotificationSound();
 }
 
-/** Play the configured notification sound. */
-function playNotificationSound() {
+/** Play the configured notification sound (exported for bell, etc.). */
+export function playNotificationSound() {
   const sound = preferencesStore.notificationSound;
   if (sound === 'none') return;
   if (sound === 'default') {

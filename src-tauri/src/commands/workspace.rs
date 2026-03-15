@@ -1037,6 +1037,51 @@ pub fn play_system_sound(name: String, volume: u32) -> Result<(), String> {
     Err(format!("Sound '{}' not found", name))
 }
 
+#[tauri::command]
+pub fn play_bell_sound() {
+    std::thread::spawn(|| {
+        #[cfg(target_os = "macos")]
+        {
+            // Read the user's configured alert sound from system preferences,
+            // then play it with afplay (blocks until complete — no cutoff).
+            let sound_path = std::process::Command::new("defaults")
+                .arg("read")
+                .arg(".GlobalPreferences")
+                .arg("com.apple.sound.beep.sound")
+                .output()
+                .ok()
+                .and_then(|o| if o.status.success() {
+                    Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
+                } else {
+                    None
+                })
+                .unwrap_or_else(|| "/System/Library/Sounds/Tink.aiff".to_string());
+            let _ = std::process::Command::new("afplay")
+                .arg(&sound_path)
+                .output();
+        }
+        #[cfg(target_os = "linux")]
+        {
+            // XDG sound theme bell, fall back to freedesktop bell sound
+            let result = std::process::Command::new("canberra-gtk-play")
+                .arg("--id=bell")
+                .output();
+            if result.is_err() {
+                let _ = std::process::Command::new("paplay")
+                    .arg("/usr/share/sounds/freedesktop/stereo/bell.oga")
+                    .output();
+            }
+        }
+        #[cfg(target_os = "windows")]
+        {
+            let _ = std::process::Command::new("powershell")
+                .arg("-c")
+                .arg("[System.Media.SystemSounds]::Beep.Play()")
+                .output();
+        }
+    });
+}
+
 /// Returns (year, month, day, hour, minute, second) in UTC from the current system time.
 fn now_utc_parts() -> (i64, u32, u32, u64, u64, u64) {
     let secs = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();

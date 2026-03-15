@@ -392,6 +392,7 @@ pub fn run() {
             commands::workspace::get_all_tabs,
             commands::workspace::list_system_sounds,
             commands::workspace::play_system_sound,
+            commands::workspace::play_bell_sound,
             commands::workspace::add_workspace_note,
             commands::workspace::update_workspace_note,
             commands::workspace::delete_workspace_note,

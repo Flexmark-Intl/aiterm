@@ -5,7 +5,10 @@
   import { fly, fade } from 'svelte/transition';
 
   function handleToastClick(toast: typeof toastStore.toasts[0]) {
-    if (toast.source?.tabId) {
+    if (toast.action) {
+      toast.action();
+      toastStore.removeToast(toast.id);
+    } else if (toast.source?.tabId) {
       navigateToTab(toast.source.tabId);
       toastStore.removeToast(toast.id);
     }
@@ -18,7 +21,7 @@
       <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -- toast dismiss is decorative, close button provides keyboard access -->
       <div
         class="toast toast-{toast.type}"
-        class:clickable={!!toast.source?.tabId}
+        class:clickable={!!toast.action || !!toast.source?.tabId}
         in:fly={{ x: 300, duration: 250 }}
         out:fade={{ duration: 150 }}
         onclick={() => handleToastClick(toast)}

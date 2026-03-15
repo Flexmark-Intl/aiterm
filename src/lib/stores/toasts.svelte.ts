@@ -12,6 +12,8 @@ export interface Toast {
   createdAt: number;
   duration: number;
   source?: ToastSource;
+  /** Optional callback invoked when the toast is clicked. */
+  action?: () => void;
 }
 
 const MAX_VISIBLE = 3;
@@ -113,10 +115,10 @@ function createToastStore() {
     fireTimer(id, ts, computeRemaining(ts));
   }
 
-  function addToast(title: string, body: string, type: Toast['type'] = 'info', source?: ToastSource, focused?: boolean) {
+  function addToast(title: string, body: string, type: Toast['type'] = 'info', source?: ToastSource, focused?: boolean, action?: () => void) {
     const id = crypto.randomUUID();
     const durationMs = preferencesStore.toastDuration * 1000;
-    const toast: Toast = { id, title, body, type, createdAt: Date.now(), duration: durationMs, source };
+    const toast: Toast = { id, title, body, type, createdAt: Date.now(), duration: durationMs, source, action };
     toasts = [...toasts, toast];
 
     // If caller provides explicit focus state, trust it over our tracked state
