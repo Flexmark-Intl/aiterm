@@ -7,7 +7,7 @@
   import { WebLinksAddon } from '@xterm/addon-web-links';
   import { WebglAddon } from '@xterm/addon-webgl';
   import '@xterm/xterm/css/xterm.css';
-  import { spawnTerminal, writeTerminal, resizeTerminal, killTerminal, setTabScrollback, getPtyInfo, setTabRestoreContext, cleanSshCommand, normalizeSshInput, buildSshCommand, shellEscapePath, readClipboardFilePaths, serializeTerminal, restoreTerminalScrollback, resizeTerminalGrid, scrollTerminal, scrollTerminalTo, saveTerminalScrollback, restoreTerminalFromSaved, hasSavedScrollback } from '$lib/tauri/commands';
+  import { spawnTerminal, writeTerminal, resizeTerminal, killTerminal, setTabScrollback, getPtyInfo, setTabRestoreContext, cleanSshCommand, normalizeSshInput, buildSshCommand, shellEscapePath, readClipboardFilePaths, serializeTerminal, restoreTerminalScrollback, resizeTerminalGrid, scrollTerminal, scrollTerminalTo, saveTerminalScrollback, restoreTerminalFromSaved, hasSavedScrollback, scpUploadFiles } from '$lib/tauri/commands';
   import type { TerminalFrame, OscCwdEvent, OscShellEvent } from '$lib/tauri/types';
   import { readText as clipboardReadText, writeText as clipboardWriteText } from '@tauri-apps/plugin-clipboard-manager';
   import { terminalsStore } from '$lib/stores/terminals.svelte';
@@ -17,17 +17,18 @@
   import ContextMenu from '$lib/components/ContextMenu.svelte';
   import { getTheme } from '$lib/themes';
   import { getCompiledPatterns } from '$lib/utils/promptPattern';
-  import { error as logError } from '@tauri-apps/plugin-log';
+  import { error as logError, info as logInfo } from '@tauri-apps/plugin-log';
   import { open as shellOpen } from '@tauri-apps/plugin-shell';
   import { isModKey, modSymbol } from '$lib/utils/platform';
   import { buildShellIntegrationSnippet, buildInstallSnippet } from '$lib/utils/shellIntegration';
   import ResizableTextarea from '$lib/components/ResizableTextarea.svelte';
   import { processOutput, cleanupTab, loadTabVariables, interpolateVariables, getVariables, clearTabVariables, suppressTab, unsuppressTab, replayAutoResume } from '$lib/stores/triggers.svelte';
   import { dispatch } from '$lib/stores/notificationDispatch';
+  import { toastStore } from '$lib/stores/toasts.svelte';
   import { CLAUDE_RESUME_COMMAND } from '$lib/triggers/defaults';
   import { createFilePathLinkProvider } from '$lib/utils/filePathDetector';
   import { openFileFromTerminal } from '$lib/utils/openFile';
-  import { enableBridge, disableBridge, hasBridge } from '$lib/stores/sshMcpBridge.svelte';
+  import { enableBridge, disableBridge, hasBridge, getBridgeInfo } from '$lib/stores/sshMcpBridge.svelte';
   import { claudeStateStore } from '$lib/stores/claudeState.svelte';
   import Icon from '$lib/components/Icon.svelte';
   import Button from '$lib/components/ui/Button.svelte';
@@ -132,6 +133,7 @@
   let hoveredLinkUri: string | null = null;
   let contextMenuLinkUri: string | null = null;
   let isDragOver = $state(false);
+  let dragSshInfo: { sshCommand: string; remoteCwd: string } | null = $state(null);
 
   // Escape a file path for pasting into a terminal (backslash-escape shell metacharacters)
   function escapePathForTerminal(p: string): string {
@@ -301,10 +303,12 @@
           workspacesStore.renameTab(workspaceId, paneId, tabId, title, false);
         }
       }
-      // Title changes when SSH exits — check if bridge should be torn down
-      if (hasBridge(tabId)) {
+      // Title changes when SSH starts or exits — manage bridge accordingly
+      if (preferencesStore.claudeCodeIde && preferencesStore.claudeCodeIdeSsh) {
         getPtyInfo(ptyId).then(info => {
-          if (!info.foreground_command) {
+          if (info.foreground_command && !hasBridge(tabId)) {
+            enableBridge(tabId, info.foreground_command, ptyId).catch(() => {});
+          } else if (!info.foreground_command && hasBridge(tabId)) {
             disableBridge(tabId).catch(() => {});
           }
         }).catch(() => {});
@@ -428,25 +432,33 @@
           }
         }, 500);
 
-        // Enable SSH MCP bridge after SSH connection establishes (~5s).
-        // Then send auto-resume AFTER bridge injects env vars, so Claude
-        // has AITERM_TAB_ID available when the session starts.
+        // Poll for SSH connection, then enable bridge + auto-resume.
+        // getPtyInfo shows the SSH process as foreground_command once connected.
         if (ctx.sshCommand) {
-          setTimeout(async () => {
+          const pollForSsh = async () => {
+            const maxAttempts = 30; // 15s max
+            for (let i = 0; i < maxAttempts; i++) {
+              if (destroyed) return;
+              await new Promise(r => setTimeout(r, 500));
+              try {
+                const info = await getPtyInfo(ptyId);
+                if (info.foreground_command) break;
+              } catch { return; } // tab gone
+              if (i === maxAttempts - 1) return; // timed out
+            }
             if (destroyed) return;
             await enableBridge(tabId, ctx.sshCommand!, ptyId).catch(() => {});
             if (destroyed) return;
             if ((autoResumeEnabled ?? true) && autoResumeCommand) {
               try {
-                // Small delay after env injection for shell to process the export
-                await new Promise(r => setTimeout(r, 500));
                 const bytes = Array.from(new TextEncoder().encode(interpolateVariables(tabId, autoResumeCommand, true) + '\n'));
                 await writeTerminal(ptyId, bytes);
               } catch (e) {
                 logError(`Failed to send auto-resume after bridge: ${e}`);
               }
             }
-          }, 5000);
+          };
+          pollForSsh();
         }
       } else if ((autoResumeEnabled ?? true) && autoResumeCommand && (!splitCtx || splitCtx.fireAutoResume)) {
         // Local auto-resume: send command after shell starts (also fires on reload)
@@ -458,17 +470,6 @@
             logError(`Failed to replay auto-resume command: ${e}`);
           }
         }, 500);
-      } else {
-        // For ad-hoc SSH sessions: check after 10s if SSH started
-        setTimeout(async () => {
-          if (destroyed || hasBridge(tabId)) return;
-          try {
-            const info = await getPtyInfo(ptyId);
-            if (info.foreground_command) {
-              enableBridge(tabId, info.foreground_command, ptyId).catch(() => {});
-            }
-          } catch { /* tab may be gone */ }
-        }, 10000);
       }
     }
 
@@ -633,14 +634,34 @@
       if (!visible || !containerRef?.isConnected) { isDragOver = false; return; }
       const { position } = event.payload;
       const rect = containerRef.getBoundingClientRect();
-      isDragOver = (
+      const over = (
         position.x >= rect.left && position.x <= rect.right &&
         position.y >= rect.top && position.y <= rect.bottom
       );
+      // On first enter, detect SSH session and cache info for the drop handler
+      if (over && !isDragOver) {
+        getPtyInfo(ptyId).then(info => {
+          logInfo(`drag-enter: foreground_command=${info.foreground_command}, cwd=${info.cwd}`);
+          if (info.foreground_command) {
+            const oscState = terminalsStore.getOsc(tabId);
+            const osc7Cwd = oscState?.cwd ?? null;
+            const promptCwd = oscState?.promptCwd ?? null;
+            const isOsc7Stale = osc7Cwd === info.cwd;
+            const remoteCwd = ((!isOsc7Stale && osc7Cwd) ? osc7Cwd : (promptCwd ?? '~')).trim();
+            logInfo(`drag-enter SSH detected: sshCommand=${info.foreground_command}, remoteCwd=${remoteCwd}, osc7Cwd=${osc7Cwd}, promptCwd=${promptCwd}, isOsc7Stale=${isOsc7Stale}`);
+            dragSshInfo = { sshCommand: info.foreground_command, remoteCwd };
+          } else {
+            dragSshInfo = null;
+          }
+        }).catch((e) => { logError(`drag-enter getPtyInfo failed: ${e}`); dragSshInfo = null; });
+      }
+      isDragOver = over;
     });
 
     unlistenDragDrop = await listen<{ paths: string[]; position: { x: number; y: number } }>('tauri://drag-drop', (event) => {
+      const sshInfo = dragSshInfo;
       isDragOver = false;
+      dragSshInfo = null;
       if (!visible || !containerRef?.isConnected) return;
       const { paths, position } = event.payload;
       const rect = containerRef.getBoundingClientRect();
@@ -648,15 +669,45 @@
         position.x >= rect.left && position.x <= rect.right &&
         position.y >= rect.top && position.y <= rect.bottom
       ) {
-        const escaped = paths.map(escapePathForTerminal).join(' ');
-        const bytes = Array.from(new TextEncoder().encode(escaped));
-        writeTerminal(ptyId, bytes).catch(e => logError(String(e)));
+        if (sshInfo) {
+          // SSH session — upload files via SCP
+          const isClaudeSession = !!claudeStateStore.getState(tabId);
+          const remoteDir = isClaudeSession ? '/tmp/aiterm-uploads' : sshInfo.remoteCwd;
+          const count = paths.length;
+          logInfo(`drag-drop SSH: uploading ${count} file(s) to ${remoteDir} via ${sshInfo.sshCommand} (claude=${isClaudeSession})`);
+          logInfo(`drag-drop SSH: paths=${JSON.stringify(paths)}`);
+          toastStore.addToast('SCP Upload', `Uploading ${count} file${count > 1 ? 's' : ''}…`, 'info');
+          scpUploadFiles(sshInfo.sshCommand, paths, remoteDir).then(() => {
+            const basenames = paths.map(p => p.split('/').pop() ?? p);
+            if (isClaudeSession) {
+              // Paste full temp paths for Claude to read as file references
+              const tempPaths = basenames.map(n => `/tmp/aiterm-uploads/${n}`).join(' ');
+              const bytes = Array.from(new TextEncoder().encode(tempPaths));
+              writeTerminal(ptyId, bytes).catch(e => logError(String(e)));
+            } else {
+              // Paste basenames (files are in CWD)
+              const escaped = basenames.map(escapePathForTerminal).join(' ');
+              const bytes = Array.from(new TextEncoder().encode(escaped));
+              writeTerminal(ptyId, bytes).catch(e => logError(String(e)));
+            }
+            toastStore.addToast('SCP Upload', `${count} file${count > 1 ? 's' : ''} uploaded`, 'success');
+          }).catch(e => {
+            logError(`drag-drop SCP upload failed: ${e}`);
+            toastStore.addToast('SCP Upload Failed', String(e), 'error');
+          });
+        } else {
+          // Local session — paste escaped file paths
+          const escaped = paths.map(escapePathForTerminal).join(' ');
+          const bytes = Array.from(new TextEncoder().encode(escaped));
+          writeTerminal(ptyId, bytes).catch(e => logError(String(e)));
+        }
         terminal.focus();
       }
     });
 
     unlistenDragLeave = await listen('tauri://drag-leave', () => {
       isDragOver = false;
+      dragSshInfo = null;
     });
 
     initialized = true;
@@ -1121,6 +1172,17 @@
         { label: '', separator: true, action: () => {} },
         ...(hasBridge(tabId) ? [
           {
+            label: 'Inject aiTerm Env Vars',
+            action: async () => {
+              const bridge = getBridgeInfo(tabId);
+              if (bridge?.remotePort) {
+                const envCmd = " export AITERM_TAB_ID=" + tabId + " AITERM_PORT=" + bridge.remotePort + "\n";
+                const bytes = Array.from(new TextEncoder().encode(envCmd));
+                await writeTerminal(ptyId, bytes);
+              }
+            },
+          },
+          {
             label: 'Disable Remote MCP Bridge',
             action: async () => {
               await disableBridge(tabId);
@@ -1157,7 +1219,7 @@
 >
   {#if isDragOver}
     <div class="drop-overlay">
-      <span>Drop to paste path</span>
+      <span>{dragSshInfo ? (claudeStateStore.getState(tabId) ? 'Drop to send to Claude' : 'Drop to upload via SCP') : 'Drop to paste path'}</span>
     </div>
   {/if}
   {#if contextMenu}

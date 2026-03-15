@@ -265,6 +265,68 @@ pub async fn scp_write_file(
 }
 
 #[command]
+pub async fn scp_upload_files(
+    ssh_command: String,
+    local_paths: Vec<String>,
+    remote_dir: String,
+) -> Result<(), String> {
+    let remote_dir = remote_dir.trim().to_string();
+    log::info!("scp_upload_files: ssh_command={:?}, local_paths={:?}, remote_dir={:?}", ssh_command, local_paths, remote_dir);
+
+    let user_host = extract_user_host(&ssh_command)?;
+    let remote_dir = expand_remote_tilde(&user_host, &remote_dir);
+    log::info!("scp_upload_files: user_host={:?}, expanded_remote_dir={:?}", user_host, remote_dir);
+
+    // Ensure remote directory exists
+    let mkdir_output = std::process::Command::new("ssh")
+        .arg("-o").arg("BatchMode=yes")
+        .arg("-o").arg("ConnectTimeout=10")
+        .arg(&user_host)
+        .arg(format!("mkdir -p {}", shell_quote(&remote_dir)))
+        .output()
+        .map_err(|e| format!("Failed to run ssh mkdir: {}", e))?;
+
+    if !mkdir_output.status.success() {
+        let stderr = String::from_utf8_lossy(&mkdir_output.stderr);
+        log::warn!("scp_upload_files: mkdir -p failed (may already exist): {}", stderr.trim());
+    }
+
+    // Check if any path is a directory (needs -r flag)
+    let needs_recursive = local_paths.iter().any(|p| {
+        std::fs::metadata(p).map(|m| m.is_dir()).unwrap_or(false)
+    });
+
+    let mut cmd = std::process::Command::new("scp");
+    if needs_recursive {
+        cmd.arg("-r");
+    }
+    cmd.arg("-o").arg("BatchMode=yes")
+       .arg("-o").arg("ConnectTimeout=30");
+
+    for path in &local_paths {
+        cmd.arg(path);
+    }
+    // Don't shell_quote the remote dir — scp parses the user@host:path format itself
+    // and passes the path to the remote side. Quoting here would create literal quote chars.
+    let dest = format!("{}:{}/", user_host, remote_dir);
+    log::info!("scp_upload_files: dest={:?}, recursive={}", dest, needs_recursive);
+    cmd.arg(&dest);
+
+    let output = cmd.output()
+        .map_err(|e| format!("Failed to run scp: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        log::error!("scp_upload_files failed: stderr={}, stdout={}", stderr.trim(), stdout.trim());
+        return Err(format!("SCP upload failed: {}", stderr.trim()));
+    }
+
+    log::info!("scp_upload_files: success, {} file(s) uploaded", local_paths.len());
+    Ok(())
+}
+
+#[command]
 pub async fn create_editor_tab(
     state: State<'_, Arc<AppState>>,
     window: Window,

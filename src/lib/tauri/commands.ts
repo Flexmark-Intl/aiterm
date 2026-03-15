@@ -464,6 +464,10 @@ export async function scpWriteFile(sshCommand: string, remotePath: string, conte
   return invoke('scp_write_file', { sshCommand, remotePath, content });
 }
 
+export async function scpUploadFiles(sshCommand: string, localPaths: string[], remoteDir: string): Promise<void> {
+  return invoke('scp_upload_files', { sshCommand, localPaths, remoteDir });
+}
+
 export async function createEditorTab(workspaceId: string, paneId: string, name: string, fileInfo: EditorFileInfo, afterTabId?: string): Promise<Tab> {
   return invoke('create_editor_tab', { workspaceId, paneId, name, fileInfo, afterTabId: afterTabId ?? null });
 }
