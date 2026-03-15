@@ -2,6 +2,7 @@
   import { onMount, onDestroy, untrack } from 'svelte';
   import { listen } from '@tauri-apps/api/event';
   import type { UnlistenFn } from '@tauri-apps/api/event';
+  import { getCurrentWebview } from '@tauri-apps/api/webview';
   import { Terminal } from '@xterm/xterm';
   import { FitAddon } from '@xterm/addon-fit';
   import { WebLinksAddon } from '@xterm/addon-web-links';
@@ -68,9 +69,7 @@
   let unlistenNotification: UnlistenFn;
   let unlistenClipboard: UnlistenFn;
   let unlistenBell: UnlistenFn;
-  let unlistenDragOver: UnlistenFn;
   let unlistenDragDrop: UnlistenFn;
-  let unlistenDragLeave: UnlistenFn;
   let resizeObserver: ResizeObserver;
   let filePathLinkDisposable: { dispose: () => void } | null = null;
   let initialized = $state(false);
@@ -658,96 +657,101 @@
       }).catch(() => { /* terminal may have been killed */ });
     }, { passive: false, capture: true });
 
-    // Drag & drop file support: listen for Tauri window-level drag events
-    unlistenDragOver = await listen<{ position: { x: number; y: number } }>('tauri://drag-over', (event) => {
-      if (!visible || !containerRef?.isConnected) { isDragOver = false; return; }
-      const { position } = event.payload;
-      const rect = containerRef.getBoundingClientRect();
-      const over = (
-        position.x >= rect.left && position.x <= rect.right &&
-        position.y >= rect.top && position.y <= rect.bottom
-      );
-      // On first enter, detect SSH session and cache info for the drop handler
-      if (over && !isDragOver) {
-        getPtyInfo(ptyId).then(info => {
-          logInfo(`drag-enter: foreground_command=${info.foreground_command}, cwd=${info.cwd}`);
-          if (info.foreground_command) {
-            const oscState = terminalsStore.getOsc(tabId);
-            const osc7Cwd = oscState?.cwd ?? null;
-            const promptCwd = oscState?.promptCwd ?? null;
-            const isOsc7Stale = osc7Cwd === info.cwd;
-            const remoteCwd = ((!isOsc7Stale && osc7Cwd) ? osc7Cwd : (promptCwd ?? '~')).trim();
-            logInfo(`drag-enter SSH detected: sshCommand=${info.foreground_command}, remoteCwd=${remoteCwd}, osc7Cwd=${osc7Cwd}, promptCwd=${promptCwd}, isOsc7Stale=${isOsc7Stale}`);
-            dragSshInfo = { sshCommand: info.foreground_command, remoteCwd };
-          } else {
-            dragSshInfo = null;
-          }
-        }).catch((e) => { logError(`drag-enter getPtyInfo failed: ${e}`); dragSshInfo = null; });
-      }
-      isDragOver = over;
-    });
+    // Drag & drop file support: window-scoped via getCurrentWebview() to prevent cross-window firing
+    unlistenDragDrop = await getCurrentWebview().onDragDropEvent((event) => {
+      const { type } = event.payload;
 
-    unlistenDragDrop = await listen<{ paths: string[]; position: { x: number; y: number } }>('tauri://drag-drop', (event) => {
-      const sshInfo = dragSshInfo;
-      isDragOver = false;
-      dragSshInfo = null;
-      if (!visible || !containerRef?.isConnected) return;
-      const { paths, position } = event.payload;
-      const rect = containerRef.getBoundingClientRect();
-      if (
-        position.x >= rect.left && position.x <= rect.right &&
-        position.y >= rect.top && position.y <= rect.bottom
-      ) {
-        if (sshInfo) {
-          // SSH session — upload files via SCP
-          const isClaudeSession = !!claudeStateStore.getState(tabId);
-          const remoteDir = isClaudeSession ? '/tmp/aiterm-uploads' : sshInfo.remoteCwd;
-          const count = paths.length;
-          logInfo(`drag-drop SSH: uploading ${count} file(s) to ${remoteDir} via ${sshInfo.sshCommand} (claude=${isClaudeSession})`);
-          logInfo(`drag-drop SSH: paths=${JSON.stringify(paths)}`);
-          toastStore.addToast('SCP Upload', `Uploading ${count} file${count > 1 ? 's' : ''}…`, 'info');
-          scpUploadFiles(sshInfo.sshCommand, paths, remoteDir).then(() => {
-            const basenames = paths.map(p => p.split('/').pop() ?? p);
-            if (isClaudeSession) {
-              // Paste full temp paths for Claude to read as file references
-              const tempPaths = basenames.map(n => `/tmp/aiterm-uploads/${n}`).join(' ');
-              const bytes = Array.from(new TextEncoder().encode(tempPaths));
-              writeTerminal(ptyId, bytes).catch(e => logError(String(e)));
-            } else if (count === 1) {
-              // Single file — paste basename (file is in CWD)
-              const escaped = escapePathForTerminal(basenames[0]);
-              const bytes = Array.from(new TextEncoder().encode(escaped));
-              writeTerminal(ptyId, bytes).catch(e => logError(String(e)));
+      if (type === 'over') {
+        if (!visible || !containerRef?.isConnected) { isDragOver = false; return; }
+        const { position } = event.payload;
+        const rect = containerRef.getBoundingClientRect();
+        const over = (
+          position.x >= rect.left && position.x <= rect.right &&
+          position.y >= rect.top && position.y <= rect.bottom
+        );
+        // On first enter, detect SSH session and cache info for the drop handler
+        if (over && !isDragOver) {
+          getPtyInfo(ptyId).then(info => {
+            logInfo(`drag-enter: foreground_command=${info.foreground_command}, cwd=${info.cwd}`);
+            if (info.foreground_command) {
+              const oscState = terminalsStore.getOsc(tabId);
+              const osc7Cwd = oscState?.cwd ?? null;
+              const promptCwd = oscState?.promptCwd ?? null;
+              const isOsc7Stale = osc7Cwd === info.cwd;
+              const remoteCwd = ((!isOsc7Stale && osc7Cwd) ? osc7Cwd : (promptCwd ?? '~')).trim();
+              logInfo(`drag-enter SSH detected: sshCommand=${info.foreground_command}, remoteCwd=${remoteCwd}, osc7Cwd=${osc7Cwd}, promptCwd=${promptCwd}, isOsc7Stale=${isOsc7Stale}`);
+              dragSshInfo = { sshCommand: info.foreground_command, remoteCwd };
+            } else {
+              dragSshInfo = null;
             }
-            const lCmd = `l ${basenames.map(escapePathForTerminal).join(' ')}\n`;
-            toastStore.addToast(
-              'SCP Upload',
-              `${count} file${count > 1 ? 's' : ''} uploaded — click to list`,
-              'success',
-              undefined,
-              undefined,
-              () => {
-                const bytes = Array.from(new TextEncoder().encode(lCmd));
-                writeTerminal(ptyId, bytes).catch(e => logError(String(e)));
-              },
-            );
-          }).catch(e => {
-            logError(`drag-drop SCP upload failed: ${e}`);
-            toastStore.addToast('SCP Upload Failed', String(e), 'error');
-          });
-        } else {
-          // Local session — paste escaped file paths
-          const escaped = paths.map(escapePathForTerminal).join(' ');
-          const bytes = Array.from(new TextEncoder().encode(escaped));
-          writeTerminal(ptyId, bytes).catch(e => logError(String(e)));
+          }).catch((e) => { logError(`drag-enter getPtyInfo failed: ${e}`); dragSshInfo = null; });
         }
-        terminal.focus();
+        isDragOver = over;
+      } else if (type === 'drop') {
+        const sshInfo = dragSshInfo;
+        isDragOver = false;
+        dragSshInfo = null;
+        if (!visible || !containerRef?.isConnected) return;
+        const { paths, position } = event.payload;
+        const rect = containerRef.getBoundingClientRect();
+        if (
+          position.x >= rect.left && position.x <= rect.right &&
+          position.y >= rect.top && position.y <= rect.bottom
+        ) {
+          if (sshInfo) {
+            // SSH session — upload files via SCP
+            const isClaudeSession = !!claudeStateStore.getState(tabId);
+            const remoteDir = isClaudeSession ? '/tmp/aiterm-uploads' : sshInfo.remoteCwd;
+            const count = paths.length;
+            logInfo(`drag-drop SSH: uploading ${count} file(s) to ${remoteDir} via ${sshInfo.sshCommand} (claude=${isClaudeSession})`);
+            logInfo(`drag-drop SSH: paths=${JSON.stringify(paths)}`);
+            toastStore.addToast('SCP Upload', `Uploading ${count} file${count > 1 ? 's' : ''}…`, 'info');
+            scpUploadFiles(sshInfo.sshCommand, paths, remoteDir).then(() => {
+              const basenames = paths.map(p => p.split('/').pop() ?? p);
+              if (isClaudeSession) {
+                // Paste full temp paths for Claude to read as file references
+                const tempPaths = basenames.map(n => `/tmp/aiterm-uploads/${n}`).join(' ');
+                const bytes = Array.from(new TextEncoder().encode(tempPaths));
+                writeTerminal(ptyId, bytes).catch(e => logError(String(e)));
+              } else if (count === 1) {
+                // Single file — paste basename (file is in CWD)
+                const escaped = escapePathForTerminal(basenames[0]);
+                const bytes = Array.from(new TextEncoder().encode(escaped));
+                writeTerminal(ptyId, bytes).catch(e => logError(String(e)));
+              }
+              if (!isClaudeSession && count > 1) {
+                // Multi-file non-Claude: clickable toast to issue `l` on uploaded files
+                const lCmd = `l ${basenames.map(escapePathForTerminal).join(' ')}\n`;
+                toastStore.addToast(
+                  'SCP Upload',
+                  `${count} files uploaded — click to list`,
+                  'success',
+                  undefined,
+                  undefined,
+                  () => {
+                    const bytes = Array.from(new TextEncoder().encode(lCmd));
+                    writeTerminal(ptyId, bytes).catch(e => logError(String(e)));
+                  },
+                );
+              } else {
+                toastStore.addToast('SCP Upload', `${count} file${count > 1 ? 's' : ''} uploaded`, 'success');
+              }
+            }).catch(e => {
+              logError(`drag-drop SCP upload failed: ${e}`);
+              toastStore.addToast('SCP Upload Failed', String(e), 'error');
+            });
+          } else {
+            // Local session — paste escaped file paths
+            const escaped = paths.map(escapePathForTerminal).join(' ');
+            const bytes = Array.from(new TextEncoder().encode(escaped));
+            writeTerminal(ptyId, bytes).catch(e => logError(String(e)));
+          }
+          terminal.focus();
+        }
+      } else if (type === 'leave') {
+        isDragOver = false;
+        dragSshInfo = null;
       }
-    });
-
-    unlistenDragLeave = await listen('tauri://drag-leave', () => {
-      isDragOver = false;
-      dragSshInfo = null;
     });
 
     initialized = true;
@@ -777,9 +781,7 @@
     if (unlistenNotification) unlistenNotification();
     if (unlistenClipboard) unlistenClipboard();
     if (unlistenBell) unlistenBell();
-    if (unlistenDragOver) unlistenDragOver();
     if (unlistenDragDrop) unlistenDragDrop();
-    if (unlistenDragLeave) unlistenDragLeave();
     clearTimeout(resizePtyTimeout);
     if (resizeObserver) resizeObserver.disconnect();
     if (filePathLinkDisposable) filePathLinkDisposable.dispose();
