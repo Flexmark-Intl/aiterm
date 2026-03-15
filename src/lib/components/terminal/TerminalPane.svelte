@@ -303,12 +303,16 @@
           workspacesStore.renameTab(workspaceId, paneId, tabId, title, false);
         }
       }
-      // Title changes when SSH starts or exits — manage bridge accordingly
+      // Title changes when SSH starts or exits — manage bridge accordingly.
+      // Filter out non-interactive SSH (git, scp, rsync) which use SSH internally
+      // but don't provide a remote shell to bridge into.
       if (preferencesStore.claudeCodeIde && preferencesStore.claudeCodeIdeSsh) {
         getPtyInfo(ptyId).then(info => {
-          if (info.foreground_command && !hasBridge(tabId)) {
-            enableBridge(tabId, info.foreground_command, ptyId).catch(() => {});
-          } else if (!info.foreground_command && hasBridge(tabId)) {
+          const cmd = info.foreground_command;
+          const isInteractiveSsh = cmd && !cmd.includes('git@') && !cmd.includes('BatchMode=yes');
+          if (isInteractiveSsh && !hasBridge(tabId)) {
+            enableBridge(tabId, cmd, ptyId).catch(() => {});
+          } else if (!cmd && hasBridge(tabId)) {
             disableBridge(tabId).catch(() => {});
           }
         }).catch(() => {});
