@@ -669,13 +669,6 @@
         {:else if hasActivity}
           <span class="indicator"><StatusDot color="accent" /></span>
         {/if}
-        {#if !isEditor && tab.auto_resume_enabled && (tab.auto_resume_ssh_command || tab.auto_resume_cwd || tab.auto_resume_command)}
-          <Tooltip text={
-            tab.auto_resume_ssh_command
-              ? `Auto-resume: ${tab.auto_resume_ssh_command}${tab.auto_resume_remote_cwd ? ` (${tab.auto_resume_remote_cwd})` : ''}`
-              : `Auto-resume: ${tab.auto_resume_cwd ?? 'enabled'}`
-          }><span class="auto-resume-indicator"><Icon name="resume" size={12} /></span></Tooltip>
-        {/if}
         {#if !isEditor && preferencesStore.claudeCodeIde && preferencesStore.claudeCodeIdeSsh}
           {@const bridgeStatus = getBridgeStatus(tab.id)}
           {#if bridgeStatus}
@@ -686,6 +679,13 @@
               class:bridge-failed={bridgeStatus === 'failed'}
             ><Icon name="bolt" size={12} /></span></Tooltip>
           {/if}
+        {/if}
+        {#if !isEditor && tab.auto_resume_enabled && (tab.auto_resume_ssh_command || tab.auto_resume_cwd || tab.auto_resume_command)}
+          <Tooltip text={
+            tab.auto_resume_ssh_command
+              ? `Auto-resume: ${tab.auto_resume_ssh_command}${tab.auto_resume_remote_cwd ? ` (${tab.auto_resume_remote_cwd})` : ''}`
+              : `Auto-resume: ${tab.auto_resume_cwd ?? 'enabled'}`
+          }><span class="auto-resume-indicator"><Icon name="resume" size={12} /></span></Tooltip>
         {/if}
         <span class="tab-name">{displayName(tab)}</span>
         <div class="tab-actions" class:always-visible={preferencesStore.tabButtonStyle === 'always'} class:modifier-only={preferencesStore.tabButtonStyle === 'modifier'} class:modifier-active={preferencesStore.tabButtonStyle === 'modifier' && modHeld} class:never-visible={preferencesStore.tabButtonStyle === 'never'} class:single-action={false} class:double-action={isEditor || isDiff} class:triple-action={!isEditor && !isDiff}>
