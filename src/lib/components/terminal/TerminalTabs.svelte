@@ -679,9 +679,10 @@
         {#if !isEditor && preferencesStore.claudeCodeIde && preferencesStore.claudeCodeIdeSsh}
           {@const bridgeStatus = getBridgeStatus(tab.id)}
           {#if bridgeStatus}
-            <Tooltip text={bridgeStatus === 'connected' ? 'MCP bridge active' : 'MCP bridge failed'}><span
+            <Tooltip text={bridgeStatus === 'connected' ? 'MCP bridge active' : bridgeStatus === 'pending' ? 'MCP bridge connecting\u2026' : 'MCP bridge failed'}><span
               class="bridge-indicator"
               class:bridge-connected={bridgeStatus === 'connected'}
+              class:bridge-pending={bridgeStatus === 'pending'}
               class:bridge-failed={bridgeStatus === 'failed'}
             ><Icon name="bolt" size={12} /></span></Tooltip>
           {/if}
@@ -893,6 +894,10 @@
   .bridge-connected {
     color: var(--green, #9ece6a);
     opacity: 0.8;
+  }
+  .bridge-pending {
+    color: var(--fg-dim);
+    opacity: 0.6;
   }
   .bridge-failed {
     opacity: 0.6;

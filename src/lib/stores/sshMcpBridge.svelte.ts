@@ -16,7 +16,7 @@ import { error as logError, info as logInfo } from '@tauri-apps/plugin-log';
 import { listen } from '@tauri-apps/api/event';
 import type { UnlistenFn } from '@tauri-apps/api/event';
 
-export type BridgeStatus = 'connected' | 'failed';
+export type BridgeStatus = 'connected' | 'pending' | 'failed';
 
 interface BridgeState {
   hostKey: string;
@@ -77,7 +77,7 @@ function extractHostKey(sshArgs: string): string {
  * This runs as a non-interactive command, not through the user's PTY.
  * Sets up: lockfile, MCP entry in ~/.claude.json, hooks in ~/.claude/settings.json.
  */
-function buildSetupScript(remotePort: number, authToken: string): string {
+function buildSetupScript(remotePort: number, authToken: string, tabId: string): string {
   const lockContent = JSON.stringify({
     pid: 0,  // Background SSH — no persistent PID on remote
     transport: 'ws',
@@ -108,7 +108,10 @@ function buildSetupScript(remotePort: number, authToken: string): string {
   // SessionStart command hook: reads $AITERM_TAB_ID (injected into PTY after bridge setup),
   // extracts session_id from hook stdin, echoes both into Claude's context.
   // Uses double-quoted JS string to avoid template literal ${} interpolation of bash vars.
+  // SessionStart hook: reads $AITERM_TAB_ID from env, falls back to ~/.aiterm file
+  // (needed when Claude runs inside tmux where env vars weren't inherited).
   const sessionStartCmd =
+    "{ [ -z \"$AITERM_TAB_ID\" ] && [ -f ~/.aiterm ] && . ~/.aiterm; } 2>/dev/null; " +
     "{ [ \"$AITERM_PORT\" = \"" + remotePort + "\" ] || [ -z \"$AITERM_PORT\" ]; } && " +
     "[ -n \"$AITERM_TAB_ID\" ] && " +
     "AITERM_SID=$(cat | sed -n 's/.*\"session_id\" *: *\"\\([^\"]*\\)\".*/\\1/p' | head -1) && " +
@@ -195,6 +198,8 @@ function buildSetupScript(remotePort: number, authToken: string): string {
     'else',
     '[ -f ~/.claude.json ] || echo \'{}\' > ~/.claude.json',
     'fi',
+    // Write tab ID + port to ~/.aiterm so tmux/new shells can source it
+    `printf 'export AITERM_TAB_ID=${tabId}\\nexport AITERM_PORT=${remotePort}\\n' > ~/.aiterm`,
     // Install /aiterm skill on the remote
     'mkdir -p ~/.claude/skills/aiterm',
     "cat > ~/.claude/skills/aiterm/SKILL.md << 'SKILLEOF'\n" +
@@ -250,17 +255,21 @@ export async function enableBridge(tabId: string, sshArgs: string, ptyId?: strin
     return false;
   }
 
-  // Already bridged?
+  // Already bridged or in progress?
   if (bridgeStates.has(tabId)) return bridgeStates.get(tabId)!.status === 'connected';
+
+  // Mark as pending immediately to prevent concurrent calls from racing
+  const hostKey = extractHostKey(sshArgs);
+  bridgeStates = new Map(bridgeStates.set(tabId, { hostKey, remotePort: 0, status: 'pending' }));
 
   const localPort = await commands.getMcpPort();
   const authToken = await commands.getMcpAuth();
   if (!localPort || !authToken) {
     logError('Cannot enable SSH MCP bridge: MCP server not running');
+    bridgeStates.delete(tabId);
+    bridgeStates = new Map(bridgeStates);
     return false;
   }
-
-  const hostKey = extractHostKey(sshArgs);
 
   try {
     // Start or join existing tunnel
@@ -268,7 +277,7 @@ export async function enableBridge(tabId: string, sshArgs: string, ptyId?: strin
     logInfo(`SSH MCP bridge: tunnel to ${hostKey} on remote port ${tunnelInfo.remote_port}`);
 
     // Write lockfile + MCP entry + hooks on remote via a separate background SSH connection
-    const setupScript = buildSetupScript(tunnelInfo.remote_port, authToken);
+    const setupScript = buildSetupScript(tunnelInfo.remote_port, authToken, tabId);
     await commands.sshRunSetup(sshArgs, setupScript);
 
     bridgeStates = new Map(bridgeStates.set(tabId, {
