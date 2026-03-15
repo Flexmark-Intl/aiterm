@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.7.3
+
+- Fix duplicate event listeners by using window-scoped listen instead of global
+- Filter out non-interactive SSH (git, scp) from bridge auto-detection
+
 ## v1.7.2
 
 - Add file drop support for SSH terminals (SCP upload to remote CWD) and Claude sessions (upload to /tmp for file references)
