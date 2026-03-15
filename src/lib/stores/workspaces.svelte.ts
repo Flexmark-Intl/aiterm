@@ -105,7 +105,7 @@ function createWorkspacesStore() {
   });
 
   const activeWorkspace = $derived(
-    workspaces.find(w => w.id === activeWorkspaceId) ?? null
+    workspaces.find(w => w.id === activeWorkspaceId && !w.suspended) ?? null
   );
 
   const activePane = $derived.by(() => {

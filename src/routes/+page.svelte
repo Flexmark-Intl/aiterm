@@ -144,9 +144,22 @@
             {/key}
           {/if}
         {:else}
+          {@const suspendedWorkspaces = workspacesStore.workspaces.filter(w => w.suspended)}
           <div class="empty-state">
-            <p>No workspace selected</p>
-            <p>Press <kbd>{modLabel}+{altLabel}+N</kbd> to create a new workspace</p>
+            {#if suspendedWorkspaces.length > 0}
+              <p>All workspaces suspended</p>
+              <div class="suspended-list">
+                {#each suspendedWorkspaces as ws (ws.id)}
+                  <button class="resume-btn" onclick={() => workspacesStore.resumeWorkspace(ws.id)}>
+                    {ws.name}
+                  </button>
+                {/each}
+              </div>
+              <p class="hint">Click to resume, or press <kbd>{modLabel}+N</kbd> to create a new workspace</p>
+            {:else}
+              <p>No workspace selected</p>
+              <p>Press <kbd>{modLabel}+N</kbd> to create a new workspace</p>
+            {/if}
           </div>
         {/if}
 
@@ -279,6 +292,37 @@
     background: var(--bg-medium);
     border-radius: 4px;
     font-family: inherit;
+  }
+
+  .empty-state .hint {
+    font-size: 0.85em;
+    margin-top: 8px;
+  }
+
+  .suspended-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 8px;
+    max-height: 300px;
+    overflow-y: auto;
+  }
+
+  .resume-btn {
+    padding: 8px 20px;
+    background: var(--bg-medium);
+    color: var(--fg);
+    border: 1px solid var(--bg-light);
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.9em;
+    transition: background 0.15s, border-color 0.15s;
+  }
+
+  .resume-btn:hover {
+    background: var(--bg-light);
+    border-color: var(--accent);
   }
 
   .terminal-host {
