@@ -358,3 +358,19 @@ export function getBridgeStatus(tabId: string): BridgeStatus | undefined {
 export function getBridgeInfo(tabId: string): BridgeState | undefined {
   return bridgeStates.get(tabId);
 }
+
+/**
+ * Build the full setup script for the current user's home directory.
+ * Used by "Install MCP for Current User" context menu item when the user
+ * has done `sudo -i` or `su -l otheruser` and needs the config files
+ * written to that user's ~/ instead of the original SSH user's.
+ */
+export async function buildUserSetupScript(tabId: string): Promise<string | null> {
+  const bridge = bridgeStates.get(tabId);
+  if (!bridge || bridge.status !== 'connected' || !bridge.remotePort) return null;
+
+  const authToken = await commands.getMcpAuth();
+  if (!authToken) return null;
+
+  return buildSetupScript(bridge.remotePort, authToken, tabId);
+}

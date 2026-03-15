@@ -28,7 +28,7 @@
   import { CLAUDE_RESUME_COMMAND } from '$lib/triggers/defaults';
   import { createFilePathLinkProvider } from '$lib/utils/filePathDetector';
   import { openFileFromTerminal } from '$lib/utils/openFile';
-  import { enableBridge, disableBridge, hasBridge, getBridgeInfo } from '$lib/stores/sshMcpBridge.svelte';
+  import { enableBridge, disableBridge, hasBridge, getBridgeInfo, buildUserSetupScript } from '$lib/stores/sshMcpBridge.svelte';
   import { claudeStateStore } from '$lib/stores/claudeState.svelte';
   import Icon from '$lib/components/Icon.svelte';
   import Button from '$lib/components/ui/Button.svelte';
@@ -1178,6 +1178,17 @@
               if (bridge?.remotePort) {
                 const envCmd = " export AITERM_TAB_ID=" + tabId + " AITERM_PORT=" + bridge.remotePort + "\n";
                 const bytes = Array.from(new TextEncoder().encode(envCmd));
+                await writeTerminal(ptyId, bytes);
+              }
+            },
+          },
+          {
+            label: 'Install MCP for Current User',
+            action: async () => {
+              const script = await buildUserSetupScript(tabId);
+              if (script) {
+                const cmd = ' ' + script + '\n';
+                const bytes = Array.from(new TextEncoder().encode(cmd));
                 await writeTerminal(ptyId, bytes);
               }
             },
