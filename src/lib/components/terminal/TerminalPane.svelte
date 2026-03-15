@@ -7,7 +7,7 @@
   import { WebLinksAddon } from '@xterm/addon-web-links';
   import { WebglAddon } from '@xterm/addon-webgl';
   import '@xterm/xterm/css/xterm.css';
-  import { spawnTerminal, writeTerminal, resizeTerminal, killTerminal, setTabScrollback, getPtyInfo, setTabRestoreContext, cleanSshCommand, normalizeSshInput, buildSshCommand, shellEscapePath, readClipboardFilePaths, serializeTerminal, restoreTerminalScrollback, resizeTerminalGrid, scrollTerminal, scrollTerminalTo, saveTerminalScrollback, restoreTerminalFromSaved, hasSavedScrollback, scpUploadFiles } from '$lib/tauri/commands';
+  import { spawnTerminal, writeTerminal, resizeTerminal, killTerminal, setTabScrollback, getPtyInfo, setTabRestoreContext, cleanSshCommand, normalizeSshInput, buildSshCommand, shellEscapePath, readClipboardFilePaths, serializeTerminal, restoreTerminalScrollback, resizeTerminalGrid, scrollTerminal, scrollTerminalTo, saveTerminalScrollback, restoreTerminalFromSaved, hasSavedScrollback, scpUploadFiles, playBellSound } from '$lib/tauri/commands';
   import type { TerminalFrame, OscCwdEvent, OscShellEvent } from '$lib/tauri/types';
   import { readText as clipboardReadText, writeText as clipboardWriteText } from '@tauri-apps/plugin-clipboard-manager';
   import { terminalsStore } from '$lib/stores/terminals.svelte';
@@ -88,6 +88,8 @@
   let scrollDisplayOffset = $state(0);
   let scrollTotalLines = $state(0);
   let scrollViewportRows = $state(0);
+  // Tracks user's intentional scroll position — prevents TUI redraws from snapping back to bottom
+  let userScrollOffset = 0;
   let scrollbarDragging = false;
   let scrollbarFadeTimeout: ReturnType<typeof setTimeout> | undefined;
   let scrollbarVisible = $state(false);
@@ -259,13 +261,32 @@
     // and commands won't fire from old scrollback or Claude redraw output.
     suppressTab(tabId);
 
-    // Listen for rendered frames from Rust (alacritty_terminal renders viewport as ANSI bytes)
+    // Listen for rendered frames from Rust (alacritty_terminal renders viewport as ANSI bytes).
+    // When user is scrolled back, new PTY data causes alacritty to snap display_offset to 0.
+    // We hold the user's scroll position by re-requesting the frame at their offset.
     unlistenOutput = await listen<TerminalFrame>(`term-frame-${ptyId}`, (event) => {
       const frame = event.payload;
       lastFrameAlternateScreen = frame.alternate_screen;
-      scrollDisplayOffset = frame.display_offset;
       scrollTotalLines = frame.total_lines;
       scrollViewportRows = terminal.rows;
+
+      // Alternate screen (TUI apps like Claude/vim) has no scrollback — clear hold
+      if (frame.alternate_screen) {
+        userScrollOffset = 0;
+      } else if (userScrollOffset > 0 && frame.display_offset === 0) {
+        // User is scrolled back but alacritty snapped to bottom — re-request at their offset.
+        // Still update total_lines so scrollbar reflects new content.
+        scrollTerminalTo(ptyId, userScrollOffset).then(held => {
+          userScrollOffset = held.display_offset;
+          scrollDisplayOffset = held.display_offset;
+          scrollTotalLines = held.total_lines;
+          terminal.write(new Uint8Array(held.ansi));
+        }).catch(() => {});
+        return;
+      }
+
+      scrollDisplayOffset = frame.display_offset;
+      if (frame.display_offset === 0) userScrollOffset = 0;
       terminal.write(new Uint8Array(frame.ansi));
     });
 
@@ -364,8 +385,7 @@
 
     unlistenBell = await listen(`term-bell-${ptyId}`, () => {
       if (!trackActivity) return;
-      const oscState = terminalsStore.getOsc(tabId);
-      dispatch(oscState?.title || 'Terminal', 'Bell', 'info');
+      playBellSound().catch(() => {});
     });
 
     // Listen for PTY close — when the shell exits (exit/logout/Ctrl+D),
@@ -543,6 +563,7 @@
         if (e.key === 'PageUp') {
           e.preventDefault();
           scrollTerminal(ptyId, terminal.rows).then(frame => {
+            userScrollOffset = frame.display_offset;
             terminal.write(new Uint8Array(frame.ansi));
             updateScrollbar(frame.display_offset, frame.total_lines);
           }).catch(() => {});
@@ -551,6 +572,7 @@
         if (e.key === 'PageDown') {
           e.preventDefault();
           scrollTerminal(ptyId, -terminal.rows).then(frame => {
+            userScrollOffset = frame.display_offset;
             terminal.write(new Uint8Array(frame.ansi));
             updateScrollbar(frame.display_offset, frame.total_lines);
           }).catch(() => {});
@@ -559,6 +581,7 @@
         if (e.shiftKey && e.key === 'ArrowUp') {
           e.preventDefault();
           scrollTerminal(ptyId, 1).then(frame => {
+            userScrollOffset = frame.display_offset;
             terminal.write(new Uint8Array(frame.ansi));
             updateScrollbar(frame.display_offset, frame.total_lines);
           }).catch(() => {});
@@ -567,6 +590,7 @@
         if (e.shiftKey && e.key === 'ArrowDown') {
           e.preventDefault();
           scrollTerminal(ptyId, -1).then(frame => {
+            userScrollOffset = frame.display_offset;
             terminal.write(new Uint8Array(frame.ansi));
             updateScrollbar(frame.display_offset, frame.total_lines);
           }).catch(() => {});
@@ -628,6 +652,7 @@
       scrollAccumulator -= lines;
 
       scrollTerminal(ptyId, lines).then((frame) => {
+        userScrollOffset = frame.display_offset;
         terminal.write(new Uint8Array(frame.ansi));
         updateScrollbar(frame.display_offset, frame.total_lines);
       }).catch(() => { /* terminal may have been killed */ });
@@ -688,13 +713,24 @@
               const tempPaths = basenames.map(n => `/tmp/aiterm-uploads/${n}`).join(' ');
               const bytes = Array.from(new TextEncoder().encode(tempPaths));
               writeTerminal(ptyId, bytes).catch(e => logError(String(e)));
-            } else {
-              // Paste basenames (files are in CWD)
-              const escaped = basenames.map(escapePathForTerminal).join(' ');
+            } else if (count === 1) {
+              // Single file — paste basename (file is in CWD)
+              const escaped = escapePathForTerminal(basenames[0]);
               const bytes = Array.from(new TextEncoder().encode(escaped));
               writeTerminal(ptyId, bytes).catch(e => logError(String(e)));
             }
-            toastStore.addToast('SCP Upload', `${count} file${count > 1 ? 's' : ''} uploaded`, 'success');
+            const lCmd = `l ${basenames.map(escapePathForTerminal).join(' ')}\n`;
+            toastStore.addToast(
+              'SCP Upload',
+              `${count} file${count > 1 ? 's' : ''} uploaded — click to list`,
+              'success',
+              undefined,
+              undefined,
+              () => {
+                const bytes = Array.from(new TextEncoder().encode(lCmd));
+                writeTerminal(ptyId, bytes).catch(e => logError(String(e)));
+              },
+            );
           }).catch(e => {
             logError(`drag-drop SCP upload failed: ${e}`);
             toastStore.addToast('SCP Upload Failed', String(e), 'error');
@@ -1357,6 +1393,7 @@
         const maxOffset = scrollTotalLines - scrollViewportRows;
         const targetOffset = Math.round((1 - fraction) * maxOffset);
         scrollTerminalTo(ptyId, targetOffset).then(frame => {
+          userScrollOffset = frame.display_offset;
           terminal.write(new Uint8Array(frame.ansi));
           updateScrollbar(frame.display_offset, frame.total_lines);
         }).catch(() => {});
@@ -1381,6 +1418,7 @@
             const targetOffset = Math.round(startOffset - deltaFraction * maxOffset);
             const clamped = Math.max(0, Math.min(maxOffset, targetOffset));
             scrollTerminalTo(ptyId, clamped).then(frame => {
+              userScrollOffset = frame.display_offset;
               terminal.write(new Uint8Array(frame.ansi));
               updateScrollbar(frame.display_offset, frame.total_lines);
             }).catch(() => {});

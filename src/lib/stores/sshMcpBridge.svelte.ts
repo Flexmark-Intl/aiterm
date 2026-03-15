@@ -13,6 +13,7 @@ import * as commands from '$lib/tauri/commands';
 import { preferencesStore } from '$lib/stores/preferences.svelte';
 import { dispatch } from '$lib/stores/notificationDispatch';
 import { error as logError, info as logInfo } from '@tauri-apps/plugin-log';
+import { setVariable } from '$lib/stores/triggers.svelte';
 import { listen } from '@tauri-apps/api/event';
 import type { UnlistenFn } from '@tauri-apps/api/event';
 
@@ -288,6 +289,12 @@ export async function enableBridge(tabId: string, sshArgs: string, ptyId?: strin
 
     // Listen for tunnel process death from Rust — clears indicator in real-time
     listenForTunnelDown(tabId).catch(() => {});
+
+    // Set trigger variables so auto-resume commands can interpolate them.
+    // %aitermTabId, %aitermPort for individual values, %aitermExport for the full export command.
+    setVariable(tabId, 'aitermTabId', tabId);
+    setVariable(tabId, 'aitermPort', String(tunnelInfo.remote_port));
+    setVariable(tabId, 'aitermExport', `export AITERM_TAB_ID=${tabId} AITERM_PORT=${tunnelInfo.remote_port}`);
 
     // Inject AITERM_TAB_ID and AITERM_PORT into the remote shell so hooks can read them.
     // Leading space suppresses shell history (bash HISTCONTROL=ignorespace, zsh HIST_IGNORE_SPACE).
