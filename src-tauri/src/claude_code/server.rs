@@ -863,7 +863,28 @@ async fn process_message(
 
                 // ── Auto-inject tabId from connection affinity ──
                 // If the tool call doesn't include tabId but this connection has affinity, inject it.
-                let has_affinity = connection_tabs.read().contains_key(connection_id);
+                // Falls back to claude_sessions when SSE reconnects cleared the connection affinity.
+                let mut has_affinity = connection_tabs.read().contains_key(connection_id);
+
+                // SSE reconnect recovery: if no connection affinity, check if there's
+                // an active claude session whose tab we can restore affinity from.
+                if !has_affinity {
+                    let sessions = state.claude_sessions.read();
+                    // Find sessions with active tabs in this instance
+                    let active_tabs: Vec<String> = sessions.values()
+                        .map(|info| info.tab_id.clone())
+                        .collect::<std::collections::HashSet<_>>()
+                        .into_iter()
+                        .collect();
+                    if active_tabs.len() == 1 {
+                        let tab_id = active_tabs.into_iter().next().unwrap();
+                        connection_tabs.write().insert(connection_id.to_string(), tab_id);
+                        has_affinity = true;
+                        log::info!("Restored connection affinity from active claude session for {}",
+                            &connection_id[..connection_id.len().min(11)]);
+                    }
+                }
+
                 if has_affinity {
                     if arguments.get("tabId").and_then(|v| v.as_str()).map_or(true, |s| s.is_empty()) {
                         if let Some(affinity_tab) = connection_tabs.read().get(connection_id).cloned() {
