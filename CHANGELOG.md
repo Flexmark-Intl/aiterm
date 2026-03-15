@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.7.5
+
+- Fix view not updating when suspending the active workspace (shows empty state with resume buttons)
+- Scope drag-drop events to current window to prevent cross-window firing
+- Refine SCP upload toast: clickable "list" action only for multi-file non-Claude SSH drops
+- Move bolt indicator before auto-resume indicator in tab bar
+
 ## v1.7.4
 
 - Add clickable toast actions (e.g. SCP upload toast opens uploaded files)
