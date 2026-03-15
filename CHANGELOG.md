@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.7.4
+
+- Add clickable toast actions (e.g. SCP upload toast opens uploaded files)
+- Add native OS bell sound (macOS user-configured alert, Linux canberra, Windows SystemSounds)
+- Add aitermTabId, aitermPort, aitermExport trigger variables
+- Add scroll hold for scrollback (pause auto-scroll when viewing history)
+
 ## v1.7.3
 
 - Fix duplicate event listeners by using window-scoped listen instead of global
