@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.7.2
+
+- Add file drop support for SSH terminals (SCP upload to remote CWD) and Claude sessions (upload to /tmp for file references)
+- Add ~/.aiterm env file for tmux sessions with fallback sourcing on SessionStart
+- Add reactive SSH bridge detection via title changes instead of one-shot timer
+- Add "Install MCP for Current User" context menu for sudo/su scenarios
+- Add "Inject aiTerm Env Vars" context menu for on-demand re-injection
+- Recover Claude Code connection affinity on SSE reconnect from active sessions
+- Add pending bridge state to prevent concurrent enableBridge race condition
+- Fix white Preferences/Help windows on Windows (absolute asset paths)
+- Remove obsolete Claude integration prompt modal
+
 ## v1.7.1
 
 - Fix blank Preferences and Help windows on Windows (SvelteKit trailingSlash routing)
