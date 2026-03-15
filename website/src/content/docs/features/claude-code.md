@@ -90,6 +90,10 @@ aiTerm integrates with Claude Code's hook system for real-time session awareness
 - **Multi-agent awareness** — `getClaudeSessions` tool lets any Claude session discover all other active sessions across tabs for coordination
 - **Compaction notifications** — alerts during and after context compaction
 
+## File Drop
+
+Drag files onto a terminal running Claude Code over SSH — aiTerm SCP uploads them to a temp directory on the remote and pastes the paths so Claude can read them as file references. On local terminals, file paths are pasted directly.
+
 ## Dev/Production Isolation
 
 Dev builds register as `aiterm-dev` with display name "aiTermDev", so development and production instances don't interfere with each other.

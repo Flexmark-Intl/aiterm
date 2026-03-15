@@ -14,6 +14,7 @@ aiTerm's terminal is powered by alacritty_terminal for Rust-native VTE parsing a
 - **SSH session cloning** — split an SSH session to get a second shell at the same remote CWD
 - **Multi-window** — open additional windows, duplicate windows with full tab context
 - **Per-tab command history** — each tab maintains its own shell history, cloned tabs inherit it
+- **File drop** — drag files onto a terminal to paste paths; over SSH, files are SCP'd to the remote CWD automatically
 
 ## Shell Integration
 
