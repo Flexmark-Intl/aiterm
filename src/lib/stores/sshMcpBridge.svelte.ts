@@ -256,6 +256,9 @@ export async function enableBridge(tabId: string, sshArgs: string, ptyId?: strin
     return false;
   }
 
+  // Strip leading "ssh " prefix — callers may pass the full ps command or just the args
+  sshArgs = sshArgs.replace(/^ssh\s+/, '');
+
   // Already bridged or in progress?
   if (bridgeStates.has(tabId)) return bridgeStates.get(tabId)!.status === 'connected';
 
