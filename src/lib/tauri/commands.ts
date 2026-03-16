@@ -154,6 +154,30 @@ export async function getTerminalRecentText(ptyId: string, lineCount: number): P
   return invoke('get_terminal_recent_text', { ptyId, lineCount });
 }
 
+export async function startSelection(ptyId: string, col: number, row: number, side: string, selectionType: string): Promise<TerminalFrame> {
+  return invoke('start_selection', { ptyId, col, row, side, selectionType });
+}
+
+export async function updateSelection(ptyId: string, col: number, row: number, side: string): Promise<TerminalFrame> {
+  return invoke('update_selection', { ptyId, col, row, side });
+}
+
+export async function clearSelection(ptyId: string): Promise<TerminalFrame> {
+  return invoke('clear_selection', { ptyId });
+}
+
+export async function copySelection(ptyId: string): Promise<string | null> {
+  return invoke('copy_selection', { ptyId });
+}
+
+export async function selectAll(ptyId: string): Promise<TerminalFrame> {
+  return invoke('select_all', { ptyId });
+}
+
+export async function scrollSelection(ptyId: string, delta: number, col: number): Promise<TerminalFrame> {
+  return invoke('scroll_selection', { ptyId, delta, col });
+}
+
 export async function saveTerminalScrollback(ptyId: string, tabId: string): Promise<void> {
   return invoke('save_terminal_scrollback', { ptyId, tabId });
 }

@@ -8,6 +8,8 @@ use crate::terminal::render::{self, TerminalFrame};
 use crate::terminal::search;
 use crate::terminal::serialize;
 use alacritty_terminal::grid::{Dimensions, Scroll};
+use alacritty_terminal::index::{Column, Line, Point, Side};
+use alacritty_terminal::selection::{Selection, SelectionType};
 use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::vte::ansi::Handler;
 
@@ -207,7 +209,7 @@ pub fn scroll_terminal(
     let mut registry = state.terminal_registry.write();
     let handle = registry.get_mut(&pty_id).ok_or("Terminal not found")?;
     handle.term.scroll_display(Scroll::Delta(delta));
-    Ok(render::render_viewport(&handle.term))
+    Ok(render::render_viewport(&handle.term, handle.selection.as_ref()))
 }
 
 /// Scroll terminal to an absolute position (0 = bottom/live).
@@ -224,7 +226,7 @@ pub fn scroll_terminal_to(
     if offset > 0 {
         handle.term.scroll_display(Scroll::Delta(offset as i32));
     }
-    Ok(render::render_viewport(&handle.term))
+    Ok(render::render_viewport(&handle.term, handle.selection.as_ref()))
 }
 
 /// Scrollback metadata.
@@ -421,7 +423,7 @@ pub fn clear_terminal_scrollback(
     // Move cursor to home so shell prompt redraws at top
     handle.term.goto(0, 0);
     // Emit a frame immediately so the frontend sees the cleared state
-    let frame = render::render_viewport(&handle.term);
+    let frame = render::render_viewport(&handle.term, handle.selection.as_ref());
     let _ = app_handle.emit(&format!("term-frame-{}", pty_id), &frame);
     Ok(())
 }
@@ -554,4 +556,136 @@ pub fn resize_terminal_grid(
         });
     }
     Ok(())
+}
+
+// --- Selection commands ---
+
+/// Convert viewport-relative (col, row) to absolute grid Point.
+/// viewport_row 0 = top of visible area.
+fn viewport_to_point(col: usize, viewport_row: usize, display_offset: usize) -> Point {
+    Point::new(Line(viewport_row as i32 - display_offset as i32), Column(col))
+}
+
+fn parse_side(side: &str) -> Side {
+    if side == "right" { Side::Right } else { Side::Left }
+}
+
+fn parse_selection_type(ty: &str) -> SelectionType {
+    match ty {
+        "block" => SelectionType::Block,
+        "semantic" => SelectionType::Semantic,
+        "lines" => SelectionType::Lines,
+        _ => SelectionType::Simple,
+    }
+}
+
+/// Start a new selection at the given viewport position.
+#[tauri::command]
+pub fn start_selection(
+    state: State<'_, Arc<AppState>>,
+    pty_id: String,
+    col: usize,
+    row: usize,
+    side: String,
+    selection_type: String,
+) -> Result<TerminalFrame, String> {
+    let mut registry = state.terminal_registry.write();
+    let handle = registry.get_mut(&pty_id).ok_or("Terminal not found")?;
+    let display_offset = handle.term.grid().display_offset();
+    let point = viewport_to_point(col, row, display_offset);
+    handle.selection = Some(Selection::new(
+        parse_selection_type(&selection_type),
+        point,
+        parse_side(&side),
+    ));
+    Ok(render::render_viewport(&handle.term, handle.selection.as_ref()))
+}
+
+/// Update the end of the current selection.
+#[tauri::command]
+pub fn update_selection(
+    state: State<'_, Arc<AppState>>,
+    pty_id: String,
+    col: usize,
+    row: usize,
+    side: String,
+) -> Result<TerminalFrame, String> {
+    let mut registry = state.terminal_registry.write();
+    let handle = registry.get_mut(&pty_id).ok_or("Terminal not found")?;
+    let display_offset = handle.term.grid().display_offset();
+    let point = viewport_to_point(col, row, display_offset);
+    if let Some(ref mut sel) = handle.selection {
+        sel.update(point, parse_side(&side));
+    }
+    Ok(render::render_viewport(&handle.term, handle.selection.as_ref()))
+}
+
+/// Clear the current selection.
+#[tauri::command]
+pub fn clear_selection(
+    state: State<'_, Arc<AppState>>,
+    pty_id: String,
+) -> Result<TerminalFrame, String> {
+    let mut registry = state.terminal_registry.write();
+    let handle = registry.get_mut(&pty_id).ok_or("Terminal not found")?;
+    handle.selection = None;
+    Ok(render::render_viewport(&handle.term, handle.selection.as_ref()))
+}
+
+/// Copy the current selection text.
+#[tauri::command]
+pub fn copy_selection(
+    state: State<'_, Arc<AppState>>,
+    pty_id: String,
+) -> Result<Option<String>, String> {
+    let mut registry = state.terminal_registry.write();
+    let handle = registry.get_mut(&pty_id).ok_or("Terminal not found")?;
+    // Temporarily set term.selection so selection_to_string() can extract text
+    handle.term.selection = handle.selection.clone();
+    let text = handle.term.selection_to_string();
+    handle.term.selection = None;
+    Ok(text)
+}
+
+/// Select all content in the terminal buffer.
+#[tauri::command]
+pub fn select_all(
+    state: State<'_, Arc<AppState>>,
+    pty_id: String,
+) -> Result<TerminalFrame, String> {
+    let mut registry = state.terminal_registry.write();
+    let handle = registry.get_mut(&pty_id).ok_or("Terminal not found")?;
+    let top = handle.term.topmost_line();
+    let bottom = handle.term.bottommost_line();
+    let last_col = handle.term.last_column();
+    let mut sel = Selection::new(
+        SelectionType::Simple,
+        Point::new(top, Column(0)),
+        Side::Left,
+    );
+    sel.update(Point::new(bottom, last_col), Side::Right);
+    handle.selection = Some(sel);
+    Ok(render::render_viewport(&handle.term, handle.selection.as_ref()))
+}
+
+/// Scroll the viewport while maintaining an active selection, updating the
+/// selection endpoint to the edge of the viewport in the scroll direction.
+#[tauri::command]
+pub fn scroll_selection(
+    state: State<'_, Arc<AppState>>,
+    pty_id: String,
+    delta: i32,
+    col: usize,
+) -> Result<TerminalFrame, String> {
+    let mut registry = state.terminal_registry.write();
+    let handle = registry.get_mut(&pty_id).ok_or("Terminal not found")?;
+    handle.term.scroll_display(Scroll::Delta(delta));
+    // Update selection endpoint to the edge row in the scroll direction
+    let display_offset = handle.term.grid().display_offset();
+    let edge_row = if delta > 0 { 0 } else { handle.term.screen_lines() - 1 };
+    let point = viewport_to_point(col, edge_row, display_offset);
+    if let Some(ref mut sel) = handle.selection {
+        sel.update(point, if delta > 0 { Side::Left } else { Side::Right });
+    }
+    Ok(render::render_viewport(&handle.term, handle.selection.as_ref()))
 }

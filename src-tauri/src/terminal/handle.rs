@@ -1,4 +1,5 @@
 use alacritty_terminal::grid::Dimensions;
+use alacritty_terminal::selection::Selection;
 use alacritty_terminal::term::{Config, Term};
 use alacritty_terminal::vte;
 
@@ -33,6 +34,9 @@ pub struct TerminalHandle {
     pub osc_interceptor: OscInterceptor,
     /// VTE processor for feeding bytes to the terminal.
     pub processor: vte::ansi::Processor,
+    /// User selection managed externally (not on term.selection which gets
+    /// cleared by VTE processing). Stored here so it survives PTY output.
+    pub selection: Option<Selection>,
 }
 
 /// Create a new alacritty_terminal instance.
@@ -64,5 +68,6 @@ pub fn create_terminal(
         tab_id: tab_id.to_string(),
         osc_interceptor,
         processor,
+        selection: None,
     }
 }

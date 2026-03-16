@@ -8,7 +8,7 @@
   import { WebLinksAddon } from '@xterm/addon-web-links';
   import { WebglAddon } from '@xterm/addon-webgl';
   import '@xterm/xterm/css/xterm.css';
-  import { spawnTerminal, writeTerminal, resizeTerminal, killTerminal, setTabScrollback, getPtyInfo, setTabRestoreContext, cleanSshCommand, normalizeSshInput, buildSshCommand, shellEscapePath, readClipboardFilePaths, serializeTerminal, restoreTerminalScrollback, resizeTerminalGrid, scrollTerminal, scrollTerminalTo, saveTerminalScrollback, restoreTerminalFromSaved, hasSavedScrollback, scpUploadFiles, playBellSound } from '$lib/tauri/commands';
+  import { spawnTerminal, writeTerminal, resizeTerminal, killTerminal, setTabScrollback, getPtyInfo, setTabRestoreContext, cleanSshCommand, normalizeSshInput, buildSshCommand, shellEscapePath, readClipboardFilePaths, serializeTerminal, restoreTerminalScrollback, resizeTerminalGrid, scrollTerminal, scrollTerminalTo, saveTerminalScrollback, restoreTerminalFromSaved, hasSavedScrollback, scpUploadFiles, playBellSound, startSelection, updateSelection, clearSelection, copySelection, selectAll, scrollSelection } from '$lib/tauri/commands';
   import type { TerminalFrame, OscCwdEvent, OscShellEvent } from '$lib/tauri/types';
   import { readText as clipboardReadText, writeText as clipboardWriteText } from '@tauri-apps/plugin-clipboard-manager';
   import { terminalsStore } from '$lib/stores/terminals.svelte';
@@ -98,6 +98,81 @@
   let claudeSetupModal = $state(false);
   let autoResumeTextarea = $state<{ focus: () => void } | undefined>();
   let autoResumeHeightBeforeMouse = 0;
+
+  // --- Selection state (Rust-managed via alacritty_terminal) ---
+  let selectionActive = false; // mouse is down and dragging
+  let hasRustSelection = false; // Rust has an active selection
+  let selectionClickCount = 0;
+  let selectionClickTimer: ReturnType<typeof setTimeout> | undefined;
+  let autoScrollInterval: ReturnType<typeof setInterval> | undefined;
+  let lastMouseCol = 0;
+
+  function getCellPosition(e: MouseEvent): { col: number; row: number; side: 'left' | 'right' } {
+    const rect = containerRef.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const cellWidth = rect.width / terminal.cols;
+    const cellHeight = rect.height / terminal.rows;
+    const col = Math.min(Math.max(Math.floor(x / cellWidth), 0), terminal.cols - 1);
+    const row = Math.min(Math.max(Math.floor(y / cellHeight), 0), terminal.rows - 1);
+    const cellX = x - col * cellWidth;
+    const side = cellX < cellWidth / 2 ? 'left' : 'right';
+    return { col, row, side };
+  }
+
+  function applyFrame(frame: TerminalFrame) {
+    terminal.write(new Uint8Array(frame.ansi));
+    hasRustSelection = frame.has_selection;
+    updateScrollbar(frame.display_offset, frame.total_lines);
+  }
+
+  function stopAutoScroll() {
+    if (autoScrollInterval) {
+      clearInterval(autoScrollInterval);
+      autoScrollInterval = undefined;
+    }
+  }
+
+  function onSelectionMouseMove(e: MouseEvent) {
+    if (!selectionActive || lastFrameAlternateScreen) return;
+
+    const rect = containerRef.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    const { col, row, side } = getCellPosition(e);
+    lastMouseCol = col;
+
+    // Auto-scroll when mouse is above or below viewport
+    if (y < 0) {
+      if (!autoScrollInterval) {
+        autoScrollInterval = setInterval(() => {
+          scrollSelection(ptyId, 1, lastMouseCol).then(frame => {
+            userScrollOffset = frame.display_offset;
+            applyFrame(frame);
+          }).catch(() => {});
+        }, 50);
+      }
+      return;
+    } else if (y > rect.height) {
+      if (!autoScrollInterval) {
+        autoScrollInterval = setInterval(() => {
+          scrollSelection(ptyId, -1, lastMouseCol).then(frame => {
+            userScrollOffset = frame.display_offset;
+            applyFrame(frame);
+          }).catch(() => {});
+        }, 50);
+      }
+      return;
+    } else {
+      stopAutoScroll();
+    }
+
+    updateSelection(ptyId, col, row, side).then(applyFrame).catch(() => {});
+  }
+
+  function onSelectionMouseUp() {
+    selectionActive = false;
+    stopAutoScroll();
+  }
 
   function updateScrollbar(displayOffset: number, totalLines: number) {
     scrollDisplayOffset = displayOffset;
@@ -286,6 +361,7 @@
 
       scrollDisplayOffset = frame.display_offset;
       if (frame.display_offset === 0) userScrollOffset = 0;
+      hasRustSelection = frame.has_selection;
       terminal.write(new Uint8Array(frame.ansi));
     });
 
@@ -521,12 +597,20 @@
 
       if (isModKey(e) && e.key === 'c') {
         e.preventDefault();
-        if (terminal.hasSelection()) {
-          clipboardWriteText(terminal.getSelection()).catch(e => logError(String(e)));
-          terminal.clearSelection();
+        if (hasRustSelection) {
+          copySelection(ptyId).then(text => {
+            if (text) clipboardWriteText(text).catch(e => logError(String(e)));
+            clearSelection(ptyId).then(applyFrame).catch(() => {});
+          }).catch(e => logError(String(e)));
         } else {
           writeTerminal(ptyId, [0x03]).catch(e => logError(String(e)));
         }
+        return false;
+      }
+
+      if (isModKey(e) && e.key === 'a' && !lastFrameAlternateScreen) {
+        e.preventDefault();
+        selectAll(ptyId).then(applyFrame).catch(() => {});
         return false;
       }
 
@@ -600,8 +684,11 @@
       return true;
     });
 
-    // Handle keyboard input
+    // Handle keyboard input — clear selection on any input
     terminal.onData(async (data) => {
+      if (hasRustSelection) {
+        clearSelection(ptyId).then(applyFrame).catch(() => {});
+      }
       const bytes = Array.from(new TextEncoder().encode(data));
       try {
         await writeTerminal(ptyId, bytes);
@@ -656,6 +743,46 @@
         updateScrollbar(frame.display_offset, frame.total_lines);
       }).catch(() => { /* terminal may have been killed */ });
     }, { passive: false, capture: true });
+
+    // --- Selection mouse handlers (Rust-managed) ---
+    // Capture phase + stopPropagation prevents xterm.js from handling selection.
+    // Only intercept plain left-clicks for selection — let everything else
+    // (right-click, Cmd+click for links, alt-screen) pass through to xterm.js.
+    containerRef.addEventListener('mousedown', (e) => {
+      // Let xterm.js handle non-selection clicks normally
+      if (e.button !== 0 || lastFrameAlternateScreen) return;
+      if ((e.target as HTMLElement)?.closest('.scrollbar-track, .auto-resume-prompt, .context-menu')) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      // Block xterm.js from receiving this mousedown (prevents its selection)
+      e.stopPropagation();
+
+      const { col, row, side } = getCellPosition(e);
+      lastMouseCol = col;
+
+      // Track click count for double/triple click
+      selectionClickCount++;
+      clearTimeout(selectionClickTimer);
+      selectionClickTimer = setTimeout(() => { selectionClickCount = 0; }, 400);
+
+      if (e.shiftKey && hasRustSelection) {
+        updateSelection(ptyId, col, row, side).then(applyFrame).catch(() => {});
+      } else {
+        const selType = selectionClickCount >= 3 ? 'lines'
+          : selectionClickCount === 2 ? 'semantic'
+          : 'simple';
+
+        startSelection(ptyId, col, row, side, selType).then(applyFrame).catch(() => {});
+        selectionActive = selType === 'simple';
+      }
+
+      // Restore focus after stopPropagation blocked xterm.js's mousedown handler.
+      // Use requestAnimationFrame so it runs after the browser's default behavior.
+      requestAnimationFrame(() => terminal.focus());
+    }, { capture: true });
+
+    window.addEventListener('mousemove', onSelectionMouseMove);
+    window.addEventListener('mouseup', onSelectionMouseUp);
 
     // Drag & drop file support: window-scoped via getCurrentWebview() to prevent cross-window firing
     unlistenDragDrop = await getCurrentWebview().onDragDropEvent((event) => {
@@ -771,6 +898,9 @@
     disableBridge(tabId).catch(() => {});
 
     window.removeEventListener('terminal-slot-ready', handleSlotReady);
+    window.removeEventListener('mousemove', onSelectionMouseMove);
+    window.removeEventListener('mouseup', onSelectionMouseUp);
+    stopAutoScroll();
 
     if (unlistenOutput) unlistenOutput();
     if (unlistenRaw) unlistenRaw();
@@ -1077,7 +1207,6 @@
   }
 
   function getContextMenuItems() {
-    const hasSelection = terminal?.hasSelection();
     // Extract full path from file:// link that was hovered when context menu opened
     const hoveredFilePath = contextMenuLinkUri?.startsWith('file://')
       ? decodeURIComponent(new URL(contextMenuLinkUri).pathname)
@@ -1090,10 +1219,11 @@
       {
         label: 'Copy',
         shortcut: `${modSymbol}C`,
-        disabled: !hasSelection,
+        disabled: !hasRustSelection,
         action: async () => {
-          const text = terminal.getSelection();
+          const text = await copySelection(ptyId);
           if (text) await clipboardWriteText(text);
+          clearSelection(ptyId).then(applyFrame).catch(() => {});
         },
       },
       {

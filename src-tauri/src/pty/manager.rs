@@ -419,7 +419,7 @@ pub fn spawn_pty(
                     {
                         let registry = state_reader.terminal_registry.read();
                         if let Some(handle) = registry.get(&pty_id_clone) {
-                            let frame = render::render_viewport(&handle.term);
+                            let frame = render::render_viewport(&handle.term, handle.selection.as_ref());
                             let _ = app_handle_clone.emit(
                                 &format!("term-frame-{}", pty_id_clone),
                                 &frame,
@@ -443,7 +443,7 @@ pub fn spawn_pty(
         {
             let registry = state_reader.terminal_registry.read();
             if let Some(handle) = registry.get(&pty_id_clone) {
-                let frame = render::render_viewport(&handle.term);
+                let frame = render::render_viewport(&handle.term, handle.selection.as_ref());
                 let _ = app_handle_clone.emit(
                     &format!("term-frame-{}", pty_id_clone),
                     &frame,

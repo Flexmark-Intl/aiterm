@@ -1,5 +1,6 @@
 use alacritty_terminal::event::EventListener;
 use alacritty_terminal::grid::Dimensions;
+use alacritty_terminal::selection::{Selection, SelectionRange};
 use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::term::{Term, TermMode};
 use alacritty_terminal::vte::ansi::{Color, NamedColor};
@@ -19,11 +20,18 @@ pub struct TerminalFrame {
     pub total_lines: usize,
     /// Whether alternate screen buffer is active
     pub alternate_screen: bool,
+    /// Whether there is an active selection
+    pub has_selection: bool,
 }
 
 /// Extract the visible viewport from a Term and produce an ANSI string.
 /// The frontend xterm.js (scrollback=0) receives this and renders it.
-pub fn render_viewport<T: EventListener>(term: &Term<T>) -> TerminalFrame {
+/// If `ext_selection` is provided, it's used for highlight rendering instead of
+/// `term.selection` (which gets cleared by VTE processing).
+pub fn render_viewport<T: EventListener>(
+    term: &Term<T>,
+    ext_selection: Option<&Selection>,
+) -> TerminalFrame {
     let content = term.renderable_content();
     let num_cols = term.columns();
     let num_lines = term.screen_lines();
@@ -33,6 +41,10 @@ pub fn render_viewport<T: EventListener>(term: &Term<T>) -> TerminalFrame {
     let display_offset = content.display_offset;
     let alternate_screen = content.mode.contains(TermMode::ALT_SCREEN);
     let total_lines = term.grid().total_lines();
+    // Prefer the externally-managed selection over term.selection
+    let selection_range: Option<SelectionRange> = ext_selection
+        .and_then(|s| s.to_range(term))
+        .or(content.selection);
 
     // Pre-allocate output — rough estimate: 10 bytes per cell for ANSI + content
     let mut out = String::with_capacity(num_cols * num_lines * 10);
@@ -97,13 +109,21 @@ pub fn render_viewport<T: EventListener>(term: &Term<T>) -> TerminalFrame {
             _ => {} // Same link or both None — no change
         }
 
+        // Toggle INVERSE for selected cells so they appear highlighted
+        let mut flags = cell.flags;
+        if let Some(ref sel) = selection_range {
+            if sel.contains(point) {
+                flags.toggle(Flags::INVERSE);
+            }
+        }
+
         // Emit SGR changes if attributes differ
-        let needs_sgr = cell.fg != prev_fg || cell.bg != prev_bg || cell.flags != prev_flags;
+        let needs_sgr = cell.fg != prev_fg || cell.bg != prev_bg || flags != prev_flags;
         if needs_sgr {
-            emit_sgr(&mut out, cell.fg, cell.bg, cell.flags);
+            emit_sgr(&mut out, cell.fg, cell.bg, flags);
             prev_fg = cell.fg;
             prev_bg = cell.bg;
-            prev_flags = cell.flags;
+            prev_flags = flags;
         }
 
         // Output the character
@@ -154,6 +174,7 @@ pub fn render_viewport<T: EventListener>(term: &Term<T>) -> TerminalFrame {
         display_offset,
         total_lines,
         alternate_screen,
+        has_selection: selection_range.is_some(),
     }
 }
 

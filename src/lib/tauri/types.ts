@@ -219,6 +219,7 @@ export interface TerminalFrame {
   display_offset: number;
   total_lines: number;
   alternate_screen: boolean;
+  has_selection: boolean;
 }
 
 export interface ScrollInfo {
