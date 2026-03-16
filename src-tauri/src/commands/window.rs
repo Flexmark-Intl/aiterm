@@ -220,43 +220,53 @@ pub fn open_preferences_window(window: tauri::WebviewWindow, app: tauri::AppHand
         return Ok(());
     }
 
-    let url = if cfg!(debug_assertions) {
-        tauri::WebviewUrl::External("http://localhost:1420/preferences".parse().unwrap())
-    } else {
-        tauri::WebviewUrl::App("preferences".into())
-    };
-
-    let title = if cfg!(debug_assertions) { "Preferences (Dev)" } else { "Preferences" };
-
     let pref_w: f64 = 900.0;
     let pref_h: f64 = 650.0;
 
-    let mut builder = WebviewWindowBuilder::new(&app, "preferences", url)
-        .title(title)
-        .inner_size(pref_w, pref_h)
-        .min_inner_size(500.0, 400.0)
-        .resizable(true)
-        .fullscreen(false);
-
-    #[cfg(target_os = "macos")]
-    {
-        builder = builder.hidden_title(true);
-    }
-
-    // Center on the calling window
-    if let (Ok(pos), Ok(size)) = (window.outer_position(), window.outer_size()) {
+    // Compute position from the calling window before spawning (WebviewWindow is not Send)
+    let position = if let (Ok(pos), Ok(size)) = (window.outer_position(), window.outer_size()) {
         let scale = window.scale_factor().unwrap_or(1.0);
         let win_x = pos.x as f64 / scale;
         let win_y = pos.y as f64 / scale;
         let win_w = size.width as f64 / scale;
         let win_h = size.height as f64 / scale;
-        let x = win_x + (win_w - pref_w) / 2.0;
-        let y = win_y + (win_h - pref_h) / 2.0;
-        builder = builder.position(x, y);
-    }
+        Some((win_x + (win_w - pref_w) / 2.0, win_y + (win_h - pref_h) / 2.0))
+    } else {
+        None
+    };
 
-    builder.build()
-        .map_err(|e| format!("Failed to create preferences window: {}", e))?;
+    // Spawn in background thread — calling build() on the command handler thread
+    // deadlocks on Windows because WebView2 init dispatches to the main thread
+    // while the main thread waits for the sync command to return.
+    std::thread::spawn(move || {
+        let url = if cfg!(debug_assertions) {
+            tauri::WebviewUrl::External("http://localhost:1420/preferences".parse().unwrap())
+        } else {
+            tauri::WebviewUrl::App("preferences".into())
+        };
+
+        let title = if cfg!(debug_assertions) { "Preferences (Dev)" } else { "Preferences" };
+
+        let mut builder = WebviewWindowBuilder::new(&app, "preferences", url)
+            .title(title)
+            .inner_size(pref_w, pref_h)
+            .min_inner_size(500.0, 400.0)
+            .resizable(true)
+            .fullscreen(false);
+
+        #[cfg(target_os = "macos")]
+        {
+            builder = builder.hidden_title(true);
+        }
+
+        if let Some((x, y)) = position {
+            builder = builder.position(x, y);
+        }
+
+        if let Err(e) = builder.build() {
+            log::error!("Failed to create preferences window: {}", e);
+        }
+    });
 
     Ok(())
 }
@@ -275,48 +285,56 @@ pub fn open_help_window(window: tauri::WebviewWindow, app: tauri::AppHandle, sec
         return Ok(());
     }
 
-    let path = match &section {
-        Some(s) => format!("help?section={}", s),
-        None => "help".to_string(),
-    };
-
-    let url = if cfg!(debug_assertions) {
-        tauri::WebviewUrl::External(format!("http://localhost:1420/{}", path).parse().unwrap())
-    } else {
-        tauri::WebviewUrl::App(path.into())
-    };
-
-    let title = if cfg!(debug_assertions) { "Help (Dev)" } else { "Help" };
-
     let help_w: f64 = 680.0;
     let help_h: f64 = 600.0;
 
-    let mut builder = WebviewWindowBuilder::new(&app, "help", url)
-        .title(title)
-        .inner_size(help_w, help_h)
-        .min_inner_size(500.0, 400.0)
-        .resizable(true)
-        .fullscreen(false);
-
-    #[cfg(target_os = "macos")]
-    {
-        builder = builder.hidden_title(true);
-    }
-
-    // Center on the calling window
-    if let (Ok(pos), Ok(size)) = (window.outer_position(), window.outer_size()) {
+    // Compute position from the calling window before spawning (WebviewWindow is not Send)
+    let position = if let (Ok(pos), Ok(size)) = (window.outer_position(), window.outer_size()) {
         let scale = window.scale_factor().unwrap_or(1.0);
         let win_x = pos.x as f64 / scale;
         let win_y = pos.y as f64 / scale;
         let win_w = size.width as f64 / scale;
         let win_h = size.height as f64 / scale;
-        let x = win_x + (win_w - help_w) / 2.0;
-        let y = win_y + (win_h - help_h) / 2.0;
-        builder = builder.position(x, y);
-    }
+        Some((win_x + (win_w - help_w) / 2.0, win_y + (win_h - help_h) / 2.0))
+    } else {
+        None
+    };
 
-    builder.build()
-        .map_err(|e| format!("Failed to create help window: {}", e))?;
+    // Spawn in background thread — see open_preferences_window for rationale
+    std::thread::spawn(move || {
+        let path = match &section {
+            Some(s) => format!("help?section={}", s),
+            None => "help".to_string(),
+        };
+
+        let url = if cfg!(debug_assertions) {
+            tauri::WebviewUrl::External(format!("http://localhost:1420/{}", path).parse().unwrap())
+        } else {
+            tauri::WebviewUrl::App(path.into())
+        };
+
+        let title = if cfg!(debug_assertions) { "Help (Dev)" } else { "Help" };
+
+        let mut builder = WebviewWindowBuilder::new(&app, "help", url)
+            .title(title)
+            .inner_size(help_w, help_h)
+            .min_inner_size(500.0, 400.0)
+            .resizable(true)
+            .fullscreen(false);
+
+        #[cfg(target_os = "macos")]
+        {
+            builder = builder.hidden_title(true);
+        }
+
+        if let Some((x, y)) = position {
+            builder = builder.position(x, y);
+        }
+
+        if let Err(e) = builder.build() {
+            log::error!("Failed to create help window: {}", e);
+        }
+    });
 
     Ok(())
 }
