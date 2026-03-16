@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.7.6
+
+- Add Rust-managed terminal selection with full scrollback support (drag-to-scroll, shift+click extend, double/triple-click word/line, Cmd+A select all)
+- Fix white Preferences/Help window on Windows (WebView2 deadlock on sync command thread)
+- Fix double-ssh tunnel commands in SSH MCP bridge
+
 ## v1.7.5
 
 - Fix view not updating when suspending the active workspace (shows empty state with resume buttons)
