@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.7.7
+
+- Fix workspace suspend freezing view (infinite reactive loop from SvelteSet mutation in $effect.pre)
+- Fix tabs being deleted on suspend instead of preserved for resume (pty-close guard during suspend)
+- Improve "all suspended" empty state to distinguish single vs all workspaces suspended
+
 ## v1.7.6
 
 - Add Rust-managed terminal selection with full scrollback support (drag-to-scroll, shift+click extend, double/triple-click word/line, Cmd+A select all)
