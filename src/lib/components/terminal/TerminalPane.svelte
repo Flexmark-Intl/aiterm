@@ -209,7 +209,8 @@
   let hoveredLinkUri: string | null = null;
   let contextMenuLinkUri: string | null = null;
   let isDragOver = $state(false);
-  let dragSshInfo: { sshCommand: string; remoteCwd: string } | null = $state(null);
+  // Only cache the SSH command at drag-enter; CWD is resolved fresh at drop time
+  let dragSshCommand: string | null = $state(null);
 
   // Escape a file path for pasting into a terminal (backslash-escape shell metacharacters)
   function escapePathForTerminal(p: string): string {
@@ -799,28 +800,18 @@
           position.x >= rect.left && position.x <= rect.right &&
           position.y >= rect.top && position.y <= rect.bottom
         );
-        // On first enter, detect SSH session and cache info for the drop handler
+        // On first enter, detect SSH session — cache only the SSH command
         if (over && !isDragOver) {
           getPtyInfo(ptyId).then(info => {
             logInfo(`drag-enter: foreground_command=${info.foreground_command}, cwd=${info.cwd}`);
-            if (info.foreground_command) {
-              const oscState = terminalsStore.getOsc(tabId);
-              const osc7Cwd = oscState?.cwd ?? null;
-              const promptCwd = oscState?.promptCwd ?? null;
-              const isOsc7Stale = osc7Cwd === info.cwd;
-              const remoteCwd = ((!isOsc7Stale && osc7Cwd) ? osc7Cwd : (promptCwd ?? '~')).trim();
-              logInfo(`drag-enter SSH detected: sshCommand=${info.foreground_command}, remoteCwd=${remoteCwd}, osc7Cwd=${osc7Cwd}, promptCwd=${promptCwd}, isOsc7Stale=${isOsc7Stale}`);
-              dragSshInfo = { sshCommand: info.foreground_command, remoteCwd };
-            } else {
-              dragSshInfo = null;
-            }
-          }).catch((e) => { logError(`drag-enter getPtyInfo failed: ${e}`); dragSshInfo = null; });
+            dragSshCommand = info.foreground_command ?? null;
+          }).catch((e) => { logError(`drag-enter getPtyInfo failed: ${e}`); dragSshCommand = null; });
         }
         isDragOver = over;
       } else if (type === 'drop') {
-        const sshInfo = dragSshInfo;
+        const sshCommand = dragSshCommand;
         isDragOver = false;
-        dragSshInfo = null;
+        dragSshCommand = null;
         if (!visible || !containerRef?.isConnected) return;
         const { paths, position } = event.payload;
         const rect = containerRef.getBoundingClientRect();
@@ -828,15 +819,23 @@
           position.x >= rect.left && position.x <= rect.right &&
           position.y >= rect.top && position.y <= rect.bottom
         ) {
-          if (sshInfo) {
-            // SSH session — upload files via SCP
+          if (sshCommand) {
+            // SSH session — resolve remote CWD fresh at drop time
             const isClaudeSession = !!claudeStateStore.getState(tabId);
-            const remoteDir = isClaudeSession ? '/tmp/aiterm-uploads' : sshInfo.remoteCwd;
+            let remoteCwd = '~';
+            if (!isClaudeSession) {
+              const oscState = terminalsStore.getOsc(tabId);
+              const osc7Cwd = oscState?.cwd ?? null;
+              const promptCwd = oscState?.promptCwd ?? null;
+              remoteCwd = (osc7Cwd ?? promptCwd ?? '~').trim();
+              logInfo(`drag-drop: remoteCwd=${remoteCwd} (osc7=${osc7Cwd}, prompt=${promptCwd})`);
+            }
+            const remoteDir = isClaudeSession ? '/tmp/aiterm-uploads' : remoteCwd;
             const count = paths.length;
-            logInfo(`drag-drop SSH: uploading ${count} file(s) to ${remoteDir} via ${sshInfo.sshCommand} (claude=${isClaudeSession})`);
+            logInfo(`drag-drop SSH: uploading ${count} file(s) to ${remoteDir} via ${sshCommand} (claude=${isClaudeSession})`);
             logInfo(`drag-drop SSH: paths=${JSON.stringify(paths)}`);
             toastStore.addToast('SCP Upload', `Uploading ${count} file${count > 1 ? 's' : ''}…`, 'info');
-            scpUploadFiles(sshInfo.sshCommand, paths, remoteDir).then(() => {
+            scpUploadFiles(sshCommand, paths, remoteDir).then(() => {
               const basenames = paths.map(p => p.split('/').pop() ?? p);
               if (isClaudeSession) {
                 // Paste full temp paths for Claude to read as file references
@@ -880,7 +879,7 @@
         }
       } else if (type === 'leave') {
         isDragOver = false;
-        dragSshInfo = null;
+        dragSshCommand = null;
       }
     });
 
@@ -1405,7 +1404,7 @@
 >
   {#if isDragOver}
     <div class="drop-overlay">
-      <span>{dragSshInfo ? (claudeStateStore.getState(tabId) ? 'Drop to send to Claude' : 'Drop to upload via SCP') : 'Drop to paste path'}</span>
+      <span>{dragSshCommand ? (claudeStateStore.getState(tabId) ? 'Drop to send to Claude' : 'Drop to upload via SCP') : 'Drop to paste path'}</span>
     </div>
   {/if}
   {#if contextMenu}
