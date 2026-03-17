@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
   import { workspacesStore } from '$lib/stores/workspaces.svelte';
   import { terminalsStore } from '$lib/stores/terminals.svelte';
@@ -32,31 +32,37 @@
 
   $effect.pre(() => {
     const id = workspacesStore.activeWorkspaceId;
-    if (id) activatedWorkspaceIds.add(id);
+    const allWorkspaces = workspacesStore.workspaces;
 
-    // Activate the current active tab in each pane of the active workspace.
-    // Uses $effect.pre so activatedTabIds is updated before DOM render,
-    // avoiding a frame where the tab slot is empty.
-    const ws = workspacesStore.workspaces.find(w => w.id === id);
-    if (ws) {
-      for (const pane of ws.panes) {
-        if (pane.active_tab_id) activatedTabIds.add(pane.active_tab_id);
+    // All mutations to activatedWorkspaceIds/activatedTabIds must be untracked
+    // to avoid effect_update_depth_exceeded — we read and write the same SvelteSet.
+    untrack(() => {
+      if (id) activatedWorkspaceIds.add(id);
+
+      // Activate the current active tab in each pane of the active workspace.
+      // Uses $effect.pre so activatedTabIds is updated before DOM render,
+      // avoiding a frame where the tab slot is empty.
+      const ws = allWorkspaces.find(w => w.id === id);
+      if (ws) {
+        for (const pane of ws.panes) {
+          if (pane.active_tab_id) activatedTabIds.add(pane.active_tab_id);
+        }
       }
-    }
 
-    // Clean up suspended workspaces — remove from activated sets so their
-    // TerminalPane/EditorPane/DiffPane components get destroyed, freeing resources.
-    for (const wsId of activatedWorkspaceIds) {
-      const w = workspacesStore.workspaces.find(x => x.id === wsId);
-      if (w?.suspended) {
-        activatedWorkspaceIds.delete(wsId);
-        for (const pane of w.panes) {
-          for (const tab of pane.tabs) {
-            activatedTabIds.delete(tab.id);
+      // Clean up suspended workspaces — remove from activated sets so their
+      // TerminalPane/EditorPane/DiffPane components get destroyed, freeing resources.
+      for (const wsId of activatedWorkspaceIds) {
+        const w = allWorkspaces.find(x => x.id === wsId);
+        if (w?.suspended) {
+          activatedWorkspaceIds.delete(wsId);
+          for (const pane of w.panes) {
+            for (const tab of pane.tabs) {
+              activatedTabIds.delete(tab.id);
+            }
           }
         }
       }
-    }
+    });
   });
 
   // Auto-suspend: periodically check for inactive workspaces
@@ -145,16 +151,37 @@
           {/if}
         {:else}
           {@const suspendedWorkspaces = workspacesStore.workspaces.filter(w => w.suspended)}
+          {@const activeWorkspaces = workspacesStore.workspaces.filter(w => !w.suspended)}
           <div class="empty-state">
             {#if suspendedWorkspaces.length > 0}
-              <p>All workspaces suspended</p>
-              <div class="suspended-list">
-                {#each suspendedWorkspaces as ws (ws.id)}
-                  <button class="resume-btn" onclick={() => workspacesStore.resumeWorkspace(ws.id)}>
-                    {ws.name}
-                  </button>
-                {/each}
-              </div>
+              {#if activeWorkspaces.length > 0}
+                <p>This workspace is suspended</p>
+                <p class="hint">Switch to an active workspace</p>
+                <div class="suspended-list">
+                  {#each activeWorkspaces as ws (ws.id)}
+                    <button class="resume-btn" onclick={() => workspacesStore.setActiveWorkspace(ws.id)}>
+                      {ws.name}
+                    </button>
+                  {/each}
+                </div>
+                <p class="hint" style="margin-top: 16px">Or resume a suspended workspace</p>
+                <div class="suspended-list">
+                  {#each suspendedWorkspaces as ws (ws.id)}
+                    <button class="resume-btn suspended" onclick={() => workspacesStore.resumeWorkspace(ws.id)}>
+                      {ws.name}
+                    </button>
+                  {/each}
+                </div>
+              {:else}
+                <p>All workspaces suspended</p>
+                <div class="suspended-list">
+                  {#each suspendedWorkspaces as ws (ws.id)}
+                    <button class="resume-btn" onclick={() => workspacesStore.resumeWorkspace(ws.id)}>
+                      {ws.name}
+                    </button>
+                  {/each}
+                </div>
+              {/if}
               <p class="hint">Click to resume, or press <kbd>{modLabel}+N</kbd> to create a new workspace</p>
             {:else}
               <p>No workspace selected</p>
@@ -323,6 +350,10 @@
   .resume-btn:hover {
     background: var(--bg-light);
     border-color: var(--accent);
+  }
+
+  .resume-btn.suspended {
+    opacity: 0.7;
   }
 
   .terminal-host {

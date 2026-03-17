@@ -467,6 +467,9 @@
     // close the tab using the same logic as Cmd+W.
     unlistenClose = await listen(`pty-close-${ptyId}`, () => {
       if (destroyed || terminalsStore.shuttingDown) return;
+      // Don't delete tabs when workspace is being suspended — PTYs are
+      // killed intentionally and tabs must survive for resume.
+      if (workspacesStore.isWorkspaceSuspending(workspaceId)) return;
 
       const ws = workspacesStore.workspaces.find(w => w.id === workspaceId);
       const pane = ws?.panes.find(p => p.id === paneId);

@@ -89,6 +89,8 @@ function createWorkspacesStore() {
   let lastSwitchedAt = $state<Map<string, number>>(new Map());
   // Frontend-only: set of tab IDs with notes panel visible
   let notesVisible = $state<Set<string>>(new Set());
+  // Workspace IDs currently being suspended — guards pty-close from deleting tabs
+  const suspendingWorkspaceIds = new Set<string>();
   // Tick counter to force re-evaluation of recentWorkspaces when entries expire
   let _recentTick = $state(0);
   let _recentTimer: ReturnType<typeof setInterval> | null = null;
@@ -130,6 +132,9 @@ function createWorkspacesStore() {
     get sidebarCollapsed() { return sidebarCollapsed; },
     get recentWorkspaces() { return recentWorkspaces; },
     get lastSwitchedAt() { return lastSwitchedAt; },
+
+    /** True while a workspace is being suspended (PTYs being killed). */
+    isWorkspaceSuspending(workspaceId: string) { return suspendingWorkspaceIds.has(workspaceId); },
 
     reset() {
       workspaces = [];
@@ -288,6 +293,9 @@ function createWorkspacesStore() {
       const ws = workspaces.find(w => w.id === workspaceId);
       if (!ws || ws.suspended) return;
 
+      // Mark as suspending so pty-close handlers don't delete tabs
+      suspendingWorkspaceIds.add(workspaceId);
+
       // 1. Save scrollback and snapshot restore context for all terminal tabs
       for (const pane of ws.panes) {
         for (const tab of pane.tabs) {
@@ -333,6 +341,7 @@ function createWorkspacesStore() {
 
       // 3. Set suspended flag (persisted to backend)
       await commands.suspendWorkspace(workspaceId);
+      suspendingWorkspaceIds.delete(workspaceId);
       workspaces = workspaces.map(w =>
         w.id === workspaceId ? { ...w, suspended: true } : w
       );
