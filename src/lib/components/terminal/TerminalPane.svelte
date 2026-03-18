@@ -108,7 +108,9 @@
   let lastMouseCol = 0;
 
   function getCellPosition(e: MouseEvent): { col: number; row: number; side: 'left' | 'right' } {
-    const rect = containerRef.getBoundingClientRect();
+    // Use the xterm-screen element (not containerRef) to avoid padding offset
+    const screenEl = containerRef.querySelector('.xterm-screen') as HTMLElement;
+    const rect = screenEl ? screenEl.getBoundingClientRect() : containerRef.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     const cellWidth = rect.width / terminal.cols;
@@ -136,7 +138,8 @@
   function onSelectionMouseMove(e: MouseEvent) {
     if (!selectionActive || lastFrameAlternateScreen) return;
 
-    const rect = containerRef.getBoundingClientRect();
+    const screenEl = containerRef.querySelector('.xterm-screen') as HTMLElement;
+    const rect = screenEl ? screenEl.getBoundingClientRect() : containerRef.getBoundingClientRect();
     const y = e.clientY - rect.top;
     const { col, row, side } = getCellPosition(e);
     lastMouseCol = col;
