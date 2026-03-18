@@ -525,7 +525,8 @@
         {@const shellTabs = archivedTabs.filter(t => t.tab_type === 'terminal' || !t.tab_type)}
         {@const viewerTabs = archivedTabs.filter(t => t.tab_type === 'editor' || t.tab_type === 'diff')}
         {@const showHeaders = shellTabs.length > 0 && viewerTabs.length > 0}
-        <div class="archive-dropdown" style="top: {archiveDropdownPos.top}px; left: {archiveDropdownPos.left}px;">
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="archive-dropdown" style="top: {archiveDropdownPos.top}px; left: {archiveDropdownPos.left}px;" onwheel={(e) => e.stopPropagation()}>
           {#if showHeaders && shellTabs.length > 0}
             <div class="archive-section-header">Shells</div>
           {/if}
