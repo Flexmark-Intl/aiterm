@@ -152,8 +152,14 @@
 
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter') {
-      finishEditing();
+      e.preventDefault();
+      // Blur first so focus moves off the input before it's removed from DOM.
+      // This prevents the browser from scrolling the tabs bar when the focused
+      // element disappears. The blur triggers finishEditing via onblur.
+      editInput?.blur();
     } else if (e.key === 'Escape') {
+      e.preventDefault();
+      editInput?.blur();
       editingId = null;
       editingName = '';
     }
