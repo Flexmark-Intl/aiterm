@@ -940,6 +940,25 @@ function createWorkspacesStore() {
 
       const tab = await commands.restoreArchivedTab(workspaceId, pane.id, tabId);
 
+      // Migrate old auto-resume command if needed (archived tabs skip the startup migration)
+      const OLD_PATTERNS = [
+        'if [ -n "%claudeSessionId" ]; then claude --resume %claudeSessionId; elif [ -n "%claudeResumeCommand" ]; then %claudeResumeCommand; else claude --continue; fi',
+        "if [ -n '%claudeSessionId' ]; then claude --resume %claudeSessionId; elif [ -n '%claudeResumeCommand' ]; then eval %claudeResumeCommand; else claude --continue; fi",
+        'claude --resume %claudeSessionId',
+      ];
+      if (tab.auto_resume_command && (
+        OLD_PATTERNS.includes(tab.auto_resume_command) ||
+        /^if \[ -n ['"].*['"] \]; then claude --resume .*; elif \[ -n ['"].*['"] \]; then (eval )?.*; else claude --continue; fi$/.test(tab.auto_resume_command)
+      )) {
+        tab.auto_resume_command = CLAUDE_RESUME_COMMAND;
+        tab.auto_resume_remembered_command = CLAUDE_RESUME_COMMAND;
+        await commands.setTabAutoResumeContext(
+          workspaceId, pane.id, tab.id,
+          tab.auto_resume_cwd, tab.auto_resume_ssh_command,
+          tab.auto_resume_remote_cwd, tab.auto_resume_command,
+        );
+      }
+
       // Update local state
       workspaces = workspaces.map(w => {
         if (w.id === workspaceId) {
