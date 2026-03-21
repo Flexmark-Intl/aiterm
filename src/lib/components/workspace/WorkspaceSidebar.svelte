@@ -379,7 +379,7 @@
           />
         {:else}
           {#if preferencesStore.showWorkspaceTabCount}
-            <span class="tab-count-badge" class:active={workspace.id === workspacesStore.activeWorkspaceId}>{workspace.panes.reduce((sum, p) => sum + p.tabs.length, 0)}</span>
+            <span class="tab-count-badge" class:active={workspace.id === workspacesStore.activeWorkspaceId} class:status-alert={workspaceTabState(workspace.id) === 'alert'} class:status-question={workspaceTabState(workspace.id) === 'question'} class:status-activity={workspaceTabState(workspace.id) !== 'alert' && workspaceTabState(workspace.id) !== 'question' && workspaceHasActivity(workspace.id)}>{workspace.panes.reduce((sum, p) => sum + p.tabs.length, 0)}</span>
           {:else}
             <span class="workspace-indicator">
               {#if workspaceTabState(workspace.id) === 'alert'}
@@ -619,17 +619,30 @@
     font-weight: 600;
     line-height: 1;
     min-width: 16px;
-    padding: 2px 5px;
+    padding: 1px 4px;
     border-radius: 3px;
     background: var(--bg-light);
     color: var(--fg);
     text-align: center;
     letter-spacing: 0.3px;
+    border: 1px solid transparent;
   }
 
   .tab-count-badge.active {
     background: var(--accent);
     color: var(--bg-dark);
+  }
+
+  .tab-count-badge.status-alert {
+    border-color: var(--red);
+  }
+
+  .tab-count-badge.status-question {
+    border-color: var(--yellow);
+  }
+
+  .tab-count-badge.status-activity {
+    border-color: var(--green);
   }
 
   .confirm-delete, .confirm-cancel {
