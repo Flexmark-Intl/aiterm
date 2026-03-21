@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.7.9
+
+- Add auto-updater: check for and install updates from GitHub Releases with toast-based UX
+- Add "Check for Updates" menu item in aiTerm and Help menus
+- Add auto-check on startup preference (Preferences > Updates)
+
 ## v1.7.8
 
 - Add showDiff MCP tool for viewing git diffs in read-only diff tabs
