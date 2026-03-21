@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { EditorView, keymap, lineNumbers, highlightActiveLineGutter, highlightSpecialChars, dropCursor, rectangularSelection, crosshairCursor, highlightActiveLine } from '@codemirror/view';
   import { EditorState, Compartment } from '@codemirror/state';
+  import { MergeView } from '@codemirror/merge';
   import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
   import { foldGutter, indentOnInput, bracketMatching, foldKeymap } from '@codemirror/language';
   import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
@@ -376,29 +377,71 @@
   }
 
   async function reloadFile() {
-    if (!editorView) return;
     const filePath = editorFile.remote_path ?? editorFile.file_path;
+    const fileName = filePath.split('/').pop() ?? 'file';
+    const isRemote = editorFile.is_remote && editorFile.remote_ssh_command && editorFile.remote_path;
+
     try {
-      let content: string;
-      if (editorFile.is_remote && editorFile.remote_ssh_command && editorFile.remote_path) {
-        const result = await scpReadFile(editorFile.remote_ssh_command, editorFile.remote_path);
-        content = result.content;
-      } else {
-        const result = await readFile(editorFile.file_path);
-        content = result.content;
+      if (imageDataUrl) {
+        // Reload image
+        const mime = getImageMimeType(filePath) ?? 'image/png';
+        let data: string;
+        let size: number;
+        if (isRemote) {
+          const result = await scpReadFileBase64(editorFile.remote_ssh_command!, editorFile.remote_path!);
+          data = result.data; size = result.size;
+        } else {
+          const result = await readFileBase64(editorFile.file_path);
+          data = result.data; size = result.size;
+        }
+        imageDataUrl = `data:${mime};base64,${data}`;
+        imageFileSize = size;
+        dispatch('Reloaded', fileName, 'info');
+      } else if (pdfDoc) {
+        // Reload PDF
+        let data: string;
+        let size: number;
+        if (isRemote) {
+          const result = await scpReadFileBase64(editorFile.remote_ssh_command!, editorFile.remote_path!);
+          data = result.data; size = result.size;
+        } else {
+          const result = await readFileBase64(editorFile.file_path);
+          data = result.data; size = result.size;
+        }
+        pdfFileSize = size;
+        const pdfjsLib = await import('pdfjs-dist');
+        const raw = Uint8Array.from(atob(data), c => c.charCodeAt(0));
+        pdfDoc.destroy();
+        const doc = await pdfjsLib.getDocument({ data: raw }).promise;
+        pdfDoc = doc;
+        pdfPageCount = doc.numPages;
+        pdfCanvasRefs = new Array(doc.numPages);
+        pdfTextLayerRefs = new Array(doc.numPages);
+        requestAnimationFrame(() => renderPdfPages());
+        dispatch('Reloaded', fileName, 'info');
+      } else if (editorView) {
+        // Reload text file
+        let content: string;
+        if (isRemote) {
+          const result = await scpReadFile(editorFile.remote_ssh_command!, editorFile.remote_path!);
+          content = result.content;
+        } else {
+          const result = await readFile(editorFile.file_path);
+          content = result.content;
+        }
+        originalContent = content;
+        editorView.dispatch({
+          changes: { from: 0, to: editorView.state.doc.length, insert: content },
+        });
+        dirty = false;
+        setEditorDirty(tabId, false);
+        if (isLocalFile) {
+          try { lastKnownMtime = await getFileMtime(editorFile.file_path); } catch { /* ignore */ }
+        } else if (editorFile.remote_ssh_command && editorFile.remote_path) {
+          try { lastKnownMtime = await getRemoteFileMtime(editorFile.remote_ssh_command, editorFile.remote_path); } catch { /* ignore */ }
+        }
+        dispatch('Reloaded', fileName, 'info');
       }
-      originalContent = content;
-      editorView.dispatch({
-        changes: { from: 0, to: editorView.state.doc.length, insert: content },
-      });
-      dirty = false;
-      setEditorDirty(tabId, false);
-      if (isLocalFile) {
-        try { lastKnownMtime = await getFileMtime(editorFile.file_path); } catch { /* ignore */ }
-      } else if (editorFile.remote_ssh_command && editorFile.remote_path) {
-        try { lastKnownMtime = await getRemoteFileMtime(editorFile.remote_ssh_command, editorFile.remote_path); } catch { /* ignore */ }
-      }
-      dispatch('File reloaded', filePath.split('/').pop() ?? 'file', 'info');
     } catch (e) {
       dispatch('Reload failed', String(e), 'error');
       logError(`Failed to reload file: ${e}`);
@@ -510,6 +553,103 @@
   async function conflictOverwrite() {
     fileConflict = false;
     await saveFile();
+  }
+
+  // Merge conflict resolution state
+  let mergeView = $state<MergeView | null>(null);
+  let mergeActive = $state(false);
+  let mergeContainerEl = $state<HTMLElement | null>(null);
+
+  async function conflictMerge() {
+    fileConflict = false;
+    if (!editorView) return;
+
+    // Read the current disk content
+    let diskContent: string;
+    try {
+      if (editorFile.is_remote && editorFile.remote_ssh_command && editorFile.remote_path) {
+        const result = await scpReadFile(editorFile.remote_ssh_command, editorFile.remote_path);
+        diskContent = result.content;
+      } else {
+        const result = await readFile(editorFile.file_path);
+        diskContent = result.content;
+      }
+    } catch (e) {
+      dispatch('Merge failed', `Could not read file: ${e}`, 'error');
+      return;
+    }
+
+    const editorContent = editorView.state.doc.toString();
+    mergeActive = true;
+
+    // Build MergeView after DOM updates
+    requestAnimationFrame(() => {
+      if (!mergeContainerEl) return;
+
+      const currentTheme = getTheme(preferencesStore.theme, preferencesStore.customThemes);
+      const themeExtension = buildEditorExtension(currentTheme);
+      const editorTheme = EditorView.theme({
+        '&': { fontSize: `${preferencesStore.fontSize}px` },
+        '.cm-scroller': {
+          fontFamily: `"${preferencesStore.fontFamily}", Monaco, "Courier New", monospace`,
+        },
+      });
+
+      mergeView = new MergeView({
+        a: {
+          doc: diskContent,
+          extensions: [
+            EditorState.readOnly.of(true),
+            lineNumbers(),
+            highlightSpecialChars(),
+            highlightActiveLine(),
+            ...themeExtension,
+            editorTheme,
+          ],
+        },
+        b: {
+          doc: editorContent,
+          extensions: [
+            lineNumbers(),
+            highlightSpecialChars(),
+            highlightActiveLine(),
+            ...themeExtension,
+            editorTheme,
+          ],
+        },
+        parent: mergeContainerEl,
+        gutter: true,
+        highlightChanges: true,
+        collapseUnchanged: { margin: 3, minSize: 4 },
+      });
+    });
+  }
+
+  function mergeApply() {
+    if (!mergeView || !editorView) return;
+    const mergedContent = mergeView.b.state.doc.toString();
+    editorView.dispatch({
+      changes: { from: 0, to: editorView.state.doc.length, insert: mergedContent },
+    });
+    originalContent = mergedContent;
+    dirty = true;
+    setEditorDirty(tabId, true);
+    closeMerge();
+    dispatch('Merge applied', 'Review and save when ready', 'info');
+  }
+
+  function mergeCancel() {
+    closeMerge();
+    // Re-show the conflict banner so user can still choose
+    fileConflict = true;
+  }
+
+  function closeMerge() {
+    mergeActive = false;
+    if (mergeView) {
+      mergeView.destroy();
+      mergeView = null;
+    }
   }
 
   async function saveFile() {
@@ -793,6 +933,7 @@
 
   onDestroy(() => {
     stopWatching();
+    closeMerge();
     window.removeEventListener('terminal-slot-ready', handleSlotReady);
     window.removeEventListener('editor-save', handleEditorSave);
     window.removeEventListener('editor-reload', handleEditorReload);
@@ -952,9 +1093,25 @@
   {#if fileConflict}
     <div class="conflict-banner">
       <span class="conflict-text">File changed on disk.</span>
+      <button class="conflict-btn" onclick={conflictMerge}>Merge</button>
       <button class="conflict-btn" onclick={conflictReload}>Reload</button>
       <button class="conflict-btn" onclick={conflictOverwrite}>Overwrite</button>
       <button class="conflict-btn dismiss" onclick={dismissConflict}>Dismiss</button>
+    </div>
+  {/if}
+  {#if mergeActive}
+    <div class="merge-overlay">
+      <div class="merge-toolbar">
+        <div class="merge-labels">
+          <span class="merge-label">Disk (read-only)</span>
+          <span class="merge-label">Your edits</span>
+        </div>
+        <div class="merge-actions">
+          <button class="conflict-btn" onclick={mergeApply}>Apply</button>
+          <button class="conflict-btn dismiss" onclick={mergeCancel}>Cancel</button>
+        </div>
+      </div>
+      <div class="merge-content" bind:this={mergeContainerEl}></div>
     </div>
   {/if}
   {#if !loading && !errorMsg && !imageDataUrl && !pdfDoc}
@@ -1323,6 +1480,103 @@
   .conflict-btn.dismiss:hover {
     background: var(--fg-dim);
     color: var(--bg-dark);
+  }
+
+  /* Merge overlay */
+  .merge-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-dark);
+  }
+
+  .merge-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px;
+    background: color-mix(in srgb, var(--accent) 15%, var(--bg-dark));
+    border-bottom: 1px solid var(--bg-light);
+    font-size: 0.923rem;
+  }
+
+  .merge-labels {
+    display: flex;
+    gap: 4px;
+    flex: 1;
+  }
+
+  .merge-label {
+    flex: 1;
+    text-align: center;
+    color: var(--fg-dim);
+    font-size: 0.846rem;
+  }
+
+  .merge-actions {
+    display: flex;
+    gap: 6px;
+  }
+
+  .merge-content {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .merge-content :global(.cm-mergeView) {
+    position: absolute;
+    inset: 0;
+  }
+
+  .merge-content :global(.cm-mergeViewEditor) {
+    height: 100%;
+  }
+
+  .merge-content :global(.cm-mergeViewEditor .cm-editor) {
+    height: 100%;
+  }
+
+  .merge-content :global(.cm-scroller) {
+    overflow: auto !important;
+  }
+
+  /* Merge diff highlighting — same as DiffPane */
+  .merge-content :global(.cm-changedLine) {
+    background: color-mix(in srgb, var(--red, #f7768e) 15%, transparent) !important;
+  }
+
+  .merge-content :global(.cm-mergeViewEditor:last-child .cm-changedLine) {
+    background: color-mix(in srgb, var(--green, #9ece6a) 15%, transparent) !important;
+  }
+
+  .merge-content :global(.cm-changedText) {
+    background: color-mix(in srgb, var(--red, #f7768e) 35%, transparent) !important;
+  }
+
+  .merge-content :global(.cm-mergeViewEditor:last-child .cm-changedText) {
+    background: color-mix(in srgb, var(--green, #9ece6a) 35%, transparent) !important;
+  }
+
+  .merge-content :global(.cm-changeGutter .cm-gutterElement) {
+    color: color-mix(in srgb, var(--red, #f7768e) 60%, transparent);
+    font-weight: bold;
+  }
+
+  .merge-content :global(.cm-mergeViewEditor:last-child .cm-changeGutter .cm-gutterElement) {
+    color: color-mix(in srgb, var(--green, #9ece6a) 60%, transparent);
+  }
+
+  .merge-content :global(.cm-collapsedLines) {
+    padding: 2px 8px;
+    color: var(--fg-dim);
+    background: var(--bg-medium);
+    border: 1px solid var(--bg-light);
+    border-radius: 3px;
+    font-style: italic;
+    cursor: pointer;
   }
 
   /* Editor toolbar (word wrap, markdown preview) */

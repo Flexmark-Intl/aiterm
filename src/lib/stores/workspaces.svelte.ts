@@ -1502,6 +1502,9 @@ function createWorkspacesStore() {
         return;
       }
 
+      // Diff tabs: nothing to reload (content is ephemeral from Claude)
+      if (sourceTab.tab_type === 'diff') return;
+
       // Terminal tabs: duplicate + delete for full PTY restart
       // Remember exact name and position before duplication
       const tabName = sourceTab.name;
