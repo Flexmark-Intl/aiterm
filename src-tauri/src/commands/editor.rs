@@ -596,6 +596,48 @@ pub async fn unwatch_remote_file(
     Ok(())
 }
 
+#[command]
+pub async fn git_show_file(file_path: String, git_ref: String) -> Result<String, String> {
+    let file_path = expand_tilde(&file_path);
+    let dir = Path::new(&file_path)
+        .parent()
+        .ok_or("Invalid file path")?;
+
+    // Get repo root
+    let root_output = std::process::Command::new("git")
+        .args(["rev-parse", "--show-toplevel"])
+        .current_dir(dir)
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+    if !root_output.status.success() {
+        return Err("Not a git repository".to_string());
+    }
+    let repo_root = String::from_utf8_lossy(&root_output.stdout)
+        .trim()
+        .to_string();
+
+    // Compute relative path
+    let rel_path = Path::new(&file_path)
+        .strip_prefix(&repo_root)
+        .map_err(|_| "File is outside the git repository".to_string())?;
+
+    // git show ref:path
+    let output = std::process::Command::new("git")
+        .arg("show")
+        .arg(format!("{}:{}", git_ref, rel_path.to_string_lossy()))
+        .current_dir(&repo_root)
+        .output()
+        .map_err(|e| format!("Failed to run git show: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("git show failed: {}", stderr.trim()));
+    }
+
+    String::from_utf8(output.stdout)
+        .map_err(|_| "File content is not valid UTF-8".to_string())
+}
+
 /// Background polling loop for remote file watchers.
 /// Groups files by user@host, runs one batched stat per host every 3 seconds.
 async fn remote_file_poll_loop(state: Arc<AppState>, app: tauri::AppHandle) {

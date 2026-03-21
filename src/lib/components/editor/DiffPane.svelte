@@ -27,6 +27,7 @@
   let mergeView: MergeView | null = null;
   let accepting = $state(false);
   let rejecting = $state(false);
+  const readOnly = !diffContext.request_id;
 
   function attachToSlot() {
     const slot = document.querySelector(`[data-terminal-slot="${tabId}"]`) as HTMLElement;
@@ -76,6 +77,7 @@
       b: {
         doc: diffContext.new_content,
         extensions: [
+          ...(readOnly ? [EditorState.readOnly.of(true)] : []),
           lineNumbers(),
           highlightSpecialChars(),
           highlightActiveLine(),
@@ -133,14 +135,16 @@
 >
   <div class="diff-toolbar">
     <span class="diff-file-path">{diffContext.file_path}</span>
-    <div class="diff-actions">
-      <Button variant="secondary" onclick={handleReject} disabled={accepting || rejecting} style="padding:4px 12px;border-radius:4px;font-size: 0.923rem;font-weight:500">
-        {rejecting ? 'Rejecting...' : 'Reject'}
-      </Button>
-      <Button variant="primary" onclick={handleAccept} disabled={accepting || rejecting} style="padding:4px 12px;border-radius:4px;font-size: 0.923rem;font-weight:500">
-        {accepting ? 'Saving...' : 'Accept'}
-      </Button>
-    </div>
+    {#if !readOnly}
+      <div class="diff-actions">
+        <Button variant="secondary" onclick={handleReject} disabled={accepting || rejecting} style="padding:4px 12px;border-radius:4px;font-size: 0.923rem;font-weight:500">
+          {rejecting ? 'Rejecting...' : 'Reject'}
+        </Button>
+        <Button variant="primary" onclick={handleAccept} disabled={accepting || rejecting} style="padding:4px 12px;border-radius:4px;font-size: 0.923rem;font-weight:500">
+          {accepting ? 'Saving...' : 'Accept'}
+        </Button>
+      </div>
+    {/if}
   </div>
   <div class="diff-content"></div>
 </div>

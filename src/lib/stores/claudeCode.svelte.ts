@@ -32,6 +32,23 @@ function createClaudeCodeStore() {
   let latestSelection = $state<SelectionInfo | null>(null);
   const pendingSelections = new Map<string, PendingSelection>();
 
+  /** Resolve workspace + pane from a tabId, falling back to active workspace. */
+  function resolvePane(tabId?: string) {
+    if (tabId) {
+      for (const ws of workspacesStore.workspaces) {
+        for (const pane of ws.panes) {
+          if (pane.tabs.some(t => t.id === tabId)) {
+            return { ws, pane };
+          }
+        }
+      }
+    }
+    const ws = workspacesStore.activeWorkspace;
+    const pane = ws?.panes.find(p => p.id === ws.active_pane_id);
+    if (ws && pane) return { ws, pane };
+    return null;
+  }
+
   async function handleToolRequest(req: ClaudeCodeToolRequest): Promise<void> {
     const { request_id, tool, arguments: args } = req;
     logInfo(`Claude Code tool request: ${tool} (${request_id})`);
@@ -63,6 +80,7 @@ function createClaudeCodeStore() {
         case 'openFile':
           result = await handleOpenFile(args as {
             filePath: string;
+            tabId?: string;
             startLine?: number;
             endLine?: number;
             startText?: string;
@@ -76,8 +94,12 @@ function createClaudeCodeStore() {
             new_file_path: string;
             new_file_contents: string;
             tab_name?: string;
+            tabId?: string;
           });
           return;
+        case 'showDiff':
+          result = await handleShowDiff(args as { filePath: string; ref?: string; tabId?: string });
+          break;
         case 'closeAllDiffTabs':
           await handleCloseAllDiffTabs(request_id);
           return;
@@ -281,12 +303,13 @@ function createClaudeCodeStore() {
 
   async function handleOpenFile(args: {
     filePath: string;
+    tabId?: string;
     startLine?: number;
     endLine?: number;
     startText?: string;
     endText?: string;
   }) {
-    const { filePath, startLine, endLine, startText, endText } = args;
+    const { filePath, tabId, startLine, endLine, startText, endText } = args;
 
     // Check if file is already open
     let existingTabId: string | null = null;
@@ -312,15 +335,19 @@ function createClaudeCodeStore() {
         pendingSelections.set(existingTabId, { startLine, endLine, startText, endText });
       }
     } else {
-      const ws = workspacesStore.activeWorkspace;
-      const pane = ws?.panes.find(p => p.id === ws.active_pane_id);
-      if (!ws || !pane) {
+      // Open in the session tab's pane, falling back to active workspace
+      const target = resolvePane(tabId);
+      if (!target) {
         return { success: false, message: 'No active pane' };
       }
+      const { ws, pane } = target;
 
       const fileName = filePath.split('/').pop() ?? filePath;
       const { detectLanguageFromPath } = await import('$lib/utils/languageDetect');
       const language = detectLanguageFromPath(filePath);
+
+      // Insert after the session tab (tabId) if it's in this pane
+      const afterTabId = tabId && pane.tabs.some(t => t.id === tabId) ? tabId : pane.active_tab_id ?? undefined;
 
       const tab = await workspacesStore.createEditorTab(ws.id, pane.id, fileName, {
         file_path: filePath,
@@ -328,7 +355,7 @@ function createClaudeCodeStore() {
         remote_ssh_command: null,
         remote_path: null,
         language,
-      });
+      }, afterTabId);
 
       if (startLine !== undefined || startText) {
         pendingSelections.set(tab.id, { startLine, endLine, startText, endText });
@@ -343,6 +370,7 @@ function createClaudeCodeStore() {
     new_file_path: string;
     new_file_contents: string;
     tab_name?: string;
+    tabId?: string;
   }) {
     const filePath = args.old_file_path ?? args.new_file_path;
     const tabName = args.tab_name ?? `Diff: ${filePath.split('/').pop()}`;
@@ -357,12 +385,13 @@ function createClaudeCodeStore() {
       // File doesn't exist yet -- empty old content
     }
 
-    const ws = workspacesStore.activeWorkspace;
-    const pane = ws?.panes.find(p => p.id === ws.active_pane_id);
-    if (!ws || !pane) {
+    // Open in the session tab's pane, falling back to active workspace
+    const target = resolvePane(args.tabId);
+    if (!target) {
       await commands.claudeCodeRespond(requestId, { error: 'No active pane' });
       return;
     }
+    const { ws, pane } = target;
 
     const diffContext: DiffContext = {
       request_id: requestId,
@@ -372,8 +401,47 @@ function createClaudeCodeStore() {
       tab_name: tabName,
     };
 
-    const afterTabId = pane.active_tab_id;
+    const afterTabId = args.tabId && pane.tabs.some(t => t.id === args.tabId) ? args.tabId : pane.active_tab_id;
     await workspacesStore.createDiffTab(ws.id, pane.id, tabName, diffContext, afterTabId);
+  }
+
+  async function handleShowDiff(args: { filePath: string; ref?: string; tabId?: string }) {
+    const filePath = args.filePath;
+    const gitRef = args.ref ?? 'HEAD';
+    const fileName = filePath.split('/').pop() ?? filePath;
+    const tabName = `Diff: ${fileName} (${gitRef})`;
+
+    let oldContent: string;
+    try {
+      oldContent = await commands.gitShowFile(filePath, gitRef);
+    } catch (err) {
+      return { success: false, error: `Failed to get file at ${gitRef}: ${err}` };
+    }
+
+    let newContent = '';
+    try {
+      const result = await commands.readFile(filePath);
+      newContent = result.content;
+    } catch {
+      // File may have been deleted in working tree
+    }
+
+    const target = resolvePane(args.tabId);
+    if (!target) return { success: false, error: 'No active pane' };
+    const { ws, pane } = target;
+
+    const diffContext: DiffContext = {
+      request_id: '', // Empty = read-only, non-blocking
+      file_path: filePath,
+      old_content: oldContent,
+      new_content: newContent,
+      tab_name: tabName,
+    };
+
+    const afterTabId = args.tabId && pane.tabs.some(t => t.id === args.tabId) ? args.tabId : pane.active_tab_id;
+    await workspacesStore.createDiffTab(ws.id, pane.id, tabName, diffContext, afterTabId);
+
+    return { success: true, filePath, ref: gitRef };
   }
 
   async function handleCloseAllDiffTabs(requestId: string) {
@@ -381,7 +449,7 @@ function createClaudeCodeStore() {
       for (const pane of ws.panes) {
         for (const tab of [...pane.tabs]) {
           if (tab.tab_type === 'diff' && tab.diff_context) {
-            if (tab.diff_context.request_id !== requestId) {
+            if (tab.diff_context.request_id && tab.diff_context.request_id !== requestId) {
               await commands.claudeCodeRespond(tab.diff_context.request_id, { result: 'DIFF_REJECTED' });
             }
             await workspacesStore.deleteTab(ws.id, pane.id, tab.id);

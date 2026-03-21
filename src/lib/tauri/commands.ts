@@ -472,6 +472,10 @@ export interface ReadFileBase64Result {
   size: number;
 }
 
+export async function gitShowFile(filePath: string, gitRef: string): Promise<string> {
+  return invoke('git_show_file', { filePath, gitRef });
+}
+
 export async function readFileBase64(path: string): Promise<ReadFileBase64Result> {
   return invoke('read_file_base64', { path });
 }

@@ -150,6 +150,18 @@ pub fn tool_list_response() -> Value {
                 }
             },
             {
+                "name": "showDiff",
+                "description": "Open a read-only diff tab showing a file's changes compared to a git ref. Non-blocking — returns immediately. Use this when the user asks to see what changed in a file (e.g. 'show me the diff', 'what changed in X'). Do NOT use openDiff for this — openDiff is for proposing edits.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "filePath": { "type": "string", "description": "Absolute path to the file to diff" },
+                        "ref": { "type": "string", "description": "Git ref to compare against (default: HEAD). Can be a commit SHA, branch, tag, HEAD~N, etc." }
+                    },
+                    "required": ["filePath"]
+                }
+            },
+            {
                 "name": "closeAllDiffTabs",
                 "description": "Close all open diff review tabs in the aiTerm IDE, rejecting any pending changes.",
                 "inputSchema": { "type": "object", "properties": {}, "required": [] }

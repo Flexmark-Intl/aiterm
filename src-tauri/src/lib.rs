@@ -427,6 +427,7 @@ pub fn run() {
             commands::editor::watch_remote_file,
             commands::editor::unwatch_remote_file,
             commands::editor::get_remote_file_mtime,
+            commands::editor::git_show_file,
             commands::claude_code::claude_code_respond,
             commands::claude_code::claude_code_notify_selection,
             commands::ssh_tunnel::start_ssh_tunnel,

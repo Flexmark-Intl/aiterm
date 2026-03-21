@@ -761,10 +761,10 @@ function createWorkspacesStore() {
       return tab;
     },
 
-    async createEditorTab(workspaceId: string, paneId: string, name: string, fileInfo: EditorFileInfo) {
-      // Find the active tab so the new tab is inserted right after it
+    async createEditorTab(workspaceId: string, paneId: string, name: string, fileInfo: EditorFileInfo, insertAfterTabId?: string) {
+      // Insert after specified tab, or after the currently active tab
       const pane = workspaces.flatMap(w => w.panes).find(p => p.id === paneId);
-      const afterTabId = pane?.active_tab_id ?? undefined;
+      const afterTabId = insertAfterTabId ?? pane?.active_tab_id ?? undefined;
       const tab = await commands.createEditorTab(workspaceId, paneId, name, fileInfo, afterTabId);
       workspaces = workspaces.map(w => {
         if (w.id === workspaceId) {
@@ -772,9 +772,9 @@ function createWorkspacesStore() {
             ...w,
             panes: w.panes.map(p => {
               if (p.id === paneId) {
-                // Insert directly after the currently active tab
-                const activeIdx = p.tabs.findIndex(t => t.id === p.active_tab_id);
-                const insertIdx = activeIdx === -1 ? p.tabs.length : activeIdx + 1;
+                // Insert directly after the target tab
+                const targetIdx = afterTabId ? p.tabs.findIndex(t => t.id === afterTabId) : p.tabs.findIndex(t => t.id === p.active_tab_id);
+                const insertIdx = targetIdx === -1 ? p.tabs.length : targetIdx + 1;
                 const newTabs = [...p.tabs];
                 newTabs.splice(insertIdx, 0, tab);
                 return {
@@ -820,6 +820,15 @@ function createWorkspacesStore() {
     },
 
     async deleteTab(workspaceId: string, paneId: string, tabId: string) {
+      // If closing a diff tab with a pending Claude request, respond with rejection
+      // so Claude Code doesn't hang waiting for accept/reject.
+      const wsForDiff = workspaces.find(w => w.id === workspaceId);
+      const paneForDiff = wsForDiff?.panes.find(p => p.id === paneId);
+      const diffTab = paneForDiff?.tabs.find(t => t.id === tabId);
+      if (diffTab?.tab_type === 'diff' && diffTab.diff_context?.request_id) {
+        commands.claudeCodeRespond(diffTab.diff_context.request_id, { result: 'DIFF_REJECTED' }).catch(() => {});
+      }
+
       // Migrate tab notes to workspace if enabled
       if (preferencesStore.migrateTabNotes) {
         const ws = workspaces.find(w => w.id === workspaceId);
