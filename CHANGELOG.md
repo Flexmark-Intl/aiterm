@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.7.8
+
+- Add showDiff MCP tool for viewing git diffs in read-only diff tabs
+- Add session-aware tab targeting — openFile/openDiff resolve workspace from session tab, insert after it
+- Add merge conflict resolution: inline MergeView when file changes on disk while editing
+- Add Cmd+Shift+R reload for editor tabs (images, PDFs, text)
+- Show workspace status via border color on tab count badges (red/yellow/green)
+- Fix selection coordinate offset caused by container padding
+- Fix tab bar scroll jump when confirming tab rename with Enter
+- Fix scroll events bubbling through archived tabs popup
+- Resolve remote CWD fresh at drop time instead of caching at drag-enter
+- Migrate old auto-resume commands on archived tabs at restore time
+
 ## v1.7.7
 
 - Fix workspace suspend freezing view (infinite reactive loop from SvelteSet mutation in $effect.pre)
