@@ -5,7 +5,7 @@ description: Install aiTerm and get up and running on macOS, Windows, or Linux.
 
 ## Download
 
-Download the latest release from the [GitHub Releases page](https://github.com/Flexmark-Intl/aiterm/releases).
+Download the latest release from the [GitHub Releases page](https://github.com/Flexmark-Intl/aiterm/releases). After installing, aiTerm checks for updates automatically and notifies you when a new version is available — update with a single click.
 
 | Platform | Format |
 |----------|--------|
