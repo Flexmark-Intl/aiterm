@@ -77,6 +77,8 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .plugin({
             let mut ws = tauri_plugin_window_state::Builder::new()
                 .with_state_flags(tauri_plugin_window_state::StateFlags::all())
@@ -179,6 +181,7 @@ pub fn run() {
             let reload_tab_item = MenuItem::with_id(app, "reload_tab", "Reload Current Tab", true, None::<&str>)?;
             let reload_window_item = MenuItem::with_id(app, "reload_window", "Reload Current Window", true, None::<&str>)?;
             let help_item = MenuItem::with_id(app, "help", "Help", true, Some("CmdOrCtrl+/"))?;
+            let check_updates_item = MenuItem::with_id(app, "check_updates", "Check for Updates…", true, None::<&str>)?;
             let report_bug_item = MenuItem::with_id(app, "report_bug", "Report Bug…", true, None::<&str>)?;
             let feature_request_item = MenuItem::with_id(app, "feature_request", "Submit Feature Request…", true, None::<&str>)?;
 
@@ -193,6 +196,7 @@ pub fn run() {
             let app_menu = SubmenuBuilder::new(app, "aiTerm")
                 .about(Some(about))
                 .separator()
+                .item(&check_updates_item)
                 .item(&preferences_item)
                 .separator()
                 .services()
@@ -237,6 +241,7 @@ pub fn run() {
 
             let help_menu = SubmenuBuilder::new(app, "Help")
                 .item(&help_item)
+                .item(&check_updates_item)
                 .separator()
                 .item(&report_bug_item)
                 .item(&feature_request_item)
@@ -317,6 +322,10 @@ pub fn run() {
                         #[allow(deprecated)]
                         let _ = tauri_plugin_shell::ShellExt::shell(app_handle)
                             .open("https://github.com/Flexmark-Intl/aiterm/issues/new?labels=bug&type=bug", None);
+                    }
+                    "check_updates" => {
+                        // Emit to all windows so the focused one can handle it
+                        let _ = app_handle.emit("check-for-updates", ());
                     }
                     "feature_request" => {
                         #[allow(deprecated)]

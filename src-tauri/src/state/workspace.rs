@@ -739,6 +739,9 @@ pub struct Preferences {
     /// Auto-suspend inactive workspaces after N minutes (0 = disabled)
     #[serde(default)]
     pub auto_suspend_minutes: u32,
+    /// Automatically check for updates on app launch
+    #[serde(default = "default_true")]
+    pub auto_check_updates: bool,
 }
 
 impl Default for Preferences {
@@ -799,6 +802,7 @@ impl Default for Preferences {
             backup_trim_enabled: false,
             backup_trim_age: default_backup_trim_age(),
             auto_suspend_minutes: 0,
+            auto_check_updates: true,
         }
     }
 }

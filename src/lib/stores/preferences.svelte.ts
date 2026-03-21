@@ -60,6 +60,7 @@ function createPreferencesStore() {
   let backupTrimEnabled = $state(false);
   let backupTrimAge = $state('1m');
   let autoSuspendMinutes = $state(0);
+  let autoCheckUpdates = $state(true);
 
   return {
     /** Resolves once the initial load() has completed. */
@@ -117,6 +118,7 @@ function createPreferencesStore() {
     get backupTrimEnabled() { return backupTrimEnabled; },
     get backupTrimAge() { return backupTrimAge; },
     get autoSuspendMinutes() { return autoSuspendMinutes; },
+    get autoCheckUpdates() { return autoCheckUpdates; },
 
     async load() {
       const prefs = await commands.getPreferences();
@@ -184,6 +186,7 @@ function createPreferencesStore() {
       backupTrimEnabled = prefs.backup_trim_enabled ?? false;
       backupTrimAge = prefs.backup_trim_age || '1m';
       autoSuspendMinutes = prefs.auto_suspend_minutes ?? 0;
+      autoCheckUpdates = prefs.auto_check_updates ?? true;
       _resolveReady();
     },
 
@@ -445,6 +448,11 @@ function createPreferencesStore() {
       await this.save();
     },
 
+    async setAutoCheckUpdates(value: boolean) {
+      autoCheckUpdates = value;
+      await this.save();
+    },
+
     async addCustomTheme(t: Theme) {
       customThemes = [...customThemes, t];
       await this.save();
@@ -520,6 +528,7 @@ function createPreferencesStore() {
       backupExcludeScrollback = prefs.backup_exclude_scrollback ?? true;
       backupTrimEnabled = prefs.backup_trim_enabled ?? false;
       backupTrimAge = prefs.backup_trim_age || '1m';
+      autoCheckUpdates = prefs.auto_check_updates ?? true;
     },
 
     async save() {
@@ -578,6 +587,7 @@ function createPreferencesStore() {
         auto_suspend_minutes: autoSuspendMinutes,
         backup_trim_enabled: backupTrimEnabled,
         backup_trim_age: backupTrimAge,
+        auto_check_updates: autoCheckUpdates,
       };
       await commands.setPreferences(prefs);
     }

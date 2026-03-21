@@ -45,6 +45,9 @@ jobs:
 
       - name: Build Tauri app
         run: npx tauri build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Upload .deb artifact
         uses: actions/upload-artifact@v4
@@ -52,3 +55,12 @@ jobs:
           name: aiterm-${{ steps.version.outputs.version }}-linux-deb
           path: src-tauri/target/release/bundle/deb/*.deb
           if-no-files-found: error
+
+      - name: Upload updater artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aiterm-${{ steps.version.outputs.version }}-linux-updater
+          path: |
+            src-tauri/target/release/bundle/appimage/*.AppImage
+            src-tauri/target/release/bundle/appimage/*.AppImage.sig
+          if-no-files-found: warn

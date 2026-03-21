@@ -43,6 +43,8 @@ notify-debouncer-mini = "0.5"
 sysinfo = "0.33"
 alacritty_terminal = "0.25"
 rusqlite = { version = "0.31", features = ["bundled"] }
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 
 [features]
 mcp-bridge = ["dep:tauri-plugin-mcp-bridge"]

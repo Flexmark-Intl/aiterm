@@ -28,6 +28,7 @@
   import type { EditorFileInfo } from '$lib/tauri/types';
   // Side-effect import: subscribes to activity store for OS notifications
   import '$lib/stores/notifications.svelte';
+  import { updaterStore } from '$lib/stores/updater.svelte';
 
   interface Props {
     children: import('svelte').Snippet;
@@ -106,6 +107,11 @@
     preferencesStore.load().then(() => {
       const seeded = seedDefaultTriggers(preferencesStore.triggers, preferencesStore.hiddenDefaultTriggers);
       if (seeded) preferencesStore.setTriggers(seeded);
+
+      // Auto-check for updates on startup (silent — only shows toast if update found)
+      if (preferencesStore.autoCheckUpdates) {
+        updaterStore.checkForUpdates(true).catch(() => {});
+      }
     }).catch((e: unknown) => logError(`Failed to load preferences: ${e}`));
 
     // Listen for cross-window preference changes
@@ -193,6 +199,12 @@
         workspacesStore.reloadTab(ws.id, pane.id, tab.id);
       }
     }).then(unlisten => { unlistenReloadTab = unlisten; });
+
+    // Check for updates menu event
+    let unlistenCheckUpdates: (() => void) | undefined;
+    listen('check-for-updates', () => {
+      updaterStore.checkForUpdates(false);
+    }).then(unlisten => { unlistenCheckUpdates = unlisten; });
 
     // State backup menu events
     let unlistenExportState: (() => void) | undefined;
@@ -659,6 +671,7 @@
       unlistenExportState?.();
       unlistenImportState?.();
       unlistenStateImported?.();
+      unlistenCheckUpdates?.();
       unlistenClaudeTool?.();
       unlistenClaudeConnection?.();
       claudeStateStore.destroy();

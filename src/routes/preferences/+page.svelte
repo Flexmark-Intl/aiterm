@@ -1,5 +1,6 @@
 <script lang="ts">
   import { preferencesStore } from '$lib/stores/preferences.svelte';
+  import { updaterStore } from '$lib/stores/updater.svelte';
   import type { CursorStyle, Trigger, TriggerActionType, TriggerActionEntry, VariableMapping, TabStateName } from '$lib/tauri/types';
   import { builtinThemes, getTheme, isBuiltinTheme } from '$lib/themes';
   import ThemeEditor from '$lib/components/ThemeEditor.svelte';
@@ -16,6 +17,7 @@
   import { tick, onMount } from 'svelte';
   import { slide } from 'svelte/transition';
   import { getCurrentWindow } from '@tauri-apps/api/window';
+  import { getVersion } from '@tauri-apps/api/app';
   import { DEFAULT_TRIGGERS, seedDefaultTriggers as seedDefaults } from '$lib/triggers/defaults';
   import { resolveMatchMode } from '$lib/stores/triggers.svelte';
   import { parseCondition } from '$lib/triggers/variableCondition';
@@ -76,7 +78,7 @@
     if (result) preferencesStore.setTriggers(result);
   }
 
-  const sectionIds = ['appearance', 'terminal', 'ui', 'tabs', 'workspace', 'notes', 'notifications', 'triggers', 'claude_code', 'backup'] as const;
+  const sectionIds = ['appearance', 'terminal', 'ui', 'tabs', 'workspace', 'notes', 'notifications', 'triggers', 'claude_code', 'backup', 'updates'] as const;
   type SectionId = typeof sectionIds[number];
   const saved = localStorage.getItem('prefs-section');
   let activeSection = $state<SectionId>(
@@ -95,7 +97,11 @@
     { id: 'triggers' as const, label: 'Triggers' },
     { id: 'claude_code' as const, label: 'Claude Code' },
     { id: 'backup' as const, label: 'Backup' },
+    { id: 'updates' as const, label: 'Updates' },
   ];
+
+  let appVersion = $state('');
+  getVersion().then(v => { appVersion = v; });
 
   let backupStatus = $state<string | null>(null);
   let importPreview = $state<ImportPreview | null>(null);
@@ -1762,6 +1768,39 @@
               </select>
             {/if}
           </div>
+        </div>
+      {:else if activeSection === 'updates'}
+        <h3 class="section-heading">Auto-Update</h3>
+
+        <div class="setting">
+          <div>
+            <label>Current Version</label>
+            <p class="setting-hint">v{appVersion}</p>
+          </div>
+          <button
+            class="backup-btn"
+            onclick={() => updaterStore.checkForUpdates(false)}
+            disabled={updaterStore.checking || updaterStore.downloading}
+          >
+            {updaterStore.checking ? 'Checking…' : updaterStore.downloading ? 'Installing…' : 'Check Now'}
+          </button>
+        </div>
+
+        <div class="setting" style="align-items: flex-start;">
+          <div>
+            <label for="auto-check-updates">Check on Startup</label>
+            <p class="setting-hint">Automatically check for updates when aiTerm launches. You will be notified via toast if an update is available.</p>
+          </div>
+          <button
+            id="auto-check-updates"
+            class="toggle"
+            class:active={preferencesStore.autoCheckUpdates}
+            onclick={() => preferencesStore.setAutoCheckUpdates(!preferencesStore.autoCheckUpdates)}
+            aria-pressed={preferencesStore.autoCheckUpdates}
+            aria-label="Toggle auto-check for updates"
+          >
+            <span class="toggle-knob"></span>
+          </button>
         </div>
       {/if}
     </div>
