@@ -31,7 +31,8 @@ When you're SSH'd into a remote server, aiTerm can bridge the MCP connection so 
 | `getCurrentSelection` | Active editor selection + cursor |
 | `getLatestSelection` | Most recent selection in any tab |
 | `openFile` | Open file in editor tab (with optional line/text selection) |
-| `openDiff` | Show side-by-side diff for review (blocking) |
+| `openDiff` | Show side-by-side diff for review (blocking — accept/reject) |
+| `showDiff` | View a git diff read-only (non-blocking) |
 | `closeAllDiffTabs` | Close all pending diff tabs |
 
 ### Workspace & Tab Navigation

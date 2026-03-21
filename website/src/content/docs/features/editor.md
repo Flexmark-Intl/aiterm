@@ -17,7 +17,8 @@ aiTerm includes a full-featured code editor built on CodeMirror 6, living alongs
 - **Find/replace** — `Cmd+F`, positioned at top of editor
 - **Save** — `Cmd+S` writes local or remote via SCP; dirty indicator in tab
 - **Close protection** — inline confirm for unsaved changes
-- **File watching** — editor tabs auto-reload when files change on disk (local via fs events, remote via SSH stat polling); if the buffer is dirty, a conflict banner lets you reload, overwrite, or dismiss
+- **File watching** — editor tabs detect external changes on both local files (fs events) and remote files over SSH (stat polling). Clean buffers auto-reload; dirty buffers show a conflict banner with Reload, Overwrite, Dismiss, or Merge
+- **Merge conflicts** — when a file changes while you have unsaved edits, open an inline MergeView to reconcile: disk content on the left (read-only), your edits on the right (editable). Apply puts the merged result back without saving
 
 ## Diff Review
 
