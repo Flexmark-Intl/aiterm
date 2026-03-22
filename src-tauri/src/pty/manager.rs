@@ -572,8 +572,21 @@ fn get_cwd_for_pid(pid: u32) -> Option<String> {
 }
 
 #[cfg(windows)]
-fn get_cwd_for_pid(_pid: u32) -> Option<String> {
-    None
+fn get_cwd_for_pid(pid: u32) -> Option<String> {
+    use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
+    let mut sys = System::new();
+    let refresh = ProcessRefreshKind::nothing().with_cwd(UpdateKind::Always);
+    sys.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&[Pid::from_u32(pid)]),
+        true,
+        refresh,
+    );
+    sys.process(Pid::from_u32(pid))
+        .and_then(|p| {
+            let cwd = p.cwd()?;
+            Some(cwd.to_string_lossy().into_owned())
+        })
+        .filter(|s| !s.is_empty())
 }
 
 /// Check if a command string looks like an SSH/remote connection command
@@ -608,19 +621,24 @@ fn get_foreground_command(shell_pid: u32) -> Option<String> {
         std::collections::HashMap::new();
 
     for line in stdout.lines() {
-        let parts: Vec<&str> = line.trim().splitn(3, char::is_whitespace).collect();
-        if parts.len() < 3 {
+        let trimmed = line.trim();
+        // split_whitespace collapses multiple spaces — critical because ps
+        // right-justifies PID/PPID columns with variable-width padding.
+        let mut iter = trimmed.split_whitespace();
+        let pid: u32 = match iter.next().and_then(|s| s.parse().ok()) {
+            Some(p) => p,
+            None => continue,
+        };
+        let ppid: u32 = match iter.next().and_then(|s| s.parse().ok()) {
+            Some(p) => p,
+            None => continue,
+        };
+        // Remainder is the command — rejoin with spaces (split_whitespace
+        // consumed whitespace between tokens, but command args are space-separated)
+        let cmd: String = iter.collect::<Vec<&str>>().join(" ");
+        if cmd.is_empty() {
             continue;
         }
-        let pid: u32 = match parts[0].trim().parse() {
-            Ok(p) => p,
-            Err(_) => continue,
-        };
-        let ppid: u32 = match parts[1].trim().parse() {
-            Ok(p) => p,
-            Err(_) => continue,
-        };
-        let cmd = parts[2].trim().to_string();
         children.entry(ppid).or_default().push((pid, cmd));
     }
 
@@ -654,8 +672,67 @@ fn get_foreground_command(shell_pid: u32) -> Option<String> {
 }
 
 #[cfg(windows)]
-fn get_foreground_command(_shell_pid: u32) -> Option<String> {
-    None
+fn is_ssh_command_win(cmd: &[std::ffi::OsString]) -> bool {
+    let exe = cmd.first().map(|s| s.to_string_lossy()).unwrap_or_default();
+    let basename = std::path::Path::new(exe.as_ref())
+        .file_stem()
+        .and_then(|n| n.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    matches!(basename.as_str(), "ssh" | "mosh" | "autossh")
+}
+
+#[cfg(windows)]
+fn get_foreground_command(shell_pid: u32) -> Option<String> {
+    use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
+
+    let mut sys = System::new();
+    let refresh = ProcessRefreshKind::nothing().with_cmd(UpdateKind::Always);
+    sys.refresh_processes_specifics(ProcessesToUpdate::All, true, refresh);
+
+    // Build parent → children map
+    let mut children: std::collections::HashMap<u32, Vec<(u32, Vec<std::ffi::OsString>)>> =
+        std::collections::HashMap::new();
+    for (pid, process) in sys.processes() {
+        if let Some(ppid) = process.parent() {
+            children
+                .entry(ppid.as_u32())
+                .or_default()
+                .push((pid.as_u32(), process.cmd().to_vec()));
+        }
+    }
+
+    // Walk tree from shell_pid, preferring SSH children
+    let mut current_pid = shell_pid;
+    let mut ssh_cmd: Option<String> = None;
+
+    loop {
+        if let Some(kids) = children.get(&current_pid) {
+            if kids.is_empty() {
+                break;
+            }
+            let chosen = kids
+                .iter()
+                .find(|(_, cmd)| is_ssh_command_win(cmd))
+                .or_else(|| kids.first());
+            if let Some((kid_pid, kid_cmd)) = chosen {
+                if is_ssh_command_win(kid_cmd) {
+                    let cmd_str: Vec<String> = kid_cmd
+                        .iter()
+                        .map(|s| s.to_string_lossy().into_owned())
+                        .collect();
+                    ssh_cmd = Some(cmd_str.join(" "));
+                }
+                current_pid = *kid_pid;
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+
+    ssh_cmd
 }
 
 /// Resolve a Windows shell preference ID to an executable path.
