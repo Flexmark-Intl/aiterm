@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.7.10
+
+- Fix SSH detection failing due to ps output parsing bug (collapsed whitespace splitting)
+- Add Windows process introspection for SSH detection via sysinfo
+- Fix auto-resume SSH/CWD context loss on disable/re-enable cycle (fall back to stored values)
+
 ## v1.7.9
 
 - Add auto-updater: check for and install updates from GitHub Releases with toast-based UX
