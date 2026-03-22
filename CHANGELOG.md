@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.7.12
+
+- Add editTabNotes MCP tool for precision note edits (single or batch, sequential matching)
+
 ## v1.7.11
 
 - Fix MCP session loss on SSE reconnect with multiple active Claude sessions (track connection_id for orphan detection)
