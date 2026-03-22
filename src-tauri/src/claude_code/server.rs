@@ -807,6 +807,7 @@ async fn process_message(
                                     state: ClaudeSessionState::Active,
                                     tool_name: existing.as_ref().and_then(|e| e.tool_name.clone()),
                                     model: existing.and_then(|e| e.model),
+                                    connection_id: Some(connection_id.to_string()),
                                 },
                             );
                         }
@@ -829,6 +830,7 @@ async fn process_message(
                                         state: ClaudeSessionState::Active,
                                         tool_name: None,
                                         model: None,
+                                        connection_id: Some(connection_id.to_string()),
                                     },
                                 );
                                 log::info!("initSession: linked pending session {} → tab {}",
@@ -872,19 +874,55 @@ async fn process_message(
 
                 // SSE reconnect recovery: if no connection affinity, check if there's
                 // an active claude session whose tab we can restore affinity from.
+                // Strategy: find sessions whose stored connection_id is no longer in
+                // connection_tabs (orphaned by SSE disconnect). If exactly one orphaned
+                // session exists, it's the one reconnecting. Falls back to the simpler
+                // "exactly 1 active session" heuristic if connection_ids aren't set.
                 if !has_affinity {
                     let sessions = state.claude_sessions.read();
-                    // Find sessions with active tabs in this instance
-                    let active_tabs: Vec<String> = sessions.values()
+                    let ct = connection_tabs.read();
+
+                    // Find sessions whose connection was cleaned up (orphaned)
+                    let orphaned_tabs: Vec<String> = sessions.values()
+                        .filter(|info| {
+                            info.connection_id.as_ref()
+                                .map_or(false, |cid| !ct.contains_key(cid))
+                        })
                         .map(|info| info.tab_id.clone())
                         .collect::<std::collections::HashSet<_>>()
                         .into_iter()
                         .collect();
-                    if active_tabs.len() == 1 {
-                        let tab_id = active_tabs.into_iter().next().unwrap();
-                        connection_tabs.write().insert(connection_id.to_string(), tab_id);
+
+                    let recovered = if orphaned_tabs.len() == 1 {
+                        Some(orphaned_tabs.into_iter().next().unwrap())
+                    } else {
+                        // Fallback: if no connection_ids stored yet, use unique active tabs
+                        let active_tabs: Vec<String> = sessions.values()
+                            .map(|info| info.tab_id.clone())
+                            .collect::<std::collections::HashSet<_>>()
+                            .into_iter()
+                            .collect();
+                        if active_tabs.len() == 1 {
+                            Some(active_tabs.into_iter().next().unwrap())
+                        } else {
+                            None
+                        }
+                    };
+
+                    drop(ct);
+                    drop(sessions);
+
+                    if let Some(tab_id) = recovered {
+                        connection_tabs.write().insert(connection_id.to_string(), tab_id.clone());
+                        // Update the session's connection_id to the new connection
+                        let mut sessions = state.claude_sessions.write();
+                        for info in sessions.values_mut() {
+                            if info.tab_id == tab_id {
+                                info.connection_id = Some(connection_id.to_string());
+                            }
+                        }
                         has_affinity = true;
-                        log::info!("Restored connection affinity from active claude session for {}",
+                        log::info!("Restored connection affinity from orphaned session for {}",
                             &connection_id[..connection_id.len().min(11)]);
                     }
                 }
@@ -1111,6 +1149,7 @@ async fn hooks_handler(
                         state: ClaudeSessionState::Active,
                         tool_name: None,
                         model: model.clone(),
+                        connection_id: None,
                     },
                 );
                 log::info!("Claude hook: session {} started for tab {}", session_id, tab_id);

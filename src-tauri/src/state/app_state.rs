@@ -63,6 +63,10 @@ pub struct ClaudeSessionInfo {
     pub tool_name: Option<String>,
     /// Model used in this session (set by SessionStart)
     pub model: Option<String>,
+    /// MCP connection ID that called initSession for this session.
+    /// Used to recover affinity after SSE reconnects: if a session's
+    /// connection_id is no longer in connection_tabs, it's orphaned.
+    pub connection_id: Option<String>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, serde::Serialize)]
