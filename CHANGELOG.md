@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.7.11
+
+- Fix MCP session loss on SSE reconnect with multiple active Claude sessions (track connection_id for orphan detection)
+
 ## v1.7.10
 
 - Fix SSH detection failing due to ps output parsing bug (collapsed whitespace splitting)
