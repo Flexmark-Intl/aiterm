@@ -1171,6 +1171,19 @@
         }
       }
     }
+
+    // Prevent context downgrade: if live detection found no SSH but the tab
+    // already has stored SSH context (e.g. detection failed, SSH not running
+    // yet, or re-enabling after disable), fall back to stored values.
+    if (!sshCmd && tab?.auto_resume_ssh_command) {
+      return {
+        cwd: tab.auto_resume_cwd ?? localCwd,
+        sshCmd: tab.auto_resume_ssh_command,
+        remoteCwd: tab.auto_resume_remote_cwd ?? null,
+        pinned: false,
+      };
+    }
+
     return { cwd: localCwd, sshCmd, remoteCwd, pinned: false };
   }
 
