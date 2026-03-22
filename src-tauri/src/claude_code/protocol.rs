@@ -45,7 +45,7 @@ impl JsonRpcResponse {
 }
 
 pub fn tool_list_response() -> Value {
-    serde_json::json!({
+    let mut resp = serde_json::json!({
         "tools": [
             {
                 "name": "initSession",
@@ -217,6 +217,7 @@ pub fn tool_list_response() -> Value {
                     "required": ["notes"]
                 }
             },
+            null, // editTabNotes placeholder — spliced below to avoid json! recursion limit
             {
                 "name": "listWorkspaceNotes",
                 "description": "List all notes attached to a workspace (not tab-level notes). Returns note IDs, content previews, modes, and timestamps.",
@@ -424,7 +425,43 @@ pub fn tool_list_response() -> Value {
                 "inputSchema": { "type": "object", "properties": {}, "required": [] }
             }
         ]
-    })
+    });
+
+    // editTabNotes has deeply nested schema (items > object > properties) that
+    // exceeds serde_json::json! macro recursion limit. Built separately.
+    let edit_tool: Value = serde_json::from_str(r#"{
+        "name": "editTabNotes",
+        "description": "Make precise edits to existing tab notes using string replacement. Supports a single edit (old_string + new_string) or multiple edits via an array of {old_string, new_string} objects. Edits are applied sequentially — later edits see the result of earlier ones. Each old_string must match uniquely. More efficient than setTabNotes when updating sections of longer notes. Use setTabNotes for full rewrites or clearing.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "tabId": { "type": "string", "description": "Tab ID to edit notes in. If omitted, uses the currently active tab." },
+                "old_string": { "type": "string", "description": "The exact text to find in the notes. Must match uniquely. Use this for a single edit." },
+                "new_string": { "type": "string", "description": "The replacement text. Use empty string to delete the matched section." },
+                "edits": {
+                    "type": "array",
+                    "description": "Array of edits to apply sequentially. Use this instead of old_string/new_string for multiple edits in one call.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "old_string": { "type": "string", "description": "The exact text to find." },
+                            "new_string": { "type": "string", "description": "The replacement text." }
+                        },
+                        "required": ["old_string", "new_string"]
+                    }
+                }
+            }
+        }
+    }"#).unwrap();
+
+    // Replace the null placeholder with the real tool definition
+    if let Some(tools) = resp.get_mut("tools").and_then(|t| t.as_array_mut()) {
+        if let Some(slot) = tools.iter_mut().find(|v| v.is_null()) {
+            *slot = edit_tool;
+        }
+    }
+
+    resp
 }
 
 pub fn initialize_response() -> Value {

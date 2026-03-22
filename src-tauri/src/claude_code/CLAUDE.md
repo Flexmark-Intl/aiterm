@@ -39,6 +39,7 @@ Claude Code CLI ←→ WebSocket/SSE ←→ axum server (Rust) ←→ Tauri even
 | switchTab | Navigate to a tab by ID (auto-resolves workspace/pane) |
 | getTabNotes | Read notes for a tab (optional tabId, defaults to active) |
 | setTabNotes | Write/clear notes for a tab |
+| editTabNotes | Precision edit: find old_string in notes, replace with new_string (must match uniquely) |
 | listWorkspaceNotes | List workspace-level notes (IDs, previews, timestamps) |
 | readWorkspaceNote | Read full content of a workspace note |
 | writeWorkspaceNote | Create or update a workspace note |

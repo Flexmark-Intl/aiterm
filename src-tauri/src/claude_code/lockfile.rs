@@ -554,6 +554,7 @@ Execute the aiTerm MCP tool for the requested operation. Use whichever aiterm MC
 | `notes close` | openNotesPanel | `{ "open": false }` |
 | `notes read` | getTabNotes | `{}` |
 | `notes write <content>` | setTabNotes | `{ "notes": "<content>" }` |
+| `notes edit <old> <new>` | editTabNotes | `{ "old_string": "<old>", "new_string": "<new>" }` |
 | `tabs` | listWorkspaces | `{}` |
 | `tab` | getActiveTab | `{}` |
 | `diag` | getDiagnostics | `{}` |

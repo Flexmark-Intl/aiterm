@@ -115,6 +115,9 @@ function createClaudeCodeStore() {
         case 'setTabNotes':
           result = await handleSetTabNotes(args as { tabId?: string; notes: string | null; mode?: string });
           break;
+        case 'editTabNotes':
+          result = await handleEditTabNotes(args as { tabId?: string; old_string?: string; new_string?: string; edits?: { old_string: string; new_string: string }[] });
+          break;
         case 'listWorkspaceNotes':
           result = handleListWorkspaceNotes(args as { workspaceId?: string });
           break;
@@ -602,6 +605,47 @@ function createClaudeCodeStore() {
     }
 
     return { success: true, tabId: tab.id };
+  }
+
+  async function handleEditTabNotes(args: { tabId?: string; old_string?: string; new_string?: string; edits?: { old_string: string; new_string: string }[] }) {
+    let tab: Tab | undefined;
+    let wsId: string;
+    let paneId: string;
+
+    if (args.tabId) {
+      const loc = findTabLocation(args.tabId);
+      if (!loc) return { error: `Tab not found: ${args.tabId}` };
+      tab = loc.tab;
+      wsId = loc.workspace.id;
+      paneId = loc.pane.id;
+    } else {
+      const ws = workspacesStore.activeWorkspace;
+      const pane = ws?.panes.find(p => p.id === ws.active_pane_id);
+      tab = pane?.tabs.find(t => t.id === pane.active_tab_id);
+      if (!ws || !pane || !tab) return { error: 'No active tab' };
+      wsId = ws.id;
+      paneId = pane.id;
+    }
+
+    let current = tab.notes ?? '';
+    if (!current) return { error: 'Tab has no notes to edit. Use setTabNotes to create notes.' };
+
+    // Build edits list from either single old_string/new_string or edits array
+    const editList = args.edits ?? (args.old_string != null ? [{ old_string: args.old_string, new_string: args.new_string ?? '' }] : []);
+    if (editList.length === 0) return { error: 'Provide old_string/new_string or an edits array.' };
+
+    for (let i = 0; i < editList.length; i++) {
+      const edit = editList[i];
+      const idx = current.indexOf(edit.old_string);
+      if (idx === -1) return { error: `Edit ${i + 1}/${editList.length}: old_string not found in notes.`, failed_edit: edit };
+      const secondIdx = current.indexOf(edit.old_string, idx + 1);
+      if (secondIdx !== -1) return { error: `Edit ${i + 1}/${editList.length}: old_string matches multiple locations. Provide more context.`, failed_edit: edit, applied: i };
+      current = current.slice(0, idx) + edit.new_string + current.slice(idx + edit.old_string.length);
+    }
+
+    await workspacesStore.setTabNotes(wsId, paneId, tab.id, current || null);
+
+    return { success: true, tabId: tab.id, edits_applied: editList.length };
   }
 
   // --- Workspace notes tools ---
