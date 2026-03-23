@@ -13,6 +13,18 @@
   import StatusDot from '$lib/components/ui/StatusDot.svelte';
   import IconButton from '$lib/components/ui/IconButton.svelte';
   import Icon from '$lib/components/Icon.svelte';
+  import { updaterStore } from '$lib/stores/updater.svelte';
+  import ChangelogModal from '$lib/components/ChangelogModal.svelte';
+  import type { ChangelogEntry } from '$lib/components/ChangelogModal.svelte';
+
+  let showWhatsNew = $state(false);
+  let whatsNewEntries = $state<ChangelogEntry[]>([]);
+
+  async function openWhatsNew() {
+    const entries = await updaterStore.fetchReleaseNotes();
+    whatsNewEntries = entries;
+    showWhatsNew = true;
+  }
 
   const activeTabWebgl = $derived(workspacesStore.activeTab ? terminalsStore.isWebgl(workspacesStore.activeTab.id) : false);
 
@@ -423,6 +435,24 @@
     {/each}
   </div>
 
+  {#if updaterStore.showBanner}
+    <div class="update-banner">
+      <button class="update-dismiss" onclick={() => updaterStore.dismiss()} aria-label="Dismiss">&times;</button>
+      {#if updaterStore.installed}
+        <div class="update-text">Update installed</div>
+        <button class="update-action" onclick={() => updaterStore.restart()}>Restart</button>
+      {:else if updaterStore.downloading}
+        <div class="update-text">Downloading v{updaterStore.currentUpdate?.version}…</div>
+      {:else}
+        <div class="update-text">
+          v{updaterStore.currentUpdate?.version} available
+          <button class="update-link" onclick={openWhatsNew}>What's new</button>
+        </div>
+        <button class="update-action" onclick={() => updaterStore.downloadAndInstall()}>Install</button>
+      {/if}
+    </div>
+  {/if}
+
   <div class="sidebar-footer">
     <IconButton tooltip="Report Bug" size={24} style="border-radius:4px" onclick={() => shellOpen('https://github.com/Flexmark-Intl/aiterm/issues/new?labels=bug&type=bug')}><Icon name="bug" size={14} /></IconButton>
     <IconButton tooltip="Feature Request" size={24} style="border-radius:4px" onclick={() => shellOpen('https://github.com/Flexmark-Intl/aiterm/issues/new?type=feature')}><Icon name="lightbulb" size={14} /></IconButton>
@@ -433,6 +463,14 @@
     <IconButton tooltip="Help ({modSymbol}/)" size={24} style="border-radius:4px" onclick={onhelp}><Icon name="help" size={14} /></IconButton>
   </div>
 </aside>
+
+<ChangelogModal
+  open={showWhatsNew}
+  onclose={() => { showWhatsNew = false; }}
+  version={appVersion}
+  entries={whatsNewEntries}
+  title="What's New"
+/>
 
 <style>
   .sidebar {
@@ -686,6 +724,71 @@
   .edit-input {
     flex: 1;
     background: var(--bg-dark);
+  }
+
+  .update-banner {
+    border-top: 1px solid var(--bg-light);
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--bg-dark);
+    position: relative;
+  }
+
+  .update-text {
+    font-size: 0.769rem;
+    color: var(--fg);
+    flex: 1;
+    min-width: 0;
+  }
+
+  .update-action {
+    font-size: 0.769rem;
+    font-weight: 600;
+    padding: 3px 10px;
+    border: none;
+    border-radius: 3px;
+    background: var(--accent);
+    color: var(--bg-dark);
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .update-action:hover {
+    filter: brightness(1.15);
+  }
+
+  .update-link {
+    font-size: 0.692rem;
+    color: var(--accent);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    text-decoration: underline;
+    display: block;
+    margin-top: 2px;
+  }
+
+  .update-link:hover {
+    filter: brightness(1.2);
+  }
+
+  .update-dismiss {
+    font-size: 1rem;
+    line-height: 1;
+    color: var(--fg-dim);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    flex-shrink: 0;
+  }
+
+  .update-dismiss:hover {
+    color: var(--fg);
   }
 
   .sidebar-footer {

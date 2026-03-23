@@ -6,9 +6,13 @@
     open: boolean;
     onclose: () => void;
     version: string;
+    /** If provided, renders these entries instead of the bundled CHANGELOG.md */
+    entries?: ChangelogEntry[];
+    /** Custom modal title */
+    title?: string;
   }
 
-  let { open, onclose, version }: Props = $props();
+  let { open, onclose, version, entries, title }: Props = $props();
 
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
@@ -22,7 +26,7 @@
     }
   }
 
-  interface ChangelogEntry {
+  export interface ChangelogEntry {
     version: string;
     items: string[];
   }
@@ -46,7 +50,7 @@
     return entries;
   }
 
-  const changelog = parseChangelog(changelogRaw);
+  const changelog = $derived(entries ?? parseChangelog(changelogRaw));
 </script>
 
 {#if open}
@@ -60,7 +64,7 @@
   >
     <div class="modal">
       <div class="header">
-        <h2>Changelog</h2>
+        <h2>{title ?? 'Changelog'}</h2>
         <IconButton tooltip="Close" style="font-size: 1.538rem;padding:4px 8px;width:auto;height:auto" onclick={onclose}>&times;</IconButton>
       </div>
 
