@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.7.13
+
+- Replace update toast with persistent sidebar banner (Install/Restart buttons, stays until dismissed)
+- Add "What's New" link that fetches missed release notes from GitHub API
+
 ## v1.7.12
 
 - Add editTabNotes MCP tool for precision note edits (single or batch, sequential matching)
