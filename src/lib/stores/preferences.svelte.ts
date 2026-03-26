@@ -30,7 +30,7 @@ function createPreferencesStore() {
   let restoreSession = $state(false);
   let notificationMode = $state('auto');
   let notifyMinDuration = $state(30);
-  let notesFontSize = $state(16);
+  let notesFontSize = $state(13);
   let notesFontFamily = $state('Menlo');
   let notesWidth = $state(320);
   let notesWordWrap = $state(true);
@@ -158,7 +158,7 @@ function createPreferencesStore() {
         notificationMode = prefs.notify_on_completion ? 'auto' : 'disabled';
       }
       notifyMinDuration = prefs.notify_min_duration ?? 30;
-      notesFontSize = prefs.notes_font_size ?? 16;
+      notesFontSize = prefs.notes_font_size ?? 13;
       notesFontFamily = prefs.notes_font_family ?? 'Menlo';
       notesWidth = prefs.notes_width ?? 320;
       notesWordWrap = prefs.notes_word_wrap ?? true;
@@ -507,7 +507,7 @@ function createPreferencesStore() {
         notificationMode = prefs.notify_on_completion ? 'auto' : 'disabled';
       }
       notifyMinDuration = prefs.notify_min_duration ?? 30;
-      notesFontSize = prefs.notes_font_size ?? 16;
+      notesFontSize = prefs.notes_font_size ?? 13;
       notesFontFamily = prefs.notes_font_family ?? 'Menlo';
       notesWidth = prefs.notes_width ?? 320;
       notesWordWrap = prefs.notes_word_wrap ?? true;

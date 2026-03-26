@@ -410,7 +410,7 @@ fn default_font_size() -> u32 {
 }
 
 fn default_notes_font_size() -> u32 {
-    16
+    13
 }
 
 fn default_font_family() -> String {
