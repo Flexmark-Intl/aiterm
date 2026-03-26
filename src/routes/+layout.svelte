@@ -20,6 +20,7 @@
   import { claudeCodeStore } from '$lib/stores/claudeCode.svelte';
   import { claudeStateStore } from '$lib/stores/claudeState.svelte';
   import { toastStore } from '$lib/stores/toasts.svelte';
+  import { navHistoryStore } from '$lib/stores/navHistory.svelte';
   import { isModKey, isMac } from '$lib/utils/platform';
   import { open as dialogOpen, save as dialogSave } from '@tauri-apps/plugin-dialog';
   import { openFileFromTerminal } from '$lib/utils/openFile';
@@ -339,6 +340,8 @@
             (!e.shiftKey && e.key >= '1' && e.key <= '9') ||         // Cmd+1-9 switch tab
             (e.shiftKey && (e.key === '[' || e.code === 'BracketLeft')) ||  // Cmd+Shift+[ prev tab
             (e.shiftKey && (e.key === ']' || e.code === 'BracketRight')) || // Cmd+Shift+] next tab
+            (!e.shiftKey && (e.key === '[' || e.code === 'BracketLeft')) ||  // Cmd+[ nav back
+            (!e.shiftKey && (e.key === ']' || e.code === 'BracketRight')) || // Cmd+] nav forward
             // Window/workspace management
             (!e.shiftKey && !e.altKey && key === 'n') ||             // Cmd+N new window
             (e.shiftKey && !e.altKey && key === 'n') ||              // Cmd+Shift+N duplicate window
@@ -543,9 +546,26 @@
         const ws = workspacesStore.activeWorkspace;
         const pane = workspacesStore.activePane;
         if (ws && pane && pane.tabs[index]) {
+          navHistoryStore.push({ workspaceId: ws.id, paneId: pane.id, tabId: pane.tabs[index].id });
           workspacesStore.setActiveTab(ws.id, pane.id, pane.tabs[index].id);
           terminalsStore.focusTerminal(pane.tabs[index].id);
         }
+        return;
+      }
+
+      // Cmd+[ - Navigate back in tab history
+      if (isMeta && !e.shiftKey && (e.key === '[' || e.code === 'BracketLeft')) {
+        e.preventDefault();
+        e.stopPropagation();
+        navHistoryStore.goBack();
+        return;
+      }
+
+      // Cmd+] - Navigate forward in tab history
+      if (isMeta && !e.shiftKey && (e.key === ']' || e.code === 'BracketRight')) {
+        e.preventDefault();
+        e.stopPropagation();
+        navHistoryStore.goForward();
         return;
       }
 
@@ -558,6 +578,7 @@
         if (ws && pane && pane.tabs.length > 1) {
           const currentIndex = pane.tabs.findIndex(t => t.id === pane.active_tab_id);
           const prevIndex = currentIndex <= 0 ? pane.tabs.length - 1 : currentIndex - 1;
+          navHistoryStore.push({ workspaceId: ws.id, paneId: pane.id, tabId: pane.tabs[prevIndex].id });
           workspacesStore.setActiveTab(ws.id, pane.id, pane.tabs[prevIndex].id);
           terminalsStore.focusTerminal(pane.tabs[prevIndex].id);
         }
@@ -573,6 +594,7 @@
         if (ws && pane && pane.tabs.length > 1) {
           const currentIndex = pane.tabs.findIndex(t => t.id === pane.active_tab_id);
           const nextIndex = currentIndex >= pane.tabs.length - 1 ? 0 : currentIndex + 1;
+          navHistoryStore.push({ workspaceId: ws.id, paneId: pane.id, tabId: pane.tabs[nextIndex].id });
           workspacesStore.setActiveTab(ws.id, pane.id, pane.tabs[nextIndex].id);
           terminalsStore.focusTerminal(pane.tabs[nextIndex].id);
         }

@@ -573,7 +573,9 @@
   .notes-render :global(h1),
   .notes-render :global(h2),
   .notes-render :global(h3),
-  .notes-render :global(h4) {
+  .notes-render :global(h4),
+  .notes-render :global(h5),
+  .notes-render :global(h6) {
     margin: 0.8em 0 0.4em;
     color: var(--fg);
     line-height: 1.3;
@@ -582,6 +584,9 @@
   .notes-render :global(h1) { font-size: 1.3em; }
   .notes-render :global(h2) { font-size: 1.15em; }
   .notes-render :global(h3) { font-size: 1.05em; }
+  .notes-render :global(h4),
+  .notes-render :global(h5),
+  .notes-render :global(h6) { font-size: 1em; }
 
   .notes-render :global(p) {
     margin: 0 0 0.6em;

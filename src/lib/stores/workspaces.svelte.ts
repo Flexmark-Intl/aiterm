@@ -317,6 +317,7 @@ function createWorkspacesStore() {
         const adjacentIndex = Math.min(oldIndex, workspaces.length - 1);
         activeWorkspaceId = workspaces[adjacentIndex]?.id ?? null;
       }
+      import('$lib/stores/navHistory.svelte').then(m => m.navHistoryStore.removeWorkspace(workspaceId));
     },
 
     async suspendWorkspace(workspaceId: string) {
@@ -899,6 +900,7 @@ function createWorkspacesStore() {
         }
         return w;
       });
+      import('$lib/stores/navHistory.svelte').then(m => m.navHistoryStore.removeTab(tabId));
     },
 
     async archiveTab(workspaceId: string, paneId: string, tabId: string, displayName: string) {
@@ -1762,10 +1764,12 @@ export const workspacesStore = createWorkspacesStore();
  * Used by toast clicks and OS notification deep-links.
  */
 export async function navigateToTab(tabId: string): Promise<void> {
+  const { navHistoryStore } = await import('$lib/stores/navHistory.svelte');
   for (const ws of workspacesStore.workspaces) {
     for (const pane of ws.panes) {
       const tab = pane.tabs.find(t => t.id === tabId);
       if (tab) {
+        navHistoryStore.push({ workspaceId: ws.id, paneId: pane.id, tabId });
         if (ws.id !== workspacesStore.activeWorkspaceId) {
           await workspacesStore.setActiveWorkspace(ws.id);
         }

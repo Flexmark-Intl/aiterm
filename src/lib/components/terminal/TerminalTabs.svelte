@@ -12,6 +12,7 @@
   import { isEditorDirty } from '$lib/stores/editorRegistry.svelte';
   import { getBridgeStatus } from '$lib/stores/sshMcpBridge.svelte';
   import { claudeStateStore } from '$lib/stores/claudeState.svelte';
+  import { navHistoryStore } from '$lib/stores/navHistory.svelte';
   import { isImageFile, isPdfFile } from '$lib/utils/languageDetect';
   import Icon from '$lib/components/Icon.svelte';
   import StatusDot from '$lib/components/ui/StatusDot.svelte';
@@ -281,6 +282,7 @@
   }
 
   async function handleTabClick(tabId: string) {
+    navHistoryStore.push({ workspaceId, paneId: pane.id, tabId });
     await workspacesStore.setActiveTab(workspaceId, pane.id, tabId);
     scrollTabIntoView(tabId);
   }

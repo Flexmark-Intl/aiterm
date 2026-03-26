@@ -10,6 +10,7 @@
   import EditorPane from '$lib/components/editor/EditorPane.svelte';
   import DiffPane from '$lib/components/editor/DiffPane.svelte';
   import ChangelogModal from '$lib/components/ChangelogModal.svelte';
+  import { navHistoryStore } from '$lib/stores/navHistory.svelte';
   import Resizer from '$lib/components/Resizer.svelte';
   import { getVersion } from '@tauri-apps/api/app';
   import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -86,7 +87,15 @@
   });
 
   onMount(() => {
-    workspacesStore.load().then(() => { loading = false; });
+    workspacesStore.load().then(() => {
+      loading = false;
+      // Seed navigation history with the initial active tab
+      const ws = workspacesStore.activeWorkspace;
+      const pane = ws?.panes.find(p => p.id === ws.active_pane_id);
+      if (ws && pane?.active_tab_id) {
+        navHistoryStore.push({ workspaceId: ws.id, paneId: pane.id, tabId: pane.active_tab_id });
+      }
+    });
 
     // Listen for tab deactivation requests (e.g. "Suspend Other Tabs")
     function handleDeactivateTabs(e: Event) {

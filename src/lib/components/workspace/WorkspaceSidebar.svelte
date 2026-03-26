@@ -8,6 +8,7 @@
   import * as commands from '$lib/tauri/commands';
   import { modSymbol } from '$lib/utils/platform';
   import { claudeCodeStore } from '$lib/stores/claudeCode.svelte';
+  import { navHistoryStore } from '$lib/stores/navHistory.svelte';
   import { openPreferencesWindow } from '$lib/tauri/commands';
   import { open as shellOpen } from '@tauri-apps/plugin-shell';
   import StatusDot from '$lib/components/ui/StatusDot.svelte';
@@ -304,17 +305,29 @@
     return ws;
   });
 
-  function handleItemClick(workspaceId: string) {
+  async function handleItemClick(workspaceId: string) {
     // Suppress click after a drag
     if (didDrag) {
       didDrag = false;
       return;
     }
+    // Push current tab to history before switching workspace
+    const currentWs = workspacesStore.activeWorkspace;
+    const currentPane = workspacesStore.activePane;
+    if (currentWs && currentPane?.active_tab_id) {
+      navHistoryStore.push({ workspaceId: currentWs.id, paneId: currentPane.id, tabId: currentPane.active_tab_id });
+    }
     const ws = workspacesStore.workspaces.find(w => w.id === workspaceId);
     if (ws?.suspended) {
-      workspacesStore.resumeWorkspace(workspaceId);
+      await workspacesStore.resumeWorkspace(workspaceId);
     } else {
-      workspacesStore.setActiveWorkspace(workspaceId);
+      await workspacesStore.setActiveWorkspace(workspaceId);
+    }
+    // Push the target workspace's active tab
+    const targetWs = workspacesStore.workspaces.find(w => w.id === workspaceId);
+    const targetPane = targetWs?.panes.find(p => p.id === targetWs.active_pane_id);
+    if (targetWs && targetPane?.active_tab_id) {
+      navHistoryStore.push({ workspaceId: targetWs.id, paneId: targetPane.id, tabId: targetPane.active_tab_id });
     }
   }
 </script>
@@ -348,7 +361,7 @@
         {#each workspacesStore.recentWorkspaces as workspace (workspace.id)}
           <button
             class="recent-item"
-            onclick={() => workspacesStore.setActiveWorkspace(workspace.id)}
+            onclick={() => handleItemClick(workspace.id)}
             title={workspace.name}
           >
             {workspace.name}
@@ -376,7 +389,7 @@
         onpointerup={handlePointerUp}
         role="button"
         tabindex="0"
-        onkeydown={(e) => e.key === 'Enter' && workspacesStore.setActiveWorkspace(workspace.id)}
+        onkeydown={(e) => e.key === 'Enter' && handleItemClick(workspace.id)}
       >
         {#if editingId === workspace.id}
           <!-- svelte-ignore a11y_autofocus -->
