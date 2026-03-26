@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.7.14
+
+- Tab bar UX overhaul: scrollable tabs with pinned archive/new-tab/notes buttons
+- Add "Group active tabs first" preference to visually separate live from suspended tabs
+- Add "Move to workspace notes" button in tab notes panel
+- Add clipboard image paste support for Claude sessions (temp JPEG, SCP for SSH)
+- Restored tabs now insert after the active tab instead of at position 0
+- Fix blank lines in git status output (control chars in renderer causing line wraps)
+
 ## v1.7.13
 
 - Replace update toast with persistent sidebar banner (Install/Restart buttons, stays until dismissed)
