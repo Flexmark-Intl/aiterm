@@ -82,6 +82,32 @@
     };
   });
 
+  // Display-order tabs: when groupActiveTabs is on, active (non-suspended) tabs
+  // come first, preserving relative human order within each group.
+  const groupedTabs = $derived.by(() => {
+    if (!preferencesStore.groupActiveTabs) {
+      return { tabs: pane.tabs, activeCount: 0 };
+    }
+    // Read instanceVersion to re-derive when terminals register/unregister
+    void terminalsStore.instanceVersion;
+    const active: Tab[] = [];
+    const suspended: Tab[] = [];
+    for (const tab of pane.tabs) {
+      const isTerminal = tab.tab_type === 'terminal' || !tab.tab_type;
+      if (isTerminal && !terminalsStore.get(tab.id)) {
+        suspended.push(tab);
+      } else {
+        active.push(tab);
+      }
+    }
+    return {
+      tabs: [...active, ...suspended],
+      activeCount: suspended.length > 0 ? active.length : 0,
+    };
+  });
+  const displayTabs = $derived(groupedTabs.tabs);
+  const activeGroupCount = $derived(groupedTabs.activeCount);
+
   // Track trigger variable changes for reactive tab title updates
   let varVersion = $state(0);
   const unsubVars = onVariablesChange((tabId: string) => {
@@ -433,12 +459,14 @@
     }
 
     if (dragTabId && dropTargetIndex !== null) {
-      const fromIndex = pane.tabs.findIndex(t => t.id === dragTabId);
+      // Use displayTabs for index mapping since that's what the DOM reflects
+      const displayed = displayTabs;
+      const fromIndex = displayed.findIndex(t => t.id === dragTabId);
       if (fromIndex !== -1) {
         let toIndex = dropSide === 'after' ? dropTargetIndex + 1 : dropTargetIndex;
         if (fromIndex < toIndex) toIndex--;
         if (fromIndex !== toIndex) {
-          const ids = pane.tabs.map(t => t.id);
+          const ids = displayed.map(t => t.id);
           const [moved] = ids.splice(fromIndex, 1);
           ids.splice(toIndex, 0, moved);
           workspacesStore.reorderTabs(workspaceId, pane.id, ids);
@@ -507,14 +535,13 @@
   }
 </script>
 
-<div class="tabs-bar" bind:this={tabsBarEl} data-tauri-drag-region
-  onwheel={(e) => { if (tabsBarEl) { e.preventDefault(); tabsBarEl.scrollLeft += e.deltaY || e.deltaX; } }}
->
-  {#if archivedTabs.length > 0}
+<div class="tabs-bar" data-tauri-drag-region>
     <div class="archive-list-wrapper" bind:this={archiveDropdownEl}>
-      <Tooltip text="Archived tabs ({archivedTabs.length})">
+      <Tooltip text={archivedTabs.length > 0 ? `Archived tabs (${archivedTabs.length})` : 'No archived tabs'}>
         <button
           class="archive-list-btn"
+          class:archive-empty={archivedTabs.length === 0}
+          disabled={archivedTabs.length === 0}
           onclick={(e) => {
             e.stopPropagation();
             if (!archiveDropdownOpen) {
@@ -524,7 +551,7 @@
             archiveDropdownOpen = !archiveDropdownOpen;
           }}
         >
-          <Icon name="archive" size={12} /> {archivedTabs.length}
+          <Icon name="archive" size={12} />{#if archivedTabs.length > 0} {archivedTabs.length}{/if}
         </button>
       </Tooltip>
       {#if archiveDropdownOpen}
@@ -596,18 +623,25 @@
         </div>
       {/if}
     </div>
-  {/if}
 
-  {#each pane.tabs as tab, index (tab.id)}
+  <div class="tabs-scroll" bind:this={tabsBarEl}
+    onwheel={(e) => { if (tabsBarEl) { e.preventDefault(); tabsBarEl.scrollLeft += e.deltaY || e.deltaX; } }}
+  >
+  {#each displayTabs as tab, index (tab.id)}
+    {#if activeGroupCount > 0 && index === activeGroupCount}
+      <div class="group-divider"></div>
+    {/if}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     {@const isEditor = tab.tab_type === 'editor'}
     {@const isDiff = tab.tab_type === 'diff'}
+    {@const isSuspendedTab = activeGroupCount > 0 && index >= activeGroupCount}
     {@const shellState = !isEditor && tab.id !== pane.active_tab_id ? activityStore.getShellState(tab.id) : undefined}
     {@const hasActivity = !isEditor && tab.id !== pane.active_tab_id && activityStore.hasActivity(tab.id)}
     {@const tabState = !isEditor && tab.id !== pane.active_tab_id ? activityStore.getTabState(tab.id) : undefined}
     {@const claudeState = !isEditor ? claudeStateStore.getState(tab.id) : undefined}
     <div
       class="tab"
+      class:tab-suspended={isSuspendedTab}
       class:active={tab.id === pane.active_tab_id}
       class:unclamped={editingId === tab.id || tab.custom_name || oscTitles.has(tab.id)}
       class:activity={!shellState && !tabState && hasActivity}
@@ -719,25 +753,21 @@
       {/if}
     </div>
   {/each}
+  </div>
 
   <Tooltip text="New tab ({modLabel}+T)"><button class="new-tab-btn" onclick={handleNewTab}>
     <Icon name="plus" size={14} />
   </button></Tooltip>
 
-  <div class="tabs-spacer" data-tauri-drag-region></div>
-
   {#if pane.active_tab_id}
-    {@const activeTabObj = pane.tabs.find(t => t.id === pane.active_tab_id)}
-    {#if activeTabObj?.notes}
-      <IconButton
-        tooltip="Toggle notes ({modLabel}+E)"
-        size={26}
-        style="margin-right:4px;flex-shrink:0;-webkit-app-region:no-drag"
-        onclick={() => workspacesStore.toggleNotes(pane.active_tab_id!)}
-      >
-        <Icon name="notes" />
-      </IconButton>
-    {/if}
+    <IconButton
+      tooltip="Toggle notes ({modLabel}+E)"
+      size={26}
+      style="margin-right:4px;flex-shrink:0;-webkit-app-region:no-drag"
+      onclick={() => workspacesStore.toggleNotes(pane.active_tab_id!)}
+    >
+      <Icon name="notes" />
+    </IconButton>
   {/if}
 </div>
 
@@ -751,13 +781,43 @@
     padding: 0 4px;
     gap: 2px;
     -webkit-app-region: drag;
+    overflow: hidden;
+  }
+
+  .tabs-scroll {
+    display: flex;
+    align-items: center;
+    gap: 2px;
     overflow-x: auto;
     overflow-y: hidden;
     scrollbar-width: none;
+    flex: 1 1 0;
+    min-width: 0;
   }
 
-  .tabs-bar::-webkit-scrollbar {
+  .tabs-scroll::-webkit-scrollbar {
     display: none;
+  }
+
+  .group-divider {
+    flex-shrink: 0;
+    width: 1px;
+    height: 16px;
+    background: var(--bg-light);
+    margin: 0 4px;
+    opacity: 0.6;
+  }
+
+  .tab.tab-suspended {
+    opacity: 0.45;
+  }
+
+  .tab.tab-suspended:hover {
+    opacity: 0.7;
+  }
+
+  .tab.tab-suspended.active {
+    opacity: 1;
   }
 
   .tab {
@@ -1080,13 +1140,6 @@
     color: var(--fg);
   }
 
-  .tabs-spacer {
-    flex: 1;
-    min-width: 0;
-    -webkit-app-region: drag;
-  }
-
-
   .archive-list-wrapper {
     position: relative;
     flex-shrink: 0;
@@ -1106,7 +1159,12 @@
     -webkit-app-region: no-drag;
   }
 
-  .archive-list-btn:hover {
+  .archive-list-btn.archive-empty {
+    opacity: 0.4;
+    cursor: default;
+  }
+
+  .archive-list-btn:hover:not(:disabled) {
     background: var(--bg-light);
     color: var(--fg);
   }

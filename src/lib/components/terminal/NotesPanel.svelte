@@ -239,6 +239,19 @@
     }
   }
 
+  async function moveTabNoteToWorkspace() {
+    if (!value.trim()) return;
+    if (saveTimer) clearTimeout(saveTimer);
+    save();
+    await workspacesStore.addWorkspaceNote(workspaceId, value, mode !== 'source' ? mode : null);
+    value = '';
+    workspacesStore.setTabNotes(workspaceId, paneId, tabId, null);
+    if (mode === 'render') {
+      mode = 'source';
+      workspacesStore.setTabNotesMode(workspaceId, paneId, tabId, 'source');
+    }
+  }
+
   // Workspace note helpers
   async function openNote(note: WorkspaceNote) {
     editingNoteId = note.id;
@@ -362,6 +375,12 @@
         </IconButton>
       {/if}
       {#if scope === 'tab' && value.trim()}
+        <IconButton
+          tooltip="Move to workspace notes"
+          onclick={moveTabNoteToWorkspace}
+        >
+          <Icon name="arrow-right" size={14} />
+        </IconButton>
         {#if confirmingTabClear}
           <span class="delete-confirm">
             Clear?

@@ -183,6 +183,7 @@ export interface Preferences {
   backup_trim_enabled: boolean;
   backup_trim_age: string;
   auto_suspend_minutes: number;
+  group_active_tabs: boolean;
   auto_check_updates: boolean;
 }
 

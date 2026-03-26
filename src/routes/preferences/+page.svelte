@@ -833,6 +833,23 @@
 
         <div class="setting">
           <div>
+            <label for="group-active-tabs">Group active tabs first</label>
+            <p class="setting-hint">Visually move non-suspended tabs to the front of the tab bar. Your manual tab order is preserved — this only affects the display.</p>
+          </div>
+          <button
+            id="group-active-tabs"
+            class="toggle"
+            class:active={preferencesStore.groupActiveTabs}
+            onclick={() => preferencesStore.setGroupActiveTabs(!preferencesStore.groupActiveTabs)}
+            aria-pressed={preferencesStore.groupActiveTabs}
+            aria-label="Toggle group active tabs first"
+          >
+            <span class="toggle-knob"></span>
+          </button>
+        </div>
+
+        <div class="setting">
+          <div>
             <label for="auto-suspend">Auto-suspend inactive workspaces</label>
             <p class="setting-hint">Automatically suspend workspaces that haven't been visited within the selected time. The active workspace is never auto-suspended.</p>
           </div>

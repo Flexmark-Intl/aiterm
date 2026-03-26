@@ -1,5 +1,5 @@
 <script lang="ts">
-  type IconName = 'trash' | 'notes' | 'eye' | 'pencil' | 'list' | 'archive' | 'word-wrap' | 'settings' | 'help' | 'bug' | 'lightbulb' | 'pause' | 'bolt' | 'resume' | 'pdf' | 'image' | 'file' | 'diff' | 'restore' | 'close' | 'duplicate' | 'check' | 'cross' | 'warning' | 'circle' | 'plus';
+  type IconName = 'trash' | 'notes' | 'eye' | 'pencil' | 'list' | 'archive' | 'word-wrap' | 'settings' | 'help' | 'bug' | 'lightbulb' | 'pause' | 'bolt' | 'resume' | 'pdf' | 'image' | 'file' | 'diff' | 'restore' | 'close' | 'duplicate' | 'check' | 'cross' | 'warning' | 'circle' | 'plus' | 'arrow-right';
 
   interface Props {
     name: IconName;
@@ -61,4 +61,6 @@
   <svg width={size} height={size} viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="5"/></svg>
 {:else if name === 'plus'}
   <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 3v10"/><path d="M3 8h10"/></svg>
+{:else if name === 'arrow-right'}
+  <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8h10"/><path d="M8 4l4 4-4 4"/></svg>
 {/if}

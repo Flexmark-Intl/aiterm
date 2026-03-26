@@ -739,6 +739,9 @@ pub struct Preferences {
     /// Auto-suspend inactive workspaces after N minutes (0 = disabled)
     #[serde(default)]
     pub auto_suspend_minutes: u32,
+    /// Group active (non-suspended) tabs before suspended ones
+    #[serde(default)]
+    pub group_active_tabs: bool,
     /// Automatically check for updates on app launch
     #[serde(default = "default_true")]
     pub auto_check_updates: bool,
@@ -802,6 +805,7 @@ impl Default for Preferences {
             backup_trim_enabled: false,
             backup_trim_age: default_backup_trim_age(),
             auto_suspend_minutes: 0,
+            group_active_tabs: false,
             auto_check_updates: true,
         }
     }

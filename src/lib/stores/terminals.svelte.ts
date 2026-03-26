@@ -43,6 +43,8 @@ export interface SplitContext {
 
 function createTerminalsStore() {
   let instances = $state<Map<string, TerminalInstance>>(new Map());
+  /** Bumped on register/unregister so external $derived can track instance set changes. */
+  let instanceVersion = $state(0);
   let searchVisibleFor = $state<string | null>(null);
   let webglTabs = $state(new Set<string>());
   let _shuttingDown = false;
@@ -102,11 +104,13 @@ function createTerminalsStore() {
         workspaceId, paneId, tabId,
         osc: { title: null, cwd: null, cwdHost: null, promptCwd: null },
       });
+      instanceVersion++;
     },
 
     unregister(tabId: string) {
       instances = new Map(instances);
       instances.delete(tabId);
+      instanceVersion++;
     },
 
     updateTabLocation(tabId: string, workspaceId: string, paneId: string) {
@@ -120,6 +124,9 @@ function createTerminalsStore() {
     get(tabId: string): TerminalInstance | undefined {
       return instances.get(tabId);
     },
+
+    /** Reactive version counter — read this in $derived to track register/unregister. */
+    get instanceVersion() { return instanceVersion; },
 
     // --- OSC state ---
 

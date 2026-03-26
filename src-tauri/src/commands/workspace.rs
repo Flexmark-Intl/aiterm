@@ -1311,7 +1311,11 @@ pub fn restore_archived_tab(
         let pane = workspace.panes.iter_mut()
             .find(|p| p.id == pane_id)
             .ok_or("Pane not found")?;
-        pane.tabs.insert(0, tab.clone());
+        let insert_index = pane.active_tab_id.as_ref()
+            .and_then(|active_id| pane.tabs.iter().position(|t| t.id == *active_id))
+            .map(|i| i + 1)
+            .unwrap_or(0);
+        pane.tabs.insert(insert_index, tab.clone());
         pane.active_tab_id = Some(tab.id.clone());
 
         (app_data.clone(), tab)

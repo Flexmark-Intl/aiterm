@@ -265,6 +265,22 @@ pub async fn scp_write_file(
 }
 
 #[command]
+pub async fn save_clipboard_image(data_base64: String) -> Result<String, String> {
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&data_base64)
+        .map_err(|e| format!("Invalid base64: {}", e))?;
+
+    let temp_dir = std::env::temp_dir();
+    let filename = format!("aiterm-clipboard-{}.jpg", uuid::Uuid::new_v4());
+    let path = temp_dir.join(&filename);
+
+    std::fs::write(&path, &bytes).map_err(|e| format!("Cannot write temp file: {}", e))?;
+    log::info!("save_clipboard_image: wrote {} bytes to {:?}", bytes.len(), path);
+
+    Ok(path.to_string_lossy().to_string())
+}
+
+#[command]
 pub async fn scp_upload_files(
     ssh_command: String,
     local_paths: Vec<String>,

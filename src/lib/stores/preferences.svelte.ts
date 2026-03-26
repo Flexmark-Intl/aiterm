@@ -60,6 +60,7 @@ function createPreferencesStore() {
   let backupTrimEnabled = $state(false);
   let backupTrimAge = $state('1m');
   let autoSuspendMinutes = $state(0);
+  let groupActiveTabs = $state(false);
   let autoCheckUpdates = $state(true);
 
   return {
@@ -118,6 +119,7 @@ function createPreferencesStore() {
     get backupTrimEnabled() { return backupTrimEnabled; },
     get backupTrimAge() { return backupTrimAge; },
     get autoSuspendMinutes() { return autoSuspendMinutes; },
+    get groupActiveTabs() { return groupActiveTabs; },
     get autoCheckUpdates() { return autoCheckUpdates; },
 
     async load() {
@@ -186,6 +188,7 @@ function createPreferencesStore() {
       backupTrimEnabled = prefs.backup_trim_enabled ?? false;
       backupTrimAge = prefs.backup_trim_age || '1m';
       autoSuspendMinutes = prefs.auto_suspend_minutes ?? 0;
+      groupActiveTabs = prefs.group_active_tabs ?? false;
       autoCheckUpdates = prefs.auto_check_updates ?? true;
       _resolveReady();
     },
@@ -448,6 +451,11 @@ function createPreferencesStore() {
       await this.save();
     },
 
+    async setGroupActiveTabs(value: boolean) {
+      groupActiveTabs = value;
+      await this.save();
+    },
+
     async setAutoCheckUpdates(value: boolean) {
       autoCheckUpdates = value;
       await this.save();
@@ -585,6 +593,7 @@ function createPreferencesStore() {
         backup_interval: backupInterval === 'off' ? '' : backupInterval,
         backup_exclude_scrollback: backupExcludeScrollback,
         auto_suspend_minutes: autoSuspendMinutes,
+        group_active_tabs: groupActiveTabs,
         backup_trim_enabled: backupTrimEnabled,
         backup_trim_age: backupTrimAge,
         auto_check_updates: autoCheckUpdates,

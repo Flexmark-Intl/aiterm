@@ -496,6 +496,10 @@ export async function scpWriteFile(sshCommand: string, remotePath: string, conte
   return invoke('scp_write_file', { sshCommand, remotePath, content });
 }
 
+export async function saveClipboardImage(dataBase64: string): Promise<string> {
+  return invoke('save_clipboard_image', { dataBase64 });
+}
+
 export async function scpUploadFiles(sshCommand: string, localPaths: string[], remoteDir: string): Promise<void> {
   return invoke('scp_upload_files', { sshCommand, localPaths, remoteDir });
 }

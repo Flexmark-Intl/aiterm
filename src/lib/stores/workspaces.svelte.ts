@@ -76,6 +76,36 @@ function allTabNames(ws: Workspace): string[] {
   return ws.panes.flatMap(p => p.tabs.map(t => t.name));
 }
 
+/**
+ * Pick the next active tab after closing/archiving a tab.
+ * When groupActiveTabs is on, prefers non-suspended (live terminal) tabs.
+ * Falls back to adjacent tab by index if no live tabs remain.
+ */
+function pickNextActiveTab(tabs: Tab[], closedIndex: number): string | null {
+  if (tabs.length === 0) return null;
+  if (preferencesStore.groupActiveTabs) {
+    // Prefer live (non-suspended) terminal tabs, searching outward from closedIndex
+    const liveTabs = tabs.filter(t => {
+      const isTerminal = t.tab_type === 'terminal' || !t.tab_type;
+      return !isTerminal || terminalsStore.get(t.id);
+    });
+    if (liveTabs.length > 0) {
+      // Pick the live tab closest to the closed position
+      let best = liveTabs[0];
+      let bestDist = Infinity;
+      for (const t of liveTabs) {
+        const idx = tabs.indexOf(t);
+        const dist = Math.abs(idx - closedIndex);
+        if (dist < bestDist) { bestDist = dist; best = t; }
+      }
+      return best.id;
+    }
+  }
+  // Default: adjacent tab by index
+  const newIndex = closedIndex > 0 ? closedIndex - 1 : 0;
+  return tabs[newIndex]?.id ?? null;
+}
+
 const RECENT_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
 
 
@@ -855,7 +885,7 @@ function createWorkspacesStore() {
                 const oldIndex = p.tabs.findIndex(t => t.id === tabId);
                 const newTabs = p.tabs.filter(t => t.id !== tabId);
                 const newActiveId = p.active_tab_id === tabId
-                  ? (newTabs[oldIndex > 0 ? oldIndex - 1 : 0]?.id ?? null)
+                  ? pickNextActiveTab(newTabs, oldIndex)
                   : p.active_tab_id;
                 return {
                   ...p,
@@ -927,7 +957,7 @@ function createWorkspacesStore() {
                 const oldIndex = p.tabs.findIndex(t => t.id === tabId);
                 const newTabs = p.tabs.filter(t => t.id !== tabId);
                 const newActiveId = p.active_tab_id === tabId
-                  ? (newTabs[oldIndex > 0 ? oldIndex - 1 : 0]?.id ?? null)
+                  ? pickNextActiveTab(newTabs, oldIndex)
                   : p.active_tab_id;
                 return { ...p, tabs: newTabs, active_tab_id: newActiveId };
               }
@@ -976,7 +1006,13 @@ function createWorkspacesStore() {
             archived_tabs: w.archived_tabs.filter(t => t.id !== tabId),
             panes: w.panes.map(p => {
               if (p.id === pane.id) {
-                return { ...p, tabs: [tab, ...p.tabs], active_tab_id: tab.id };
+                const activeIdx = p.active_tab_id
+                  ? p.tabs.findIndex(t => t.id === p.active_tab_id)
+                  : -1;
+                const insertIdx = activeIdx >= 0 ? activeIdx + 1 : 0;
+                const newTabs = [...p.tabs];
+                newTabs.splice(insertIdx, 0, tab);
+                return { ...p, tabs: newTabs, active_tab_id: tab.id };
               }
               return p;
             })
