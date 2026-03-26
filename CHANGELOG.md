@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.7.15
+
+- Add browser-style back/forward tab navigation (Cmd+[/]) with cross-workspace history stack
+- Fix notes heading sizes and reduce default notes font size to 13
+
 ## v1.7.14
 
 - Tab bar UX overhaul: scrollable tabs with pinned archive/new-tab/notes buttons
