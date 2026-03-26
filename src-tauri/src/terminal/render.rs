@@ -127,8 +127,12 @@ pub fn render_viewport<T: EventListener>(
         }
 
         // Output the character
+        // Control characters (tab, etc.) must be emitted as spaces — the grid
+        // already reflects their visual effect (cursor movement / tab stops).
+        // Emitting them raw would cause xterm.js to re-interpret them, e.g. a
+        // tab in an 86-col grid produces 8+85 = 93 visible columns → line wrap.
         let c = cell.c;
-        if c == '\0' || c == ' ' {
+        if c == '\0' || c == ' ' || c.is_ascii_control() {
             out.push(' ');
         } else {
             out.push(c);
