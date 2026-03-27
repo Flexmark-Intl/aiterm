@@ -845,14 +845,12 @@ async fn process_message(
                     }
 
                     // Emit event so frontend can set claudeSessionId trigger variable
+                    // (unconditional — session ID is useful for triggers beyond auto-resume)
                     if !session_id.is_empty() {
-                        let auto_resume = state.app_data.read().preferences.claude_code_auto_resume;
-                        if auto_resume {
-                            let _ = app_handle.emit("claude-init-session", serde_json::json!({
-                                "tab_id": &tab_id,
-                                "session_id": &session_id,
-                            }));
-                        }
+                        let _ = app_handle.emit("claude-init-session", serde_json::json!({
+                            "tab_id": &tab_id,
+                            "session_id": &session_id,
+                        }));
                     }
 
                     let resp = JsonRpcResponse::success(
