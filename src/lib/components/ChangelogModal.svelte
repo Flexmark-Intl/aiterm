@@ -10,9 +10,15 @@
     entries?: ChangelogEntry[];
     /** Custom modal title */
     title?: string;
+    /** When provided, shows an "Install & Restart" button */
+    oninstall?: () => void;
+    /** Label for the install button (e.g. "Downloading…") */
+    installLabel?: string;
+    /** Disable the install button (e.g. while downloading) */
+    installDisabled?: boolean;
   }
 
-  let { open, onclose, version, entries, title }: Props = $props();
+  let { open, onclose, version, entries, title, oninstall, installLabel, installDisabled }: Props = $props();
 
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
@@ -80,6 +86,15 @@
           </section>
         {/each}
       </div>
+
+      {#if oninstall}
+        <div class="footer">
+          <button class="install-btn" onclick={oninstall} disabled={installDisabled}>
+            {installLabel ?? 'Install & Restart'}
+          </button>
+          <span class="install-hint">The app will restart to apply the update</span>
+        </div>
+      {/if}
     </div>
   </div>
 {/if}
@@ -159,5 +174,40 @@
 
   li:last-child {
     margin-bottom: 0;
+  }
+
+  .footer {
+    padding: 12px 20px;
+    border-top: 1px solid var(--bg-light);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .install-btn {
+    font-size: 0.923rem;
+    font-weight: 600;
+    padding: 6px 16px;
+    border: none;
+    border-radius: 4px;
+    background: var(--accent);
+    color: var(--bg-dark);
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .install-btn:hover:not(:disabled) {
+    filter: brightness(1.15);
+  }
+
+  .install-btn:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+
+  .install-hint {
+    font-size: 0.769rem;
+    color: var(--fg-dim);
   }
 </style>

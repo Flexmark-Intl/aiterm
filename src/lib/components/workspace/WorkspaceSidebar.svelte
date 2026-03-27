@@ -14,6 +14,7 @@
   import StatusDot from '$lib/components/ui/StatusDot.svelte';
   import IconButton from '$lib/components/ui/IconButton.svelte';
   import Icon from '$lib/components/Icon.svelte';
+  import { untrack } from 'svelte';
   import { updaterStore } from '$lib/stores/updater.svelte';
   import ChangelogModal from '$lib/components/ChangelogModal.svelte';
   import type { ChangelogEntry } from '$lib/components/ChangelogModal.svelte';
@@ -25,6 +26,23 @@
     const entries = await updaterStore.fetchReleaseNotes();
     whatsNewEntries = entries;
     showWhatsNew = true;
+  }
+
+  // Watch for toast-triggered "show what's new" requests
+  $effect(() => {
+    if (updaterStore.showWhatsNewRequested) {
+      untrack(() => {
+        updaterStore.clearShowWhatsNewRequest();
+        openWhatsNew();
+      });
+    }
+  });
+
+  async function handleInstallFromModal() {
+    await updaterStore.downloadAndInstall();
+    if (updaterStore.installed) {
+      updaterStore.restart();
+    }
   }
 
   const activeTabWebgl = $derived(workspacesStore.activeTab ? terminalsStore.isWebgl(workspacesStore.activeTab.id) : false);
@@ -483,6 +501,9 @@
   version={appVersion}
   entries={whatsNewEntries}
   title="What's New"
+  oninstall={updaterStore.currentUpdate && !updaterStore.installed ? handleInstallFromModal : undefined}
+  installLabel={updaterStore.downloading ? 'Downloading…' : updaterStore.installed ? 'Restarting…' : 'Install & Restart'}
+  installDisabled={updaterStore.downloading || updaterStore.installed}
 />
 
 <style>

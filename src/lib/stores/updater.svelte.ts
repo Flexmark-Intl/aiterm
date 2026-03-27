@@ -37,6 +37,7 @@ function createUpdaterStore() {
   let dismissed = $state(false);
   let releaseNotes = $state<ChangelogEntry[]>([]);
   let loadingNotes = $state(false);
+  let showWhatsNewRequested = $state(false);
 
   async function checkForUpdates(silent = false): Promise<Update | null> {
     if (checking || downloading) return null;
@@ -47,6 +48,16 @@ function createUpdaterStore() {
         currentUpdate = update;
         dismissed = false;
         logInfo(`Update available: v${update.version}`);
+        if (!silent) {
+          toastStore.addToast(
+            'Update Available',
+            `v${update.version} is ready — click to review`,
+            'info',
+            undefined,
+            undefined,
+            () => { showWhatsNewRequested = true; },
+          );
+        }
       } else if (!silent) {
         toastStore.addToast('Up to Date', 'You are running the latest version.', 'success');
       }
@@ -124,11 +135,15 @@ function createUpdaterStore() {
     get loadingNotes() { return loadingNotes; },
     /** True when the banner should be visible */
     get showBanner() { return (currentUpdate !== null || installed) && !dismissed; },
+    /** True when a toast click requested showing the What's New modal */
+    get showWhatsNewRequested() { return showWhatsNewRequested; },
     checkForUpdates,
     downloadAndInstall,
     fetchReleaseNotes,
     dismiss,
     restart,
+    requestShowWhatsNew() { showWhatsNewRequested = true; },
+    clearShowWhatsNewRequest() { showWhatsNewRequested = false; },
   };
 }
 
