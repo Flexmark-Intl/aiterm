@@ -536,6 +536,8 @@ function createPreferencesStore() {
       backupExcludeScrollback = prefs.backup_exclude_scrollback ?? true;
       backupTrimEnabled = prefs.backup_trim_enabled ?? false;
       backupTrimAge = prefs.backup_trim_age || '1m';
+      autoSuspendMinutes = prefs.auto_suspend_minutes ?? 0;
+      groupActiveTabs = prefs.group_active_tabs ?? false;
       autoCheckUpdates = prefs.auto_check_updates ?? true;
     },
 

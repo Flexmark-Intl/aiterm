@@ -5,6 +5,7 @@
   import TerminalTabs from '$lib/components/terminal/TerminalTabs.svelte';
   import SearchBar from '$lib/components/terminal/SearchBar.svelte';
   import NotesPanel from '$lib/components/terminal/NotesPanel.svelte';
+  import { pendingResumePanes, resumePane } from '$lib/stores/resumeGate.svelte';
   import { modLabel } from '$lib/utils/platform';
 
   interface Props {
@@ -120,6 +121,16 @@
             data-terminal-slot={tab.id}
           ></div>
         {/each}
+        {#if pendingResumePanes.has(pane.id)}
+          {@const activeTab = pane.tabs.find(t => t.id === pane.active_tab_id)}
+          <div class="resume-overlay">
+            <p>This tab is suspended</p>
+            <button class="resume-btn" onclick={() => resumePane(pane.id)}>
+              Resume{activeTab ? ` "${activeTab.custom_name ? activeTab.name : 'terminal'}"` : ''}
+            </button>
+            <p class="resume-hint">or click any tab to resume it</p>
+          </div>
+        {/if}
       </div>
 
       {#if pane.active_tab_id && workspacesStore.isNotesVisible(pane.active_tab_id)}
@@ -290,5 +301,41 @@
     border-radius: 3px;
     font-family: inherit;
     font-size: 0.846rem;
+  }
+
+  .resume-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    background: var(--bg-dark);
+    z-index: 5;
+    color: var(--fg-dim);
+  }
+
+  .resume-overlay .resume-btn {
+    padding: 8px 24px;
+    background: var(--bg-medium);
+    color: var(--fg);
+    border: 1px solid var(--bg-light);
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.9em;
+    transition: background 0.15s, border-color 0.15s;
+  }
+
+  .resume-overlay .resume-btn:hover {
+    background: var(--bg-light);
+    border-color: var(--accent);
+  }
+
+  .resume-hint {
+    font-size: 0.8em;
+    color: var(--fg-dim);
+    opacity: 0.7;
   }
 </style>

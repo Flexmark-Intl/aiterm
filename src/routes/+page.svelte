@@ -11,6 +11,7 @@
   import DiffPane from '$lib/components/editor/DiffPane.svelte';
   import ChangelogModal from '$lib/components/ChangelogModal.svelte';
   import { navHistoryStore } from '$lib/stores/navHistory.svelte';
+  import { pendingResumePanes, resumePane } from '$lib/stores/resumeGate.svelte';
   import Resizer from '$lib/components/Resizer.svelte';
   import { getVersion } from '@tauri-apps/api/app';
   import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -31,6 +32,10 @@
   // preventing idle tabs from accumulating bash processes and reader threads.
   const activatedTabIds = new SvelteSet<string>();
 
+  let lastActiveWorkspaceId: string | null = null;
+  // Skip resume gate on the very first workspace activation (app startup/restore).
+  let initialActivationDone = false;
+
   $effect.pre(() => {
     const id = workspacesStore.activeWorkspaceId;
     const allWorkspaces = workspacesStore.workspaces;
@@ -38,16 +43,37 @@
     // All mutations to activatedWorkspaceIds/activatedTabIds must be untracked
     // to avoid effect_update_depth_exceeded — we read and write the same SvelteSet.
     untrack(() => {
-      if (id) activatedWorkspaceIds.add(id);
+      const workspaceSwitched = id !== lastActiveWorkspaceId;
+      if (id) {
+        activatedWorkspaceIds.add(id);
+        lastActiveWorkspaceId = id;
+      }
 
       // Activate the current active tab in each pane of the active workspace.
       // Uses $effect.pre so activatedTabIds is updated before DOM render,
       // avoiding a frame where the tab slot is empty.
+      // On workspace switch (not initial load), suspended tabs show a resume prompt.
       const ws = allWorkspaces.find(w => w.id === id);
       if (ws) {
         for (const pane of ws.panes) {
-          if (pane.active_tab_id) activatedTabIds.add(pane.active_tab_id);
+          const tabId = pane.active_tab_id;
+          if (!tabId) continue;
+          const tab = pane.tabs.find(t => t.id === tabId);
+          const isTerminal = tab && (tab.tab_type === 'terminal' || !tab.tab_type);
+          const isSuspended = isTerminal && !terminalsStore.get(tabId) && !activatedTabIds.has(tabId);
+
+          if (initialActivationDone && workspaceSwitched && isSuspended) {
+            // Workspace switch landed on a suspended tab — show resume prompt
+            pendingResumePanes.add(pane.id);
+          } else if (pendingResumePanes.has(pane.id)) {
+            // User clicked a tab within a pending-resume pane — activate it
+            activatedTabIds.add(tabId);
+            pendingResumePanes.delete(pane.id);
+          } else {
+            activatedTabIds.add(tabId);
+          }
         }
+        if (workspaceSwitched) initialActivationDone = true;
       }
 
       // Clean up suspended workspaces — remove from activated sets so their
@@ -60,7 +86,27 @@
             for (const tab of pane.tabs) {
               activatedTabIds.delete(tab.id);
             }
+            pendingResumePanes.delete(pane.id);
           }
+        }
+      }
+    });
+  });
+
+  // When a pending-resume pane is resolved (user clicked resume or a tab),
+  // listen for resumePane clearing the set and activate the current tab.
+  $effect.pre(() => {
+    const id = workspacesStore.activeWorkspaceId;
+    const allWorkspaces = workspacesStore.workspaces;
+    // Re-run when pendingResumePanes changes size
+    void pendingResumePanes.size;
+    untrack(() => {
+      const ws = allWorkspaces.find(w => w.id === id);
+      if (!ws) return;
+      for (const pane of ws.panes) {
+        const tabId = pane.active_tab_id;
+        if (tabId && !pendingResumePanes.has(pane.id)) {
+          activatedTabIds.add(tabId);
         }
       }
     });

@@ -109,6 +109,23 @@
   const displayTabs = $derived(groupedTabs.tabs);
   const activeGroupCount = $derived(groupedTabs.activeCount);
 
+  // When grouping turns on, auto-switch away from a suspended tab to the first active one
+  $effect(() => {
+    if (!preferencesStore.groupActiveTabs) return;
+    const activeTabId = pane.active_tab_id;
+    if (!activeTabId) return;
+    const activeTab = pane.tabs.find(t => t.id === activeTabId);
+    if (!activeTab) return;
+    const isTerminal = activeTab.tab_type === 'terminal' || !activeTab.tab_type;
+    if (isTerminal && !terminalsStore.get(activeTabId)) {
+      // Current tab is suspended — switch to first active tab
+      const firstActive = groupedTabs.tabs[0];
+      if (firstActive && firstActive.id !== activeTabId) {
+        workspacesStore.setActiveTab(workspaceId, pane.id, firstActive.id);
+      }
+    }
+  });
+
   // Track trigger variable changes for reactive tab title updates
   let varVersion = $state(0);
   const unsubVars = onVariablesChange((tabId: string) => {
