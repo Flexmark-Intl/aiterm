@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.7.16
+
+- Fix tab deletion race during workspace suspension (guard teardown with suspendingWorkspaceIds)
+- Add Cmd+[/] back/forward navigation to help shortcuts
+
 ## v1.7.15
 
 - Add browser-style back/forward tab navigation (Cmd+[/]) with cross-workspace history stack
