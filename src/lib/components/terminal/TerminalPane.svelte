@@ -256,7 +256,6 @@
           const rgba = await image.rgba();
           const base64 = await rgbaToJpegBase64(rgba, width, height);
           const localPath = await saveClipboardImage(base64);
-          logInfo(`clipboard image: ${width}x${height}, saved to ${localPath}`);
 
           // Check if SSH session — need to SCP upload
           const info = await getPtyInfo(ptyId);

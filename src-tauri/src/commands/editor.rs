@@ -449,6 +449,7 @@ pub async fn watch_file(
                         && !e.path.exists()
                 });
                 if dominated_by_remove {
+                    let _ = window.emit(&format!("file-deleted-{}", event_tab_id), ());
                     return;
                 }
                 let _ = window.emit(&format!("file-changed-{}", event_tab_id), ());
@@ -703,8 +704,15 @@ async fn remote_file_poll_loop(state: Arc<AppState>, app: tauri::AppHandle) {
                     let mut watchers = state.remote_file_watchers.write();
                     for (i, (tab_id, _path, _old_mtime)) in files.iter().enumerate() {
                         if let Some(&new_mtime) = mtimes.get(i) {
-                            if new_mtime == 0 { continue; } // stat failed for this file
                             if let Some(watcher) = watchers.get_mut(tab_id) {
+                                if new_mtime == 0 {
+                                    // stat failed — file may have been deleted
+                                    if watcher.last_mtime.is_some() {
+                                        log::info!("Remote file deleted: {} (tab {})", watcher.remote_path, tab_id);
+                                        let _ = app.emit(&format!("file-deleted-{}", tab_id), ());
+                                    }
+                                    continue;
+                                }
                                 let changed = watcher.last_mtime
                                     .map(|old| new_mtime != old)
                                     .unwrap_or(false);
