@@ -410,7 +410,7 @@ fn handle_backend_tool(tool_name: &str, arguments: &Value, state: &Arc<AppState>
             }
 
             let path_str = file_path.to_string_lossy().to_string();
-            log::info!("MCP backup created: {}", path_str);
+            log::debug!("MCP backup created: {}", path_str);
             Some(serde_json::json!({ "success": true, "path": path_str, "excludedScrollback": exclude_scrollback }))
         }
         "getClaudeSessions" => {
@@ -494,7 +494,7 @@ async fn ws_upgrade_handler(
 
 async fn handle_ws_connection(socket: WebSocket, srv: ServerState) {
     let ws_connection_id = format!("ws-{}", uuid::Uuid::new_v4());
-    log::info!("Claude Code WS client connected ({})", &ws_connection_id[..11]);
+    log::debug!("Claude Code WS client connected ({})", &ws_connection_id[..11]);
     set_connected(&srv, true);
 
     // response_tx: handle_message sends raw JSON here; main loop writes to WS
@@ -516,7 +516,7 @@ async fn handle_ws_connection(socket: WebSocket, srv: ServerState) {
                         let _ = ws_write.send(WsMessage::Pong(data)).await;
                     }
                     Some(Ok(WsMessage::Close(_))) | None => {
-                        log::info!("Claude Code WS client disconnected");
+                        log::debug!("Claude Code WS client disconnected");
                         break;
                     }
                     Some(Err(e)) => {
@@ -544,7 +544,7 @@ async fn handle_ws_connection(socket: WebSocket, srv: ServerState) {
     set_connected(&srv, false);
     srv.connection_tabs.write().remove(&ws_connection_id);
     *srv.state.claude_code_notify_tx.lock() = None;
-    log::info!("Claude Code WS connection cleaned up ({})", &ws_connection_id[..11]);
+    log::debug!("Claude Code WS connection cleaned up ({})", &ws_connection_id[..11]);
 }
 
 // ─── Streamable HTTP handler (modern MCP transport) ────────────────────────
@@ -624,7 +624,7 @@ async fn sse_get_handler(State(srv): State<ServerState>, headers: HeaderMap) -> 
     *srv.state.claude_code_notify_tx.lock() = Some(notify_tx);
 
     set_connected(&srv, true);
-    log::info!("Claude Code SSE client connected (session {}...)", &session_id[..8]);
+    log::debug!("Claude Code SSE client connected (session {}...)", &session_id[..8]);
 
     // First SSE event: tell Claude where to POST messages
     let endpoint_event =
@@ -662,7 +662,7 @@ async fn sse_get_handler(State(srv): State<ServerState>, headers: HeaderMap) -> 
         cleanup_srv.connection_tabs.write().remove(&format!("sse-{}", cleanup_session_id));
         set_connected(&cleanup_srv, false);
         *cleanup_srv.state.claude_code_notify_tx.lock() = None;
-        log::info!("Claude Code SSE client disconnected");
+        log::debug!("Claude Code SSE client disconnected");
     });
 
     Response::builder()
@@ -785,7 +785,7 @@ async fn process_message(
 
                     // Store connection → tab affinity
                     connection_tabs.write().insert(connection_id.to_string(), tab_id.clone());
-                    log::info!("initSession: connection {} → tab {} (claude session: {})",
+                    log::debug!("initSession: connection {} → tab {} (claude session: {})",
                         &connection_id[..connection_id.len().min(8)], &tab_id[..tab_id.len().min(8)],
                         if session_id.is_empty() { "none" } else { &session_id[..session_id.len().min(8)] }
                     );
@@ -833,7 +833,7 @@ async fn process_message(
                                         connection_id: Some(connection_id.to_string()),
                                     },
                                 );
-                                log::info!("initSession: linked pending session {} → tab {}",
+                                log::debug!("initSession: linked pending session {} → tab {}",
                                     &pending_sid[..pending_sid.len().min(8)], &tab_id[..tab_id.len().min(8)]);
                                 // Re-emit session start now that we know the tab
                                 let _ = app_handle.emit("claude-hook-session-start", serde_json::json!({
@@ -920,7 +920,7 @@ async fn process_message(
                             }
                         }
                         has_affinity = true;
-                        log::info!("Restored connection affinity from orphaned session for {}",
+                        log::debug!("Restored connection affinity from orphaned session for {}",
                             &connection_id[..connection_id.len().min(11)]);
                     }
                 }
@@ -1100,7 +1100,7 @@ async fn hooks_handler(
         .unwrap_or("")
         .to_string();
 
-    log::info!("Claude hook: received '{}' session={}", hook_event_name, &session_id[..session_id.len().min(8)]);
+    log::debug!("Claude hook: received '{}' session={}", hook_event_name, &session_id[..session_id.len().min(8)]);
 
     // tab_id comes from query param (set by the command hook script from $AITERM_TAB_ID)
     // Validate it actually exists — it may be stale after HMR reload or tab recreation.
@@ -1211,7 +1211,7 @@ async fn hooks_handler(
                 }
             }
 
-            log::info!("Claude hook: Notification type='{}' session={} (tab {:?})",
+            log::debug!("Claude hook: Notification type='{}' session={} (tab {:?})",
                 notification_type, &session_id[..session_id.len().min(8)], tab_id);
             let _ = srv.app_handle.emit("claude-hook-notification", serde_json::json!({
                 "session_id": session_id,
@@ -1239,7 +1239,7 @@ async fn hooks_handler(
                 }
             }
 
-            log::info!("Claude hook: Stop for session {} (tab {:?})", &session_id[..session_id.len().min(8)], tab_id);
+            log::debug!("Claude hook: Stop for session {} (tab {:?})", &session_id[..session_id.len().min(8)], tab_id);
             let _ = srv.app_handle.emit("claude-hook-stop", serde_json::json!({
                 "session_id": session_id,
                 "tab_id": tab_id,
@@ -1262,7 +1262,7 @@ async fn hooks_handler(
                 }
             }
 
-            log::info!("Claude hook: UserPromptSubmit session={} (tab {:?})", &session_id[..session_id.len().min(8)], tab_id);
+            log::debug!("Claude hook: UserPromptSubmit session={} (tab {:?})", &session_id[..session_id.len().min(8)], tab_id);
             let _ = srv.app_handle.emit("claude-hook-user-prompt", serde_json::json!({
                 "session_id": session_id,
                 "tab_id": tab_id,
@@ -1346,7 +1346,7 @@ async fn hooks_handler(
                 .unwrap_or("")
                 .to_string();
 
-            log::info!("Claude hook: PreCompact trigger='{}' session={} (tab {:?})",
+            log::debug!("Claude hook: PreCompact trigger='{}' session={} (tab {:?})",
                 trigger, &session_id[..session_id.len().min(8)], tab_id);
             let _ = srv.app_handle.emit("claude-hook-pre-compact", serde_json::json!({
                 "session_id": session_id,
