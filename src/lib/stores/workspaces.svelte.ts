@@ -412,6 +412,9 @@ function createWorkspacesStore() {
       const ws = workspaces.find(w => w.id === activeWorkspaceId);
       if (!ws) return [];
 
+      // Guard pty-close handlers from deleting tabs while we kill PTYs
+      suspendingWorkspaceIds.add(ws.id);
+
       const activeTabId = ws.panes.find(p => p.id === ws.active_pane_id)?.active_tab_id;
       const tornDown: string[] = [];
 
@@ -450,6 +453,7 @@ function createWorkspacesStore() {
         }
       }
 
+      suspendingWorkspaceIds.delete(ws.id);
       return tornDown;
     },
 

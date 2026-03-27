@@ -92,6 +92,8 @@
           <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>1-9</kbd> <span>Switch to tab</span></div>
           <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>[</kbd> <span>Previous tab</span></div>
           <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>]</kbd> <span>Next tab</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>[</kbd> <span>Navigate back</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>]</kbd> <span>Navigate forward</span></div>
           <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>R</kbd> <span>Toggle auto-resume</span></div>
         </div>
 
