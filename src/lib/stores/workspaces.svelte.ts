@@ -376,6 +376,7 @@ function createWorkspacesStore() {
       workspaces = workspaces.map(w =>
         w.id === workspaceId ? { ...w, suspended: true } : w
       );
+      import('$lib/stores/navHistory.svelte').then(m => m.navHistoryStore.removeWorkspace(workspaceId));
 
       // 4. If this was the active workspace, switch to next non-suspended
       if (activeWorkspaceId === workspaceId) {
@@ -454,6 +455,13 @@ function createWorkspacesStore() {
       }
 
       suspendingWorkspaceIds.delete(ws.id);
+      if (tornDown.length > 0) {
+        import('$lib/stores/navHistory.svelte').then(m => {
+          for (const tabId of tornDown) {
+            m.navHistoryStore.removeTab(tabId);
+          }
+        });
+      }
       return tornDown;
     },
 
@@ -939,6 +947,7 @@ function createWorkspacesStore() {
       // Skip note migration — archived tabs preserve their notes and restore them intact
 
       await commands.archiveTab(workspaceId, paneId, tabId, displayName, scrollback, cwd, sshCommand, remoteCwd);
+      import('$lib/stores/navHistory.svelte').then(m => m.navHistoryStore.removeTab(tabId));
 
       // Build the archived tab object for local state
       const archivedTab: Tab = {
@@ -1026,6 +1035,9 @@ function createWorkspacesStore() {
         }
         return w;
       });
+      import('$lib/stores/navHistory.svelte').then(m =>
+        m.navHistoryStore.push({ workspaceId, paneId: pane.id, tabId })
+      );
     },
 
     async deleteArchivedTab(workspaceId: string, tabId: string) {

@@ -59,7 +59,9 @@
   // File watching state
   let lastKnownMtime = 0;
   let fileConflict = $state(false);
+  let fileDeleted = $state(false);
   let unlistenFileChanged: UnlistenFn | null = null;
+  let unlistenFileDeleted: UnlistenFn | null = null;
   const isLocalFile = !editorFile.is_remote;
 
   // PDF viewer state
@@ -465,6 +467,7 @@
             const newMtime = await getFileMtime(editorFile.file_path);
             if (newMtime <= lastKnownMtime) return;
             lastKnownMtime = newMtime;
+            fileDeleted = false;
             await handleExternalChange();
           } catch {
             // File may have been deleted — ignore
@@ -489,6 +492,7 @@
             const newMtime = await getRemoteFileMtime(editorFile.remote_ssh_command!, editorFile.remote_path!);
             if (newMtime <= lastKnownMtime) return;
             lastKnownMtime = newMtime;
+            fileDeleted = false;
             await handleExternalChange();
           } catch {
             // SSH may have disconnected — ignore
@@ -498,12 +502,22 @@
         logError(`Failed to start remote file watcher: ${e}`);
       }
     }
+
+    // Listen for file deletion (both local and remote)
+    unlistenFileDeleted = await listen(`file-deleted-${tabId}`, () => {
+      fileDeleted = true;
+      logInfo(`File deleted: ${editorFile.remote_path ?? editorFile.file_path}`);
+    });
   }
 
   async function stopWatching() {
     if (unlistenFileChanged) {
       unlistenFileChanged();
       unlistenFileChanged = null;
+    }
+    if (unlistenFileDeleted) {
+      unlistenFileDeleted();
+      unlistenFileDeleted = null;
     }
     if (isLocalFile) {
       try { await unwatchFile(tabId); } catch { /* ignore */ }
@@ -539,6 +553,16 @@
       // Show conflict banner
       fileConflict = true;
     }
+  }
+
+  async function deletedRecreate() {
+    fileDeleted = false;
+    await saveFile();
+  }
+
+  async function deletedCloseTab() {
+    fileDeleted = false;
+    await workspacesStore.deleteTab(workspaceId, paneId, tabId);
   }
 
   function dismissConflict() {
@@ -1090,6 +1114,13 @@
       </div>
     </div>
   {/if}
+  {#if fileDeleted}
+    <div class="deleted-banner">
+      <span class="deleted-text">File has been deleted.</span>
+      <button class="deleted-btn" onclick={deletedRecreate}>Recreate</button>
+      <button class="deleted-btn close" onclick={deletedCloseTab}>Close Tab</button>
+    </div>
+  {/if}
   {#if fileConflict}
     <div class="conflict-banner">
       <span class="conflict-text">File changed on disk.</span>
@@ -1478,6 +1509,52 @@
   }
 
   .conflict-btn.dismiss:hover {
+    background: var(--fg-dim);
+    color: var(--bg-dark);
+  }
+
+  .deleted-banner {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: color-mix(in srgb, var(--red, #f7768e) 15%, var(--bg-dark));
+    border-left: 3px solid var(--red, #f7768e);
+    font-size: 0.923rem;
+    color: var(--red, #f7768e);
+  }
+
+  .deleted-text {
+    flex: 1;
+  }
+
+  .deleted-btn {
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 0.923rem;
+    border: 1px solid var(--red, #f7768e);
+    background: transparent;
+    color: var(--red, #f7768e);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .deleted-btn:hover {
+    background: var(--red, #f7768e);
+    color: var(--bg-dark);
+  }
+
+  .deleted-btn.close {
+    border-color: var(--fg-dim);
+    color: var(--fg-dim);
+  }
+
+  .deleted-btn.close:hover {
     background: var(--fg-dim);
     color: var(--bg-dark);
   }
