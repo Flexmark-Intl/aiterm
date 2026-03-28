@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.8.1
+
+- Add archived tab tools (list/restore) to MCP server
+- Add skill commands to /aiterm (switch, open, windows, archived, restore, prefs, backup)
+- Make notification toasts clickable by passing tab source for navigation
+- Fix MCP protocol macro recursion limit by splitting tool definitions into batches
+
 ## v1.8.0
 
 - Add clipboard image paste support for Claude Code sessions
