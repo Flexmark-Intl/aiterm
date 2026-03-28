@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.8.0
+
+- Add clipboard image paste support for Claude Code sessions
+- Add file deletion detection for editor tabs (auto-close deleted files, clean nav history)
+- Add resume gate for suspended tabs and fix cross-window preference sync
+- Add install button to What's New modal and update check toasts
+- Always emit claudeSessionId on initSession regardless of auto-resume setting
+- Reduce MCP server log noise by downgrading chatty messages to debug
+
 ## v1.7.16
 
 - Fix tab deletion race during workspace suspension (guard teardown with suspendingWorkspaceIds)
