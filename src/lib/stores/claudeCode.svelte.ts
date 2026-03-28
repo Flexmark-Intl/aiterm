@@ -161,7 +161,13 @@ function createClaudeCodeStore() {
           result = handleFindNotes();
           break;
         case 'sendNotification':
-          result = await handleSendNotification(args as { title: string; body?: string; type?: string });
+          result = await handleSendNotification(args as { tabId?: string; title: string; body?: string; type?: string });
+          break;
+        case 'listArchivedTabs':
+          result = handleListArchivedTabs(args as { workspaceId?: string });
+          break;
+        case 'restoreArchivedTab':
+          result = await handleRestoreArchivedTab(args as { workspaceId?: string; tabId: string });
           break;
         // getPreferences, setPreference, createBackup, listWindows handled directly on backend
         default:
@@ -511,6 +517,7 @@ function createClaudeCodeStore() {
         isActive: ws.id === workspacesStore.activeWorkspaceId,
         suspended: ws.suspended ?? false,
         noteCount: ws.workspace_notes.length,
+        archivedTabCount: ws.archived_tabs?.length ?? 0,
         panes: ws.panes.map(pane => ({
           id: pane.id,
           name: pane.name,
@@ -529,6 +536,41 @@ function createClaudeCodeStore() {
         })),
       })),
     };
+  }
+
+  function handleListArchivedTabs(args: { workspaceId?: string }) {
+    const ws = args.workspaceId
+      ? workspacesStore.workspaces.find(w => w.id === args.workspaceId)
+      : workspacesStore.activeWorkspace;
+    if (!ws) return { error: args.workspaceId ? `Workspace not found: ${args.workspaceId}` : 'No active workspace' };
+
+    return {
+      workspaceId: ws.id,
+      workspaceName: ws.name,
+      archivedTabs: (ws.archived_tabs ?? []).map(tab => ({
+        id: tab.id,
+        displayName: tab.archived_name ?? tab.name,
+        archivedAt: tab.archived_at ?? null,
+        restoreCwd: tab.restore_cwd ?? null,
+        restoreSsh: tab.restore_ssh_command ?? null,
+        hasNotes: !!tab.notes,
+        hasAutoResume: tab.auto_resume_enabled,
+        autoResumeCommand: tab.auto_resume_command ?? null,
+      })),
+    };
+  }
+
+  async function handleRestoreArchivedTab(args: { workspaceId?: string; tabId: string }) {
+    const ws = args.workspaceId
+      ? workspacesStore.workspaces.find(w => w.id === args.workspaceId)
+      : workspacesStore.activeWorkspace;
+    if (!ws) return { error: args.workspaceId ? `Workspace not found: ${args.workspaceId}` : 'No active workspace' };
+
+    const archived = ws.archived_tabs?.find(t => t.id === args.tabId);
+    if (!archived) return { error: `Archived tab not found: ${args.tabId}` };
+
+    await workspacesStore.restoreArchivedTab(ws.id, args.tabId);
+    return { success: true, tabId: args.tabId, displayName: archived.archived_name ?? archived.name };
   }
 
   async function handleSwitchTab(args: { tabId: string }) {
@@ -1070,9 +1112,10 @@ function createClaudeCodeStore() {
     return { tabNotes, workspaceNotes };
   }
 
-  async function handleSendNotification(args: { title: string; body?: string; type?: string }) {
+  async function handleSendNotification(args: { tabId?: string; title: string; body?: string; type?: string }) {
     const type = (['success', 'error', 'info'].includes(args.type ?? '') ? args.type : 'info') as 'success' | 'error' | 'info';
-    await dispatchNotification(args.title, args.body ?? '', type);
+    const source = args.tabId ? { tabId: args.tabId } : undefined;
+    await dispatchNotification(args.title, args.body ?? '', type, source);
     return { sent: true };
   }
 

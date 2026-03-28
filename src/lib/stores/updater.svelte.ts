@@ -75,7 +75,6 @@ function createUpdaterStore() {
   }
 
   async function fetchReleaseNotes(): Promise<ChangelogEntry[]> {
-    if (releaseNotes.length > 0) return releaseNotes;
     loadingNotes = true;
     try {
       const currentVersion = await getVersion();

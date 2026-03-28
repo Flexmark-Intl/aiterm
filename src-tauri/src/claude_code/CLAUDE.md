@@ -10,7 +10,7 @@ Claude Code CLI ←→ WebSocket/SSE ←→ axum server (Rust) ←→ Tauri even
 
 **Backend** (`src-tauri/src/claude_code/`):
 - `server.rs` — axum router with WebSocket (`/`) and SSE (`/sse` + `/message`) endpoints. Random port (10000–65535), 32-char auth token.
-- `protocol.rs` — JSON-RPC request/response types, `tool_list_response()` (11 tools), `initialize_response()`
+- `protocol.rs` — JSON-RPC request/response types, `tool_list_response()` (42 tools), `initialize_response()`
 - `lockfile.rs` — writes `~/.claude/ide/{port}.lock` for discovery, registers `mcpServers.aiterm` (or `aiterm-dev`) in `~/.claude.json`, registers hooks in `~/.claude/settings.json`
 
 **Frontend** (`src/lib/stores/claudeCode.svelte.ts`):
@@ -27,15 +27,17 @@ Claude Code CLI ←→ WebSocket/SSE ←→ axum server (Rust) ←→ Tauri even
 | initSession | **REQUIRED first call.** Registers tab ID + session ID → enables auto-inject of tabId on all subsequent calls |
 | getOpenEditors | List open editor tabs (path, language, dirty state) |
 | getWorkspaceFolders | Workspace root paths |
-| getDiagnostics | Language diagnostics for a file |
+| getDiagnostics | App version, tab/PTY counts, WebGL status, FPS, memory/CPU, performance metrics |
 | checkDocumentDirty | Check if file has unsaved changes |
 | saveDocument | Save file to disk |
 | getCurrentSelection | Active editor selection + cursor |
 | getLatestSelection | Most recent selection in any tab |
 | openFile | Open file in editor tab (with optional line/text selection) |
 | openDiff | Show side-by-side diff for review (blocking) |
+| showDiff | Open read-only diff tab comparing file to a git ref (default HEAD) |
 | closeAllDiffTabs | Close all pending diff tabs |
-| listWorkspaces | List all workspaces with panes, tabs (IDs, display names, types, active state, notes, Claude state) |
+| listWindows | List all aiTerm windows with IDs, labels, and workspace summaries |
+| listWorkspaces | List all workspaces with panes, tabs, archived tab count (IDs, display names, types, active state, notes, Claude state) |
 | switchTab | Navigate to a tab by ID (auto-resolves workspace/pane) |
 | getTabNotes | Read notes for a tab (optional tabId, defaults to active) |
 | setTabNotes | Write/clear notes for a tab |
@@ -54,7 +56,14 @@ Claude Code CLI ←→ WebSocket/SSE ←→ axum server (Rust) ←→ Tauri even
 | setAutoResume | Enable/disable auto-resume with optional command/cwd/ssh overrides |
 | getAutoResume | Get current auto-resume configuration for a tab |
 | findNotes | Search all tabs and workspaces for notes, returns previews |
+| sendNotification | Send in-app toast notification (title, body, type) |
+| readLogs | Read recent aiTerm log entries (filterable by level, search string) |
+| getPreferences | Return current preferences with metadata (filterable by query) |
+| setPreference | Update a single preference by key |
+| createBackup | Create gzip-compressed backup of entire aiTerm state |
 | getClaudeSessions | All active Claude sessions across tabs (state, tool, model, cwd) — multi-agent coordination |
+| listArchivedTabs | List archived (suspended) tabs with names, dates, restore context |
+| restoreArchivedTab | Restore an archived tab back into the active workspace |
 
 ## Claude Code Hooks Integration
 

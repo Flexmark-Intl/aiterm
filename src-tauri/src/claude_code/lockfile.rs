@@ -557,12 +557,20 @@ Execute the aiTerm MCP tool for the requested operation. Use whichever aiterm MC
 | `notes edit <old> <new>` | editTabNotes | `{ "old_string": "<old>", "new_string": "<new>" }` |
 | `tabs` | listWorkspaces | `{}` |
 | `tab` | getActiveTab | `{}` |
+| `switch <tabId>` | switchTab | `{ "tabId": "<tabId>" }` |
+| `open <filePath>` | openFile | `{ "filePath": "<filePath>" }` |
+| `windows` | listWindows | `{}` |
 | `diag` | getDiagnostics | `{}` |
 | `vars` | getTriggerVariables | `{}` |
 | `var <name> <value>` | setTriggerVariable | `{ "name": "<name>", "value": "<value>" }` |
 | `resume on` | setAutoResume | `{ "enabled": true }` |
 | `resume off` | setAutoResume | `{ "enabled": false }` |
 | `resume` | getAutoResume | `{}` |
+| `archived` | listArchivedTabs | `{}` |
+| `restore <tabId>` | restoreArchivedTab | `{ "tabId": "<tabId>" }` |
+| `prefs` | getPreferences | `{}` |
+| `prefs <query>` | getPreferences | `{ "query": "<query>" }` |
+| `backup` | createBackup | `{}` |
 | `notify <title> <body>` | sendNotification | `{ "title": "<title>", "body": "<body>" }` |
 | `logs` | readLogs | `{}` |
 | `logs <search>` | readLogs | `{ "search": "<search>" }` |
