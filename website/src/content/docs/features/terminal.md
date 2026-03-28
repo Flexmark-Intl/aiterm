@@ -15,6 +15,7 @@ aiTerm's terminal is powered by alacritty_terminal for Rust-native VTE parsing a
 - **Multi-window** — open additional windows, duplicate windows with full tab context
 - **Per-tab command history** — each tab maintains its own shell history, cloned tabs inherit it
 - **File drop** — drag files onto a terminal to paste paths; over SSH, files are SCP'd to the remote CWD automatically
+- **Image paste** — paste clipboard images (Cmd+V) into Claude Code sessions as temp file paths
 
 ## Shell Integration
 

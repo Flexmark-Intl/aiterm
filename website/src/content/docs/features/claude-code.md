@@ -91,9 +91,11 @@ aiTerm integrates with Claude Code's hook system for real-time session awareness
 - **Multi-agent awareness** — `getClaudeSessions` tool lets any Claude session discover all other active sessions across tabs for coordination
 - **Compaction notifications** — alerts during and after context compaction
 
-## File Drop
+## File Drop & Image Paste
 
 Drag files onto a terminal running Claude Code over SSH — aiTerm SCP uploads them to a temp directory on the remote and pastes the paths so Claude can read them as file references. On local terminals, file paths are pasted directly.
+
+You can also paste images from your clipboard (Cmd+V) into a Claude Code session. aiTerm saves the image to a temp file and pastes the path, so Claude can view it directly — useful for sharing screenshots, diagrams, or error messages without leaving the terminal.
 
 ## Dev/Production Isolation
 
