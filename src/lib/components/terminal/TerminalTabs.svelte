@@ -109,17 +109,25 @@
   const displayTabs = $derived(groupedTabs.tabs);
   const activeGroupCount = $derived(groupedTabs.activeCount);
 
-  // When grouping turns on, auto-switch away from a suspended tab to the first active one
+  // When grouping first turns on, auto-switch away from a suspended tab to the first active one.
+  // Only fires on the groupActiveTabs toggle, not on every active tab change.
+  let prevGrouping = preferencesStore.groupActiveTabs;
   $effect(() => {
-    if (!preferencesStore.groupActiveTabs) return;
+    const grouping = preferencesStore.groupActiveTabs;
+    const wasOff = !prevGrouping;
+    prevGrouping = grouping;
+    if (!grouping || !wasOff) return;
     const activeTabId = pane.active_tab_id;
     if (!activeTabId) return;
     const activeTab = pane.tabs.find(t => t.id === activeTabId);
     if (!activeTab) return;
     const isTerminal = activeTab.tab_type === 'terminal' || !activeTab.tab_type;
     if (isTerminal && !terminalsStore.get(activeTabId)) {
-      // Current tab is suspended — switch to first active tab
-      const firstActive = groupedTabs.tabs[0];
+      // Current tab is suspended — switch to first active (non-suspended) tab if one exists
+      const firstActive = groupedTabs.tabs.find(t => {
+        const isTerm = t.tab_type === 'terminal' || !t.tab_type;
+        return !isTerm || terminalsStore.get(t.id);
+      });
       if (firstActive && firstActive.id !== activeTabId) {
         workspacesStore.setActiveTab(workspaceId, pane.id, firstActive.id);
       }

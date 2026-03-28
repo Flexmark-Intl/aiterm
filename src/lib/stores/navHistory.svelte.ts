@@ -20,7 +20,12 @@ function createNavHistoryStore() {
     if (!ws) return false;
     const pane = ws.panes.find(p => p.id === entry.paneId);
     if (!pane) return false;
-    return pane.tabs.some(t => t.id === entry.tabId);
+    const tab = pane.tabs.find(t => t.id === entry.tabId);
+    if (!tab) return false;
+    // Skip terminal tabs that haven't been activated this session (no live PTY)
+    const isTerminal = tab.tab_type === 'terminal' || !tab.tab_type;
+    if (isTerminal && !terminalsStore.get(entry.tabId)) return false;
+    return true;
   }
 
   async function navigateToEntry(entry: NavEntry) {

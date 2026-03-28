@@ -341,11 +341,15 @@
     } else {
       await workspacesStore.setActiveWorkspace(workspaceId);
     }
-    // Push the target workspace's active tab
+    // Push the target tab only if it has a live terminal (was activated this session)
     const targetWs = workspacesStore.workspaces.find(w => w.id === workspaceId);
-    const targetPane = targetWs?.panes.find(p => p.id === targetWs.active_pane_id);
+    const targetPane = targetWs?.panes.find(p => p.id === targetWs?.active_pane_id);
     if (targetWs && targetPane?.active_tab_id) {
-      navHistoryStore.push({ workspaceId: targetWs.id, paneId: targetPane.id, tabId: targetPane.active_tab_id });
+      const tab = targetPane.tabs.find(t => t.id === targetPane.active_tab_id);
+      const isTerminal = tab && (tab.tab_type === 'terminal' || !tab.tab_type);
+      if (!isTerminal || terminalsStore.get(targetPane.active_tab_id)) {
+        navHistoryStore.push({ workspaceId: targetWs.id, paneId: targetPane.id, tabId: targetPane.active_tab_id });
+      }
     }
   }
 </script>
