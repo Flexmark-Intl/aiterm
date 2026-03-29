@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.8.2
+
+- Fix suspended terminal tabs auto-activating when previous tab is closed (resume gate now covers all activation paths)
+- Fix nav history (Cmd+[/]) navigating to suspended tabs without live PTY
+- Fix group-active-tabs effect causing surprise tab jumps on every active tab change
+
 ## v1.8.1
 
 - Add archived tab tools (list/restore) to MCP server
