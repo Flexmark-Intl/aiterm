@@ -60,16 +60,18 @@
           if (!tabId) continue;
           const tab = pane.tabs.find(t => t.id === tabId);
           const isTerminal = tab && (tab.tab_type === 'terminal' || !tab.tab_type);
-          const isSuspended = isTerminal && !terminalsStore.get(tabId) && !activatedTabIds.has(tabId);
+          const isSuspended = isTerminal && !terminalsStore.get(tabId) && !activatedTabIds.has(tabId) && !!tab.scrollback;
 
-          if (initialActivationDone && workspaceSwitched && isSuspended) {
-            // Workspace switch landed on a suspended tab — show resume prompt
+          if (initialActivationDone && isSuspended) {
+            // Active tab is a suspended terminal with saved scrollback — show resume prompt.
+            // This covers workspace switches landing on a suspended tab AND tab closes
+            // where the next tab in line is suspended. New tabs (no scrollback) skip this.
             pendingResumePanes.add(pane.id);
-          } else if (pendingResumePanes.has(pane.id)) {
-            // User clicked a tab within a pending-resume pane — activate it
+          } else if (pendingResumePanes.has(pane.id) && !isSuspended) {
+            // User clicked a non-suspended tab within a pending-resume pane — activate it
             activatedTabIds.add(tabId);
             pendingResumePanes.delete(pane.id);
-          } else {
+          } else if (!pendingResumePanes.has(pane.id)) {
             activatedTabIds.add(tabId);
           }
         }
