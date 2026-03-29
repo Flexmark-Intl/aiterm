@@ -41,7 +41,7 @@
     `font-family: '${preferencesStore.fontFamily}', monospace; font-size: ${preferencesStore.fontSize}px; white-space: ${preferencesStore.notesWordWrap ? 'pre-wrap' : 'pre'}; overflow-x: ${preferencesStore.notesWordWrap ? 'hidden' : 'auto'};`
   );
   const renderStyle = $derived(
-    `font-family: '${preferencesStore.notesFontFamily}', monospace; font-size: ${preferencesStore.notesFontSize}px; word-wrap: ${preferencesStore.notesWordWrap ? 'break-word' : 'normal'}; overflow-x: ${preferencesStore.notesWordWrap ? 'hidden' : 'auto'};`
+    `font-family: '${preferencesStore.notesFontFamily}', monospace; font-size: ${preferencesStore.notesFontSize}px; word-wrap: ${preferencesStore.notesWordWrap ? 'break-word' : 'normal'};`
   );
 
   // Configure marked for safe rendering with interactive checkboxes
@@ -564,6 +564,7 @@
   .notes-render {
     flex: 1;
     overflow-y: auto;
+    overflow-x: auto;
     padding: 12px;
     background: var(--bg-dark);
     color: var(--fg);
@@ -684,9 +685,9 @@
 
   .notes-render :global(table) {
     border-collapse: collapse;
-    width: 100%;
     margin: 0 0 0.6em;
     font-size: 0.9em;
+    white-space: nowrap;
   }
 
   .notes-render :global(th),
