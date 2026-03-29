@@ -475,6 +475,10 @@
       const { cmd, exit_code } = event.payload;
       if (cmd === 'A') {
         activityStore.setShellState(tabId, 'prompt');
+        // Shell prompt means Claude is no longer running — clear stuck busy indicator.
+        if (claudeStateStore.getState(tabId)) {
+          claudeStateStore.clearSession(tabId);
+        }
         // Local shell prompt means SSH session ended — tear down bridge.
         // But remote shells also emit OSC 133 A, so verify SSH is actually gone.
         if (hasBridge(tabId)) {
@@ -891,18 +895,13 @@
                 const tempPaths = basenames.map(n => `/tmp/aiterm-uploads/${n}`).join(' ');
                 const bytes = Array.from(new TextEncoder().encode(tempPaths));
                 writeTerminal(ptyId, bytes).catch(e => logError(String(e)));
-              } else if (count === 1) {
-                // Single file — paste basename (file is in CWD)
-                const escaped = escapePathForTerminal(basenames[0]);
-                const bytes = Array.from(new TextEncoder().encode(escaped));
-                writeTerminal(ptyId, bytes).catch(e => logError(String(e)));
-              }
-              if (!isClaudeSession && count > 1) {
-                // Multi-file non-Claude: clickable toast to issue `l` on uploaded files
+                toastStore.addToast('SCP Upload', `${count} file${count > 1 ? 's' : ''} uploaded`, 'success');
+              } else {
+                // Non-Claude: clickable toast to list uploaded files (no echo to prompt)
                 const lCmd = `l ${basenames.map(escapePathForTerminal).join(' ')}\n`;
                 toastStore.addToast(
                   'SCP Upload',
-                  `${count} files uploaded — click to list`,
+                  `${count} file${count > 1 ? 's' : ''} uploaded — click to list`,
                   'success',
                   undefined,
                   undefined,
@@ -911,8 +910,6 @@
                     writeTerminal(ptyId, bytes).catch(e => logError(String(e)));
                   },
                 );
-              } else {
-                toastStore.addToast('SCP Upload', `${count} file${count > 1 ? 's' : ''} uploaded`, 'success');
               }
             }).catch(e => {
               logError(`drag-drop SCP upload failed: ${e}`);
