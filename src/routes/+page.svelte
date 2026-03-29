@@ -60,7 +60,7 @@
           if (!tabId) continue;
           const tab = pane.tabs.find(t => t.id === tabId);
           const isTerminal = tab && (tab.tab_type === 'terminal' || !tab.tab_type);
-          const isSuspended = isTerminal && !terminalsStore.get(tabId) && !activatedTabIds.has(tabId) && !!tab.scrollback;
+          const isSuspended = isTerminal && !terminalsStore.get(tabId) && !activatedTabIds.has(tabId) && !!tab.scrollback && !terminalsStore.hasSplitContext(tabId);
 
           if (initialActivationDone && isSuspended) {
             // Active tab is a suspended terminal with saved scrollback — show resume prompt.

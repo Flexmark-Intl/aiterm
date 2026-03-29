@@ -91,6 +91,10 @@ function createTerminalsStore() {
       return ctx;
     },
 
+    hasSplitContext(tabId: string): boolean {
+      return splitContexts.has(tabId);
+    },
+
     register(
       tabId: string,
       terminal: Terminal,
