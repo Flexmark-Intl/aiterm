@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.8.3
+
+- Fix resume gate excluding duplicate/reload/split tabs via splitContext check
+
 ## v1.8.2
 
 - Fix suspended terminal tabs auto-activating when previous tab is closed (resume gate now covers all activation paths)
