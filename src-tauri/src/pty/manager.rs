@@ -600,6 +600,19 @@ fn is_ssh_command(cmd: &str) -> bool {
     matches!(basename, "ssh" | "mosh" | "autossh")
 }
 
+/// Check if a command is a non-interactive program that spawns ssh internally
+/// (scp, rsync, git, sftp, etc.). SSH children of these should not be treated
+/// as interactive SSH sessions for MCP bridge purposes.
+#[cfg(unix)]
+fn is_ssh_wrapper(cmd: &str) -> bool {
+    let base = cmd.split_whitespace().next().unwrap_or("");
+    let basename = std::path::Path::new(base)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(base);
+    matches!(basename, "scp" | "rsync" | "git" | "sftp" | "git-remote-ssh")
+}
+
 /// Get the foreground process command via ps (Unix)
 #[cfg(unix)]
 fn get_foreground_command(shell_pid: u32) -> Option<String> {
@@ -644,6 +657,7 @@ fn get_foreground_command(shell_pid: u32) -> Option<String> {
 
     let mut current_pid = shell_pid;
     let mut ssh_cmd: Option<String> = None;
+    let mut parent_cmd: Option<String> = None;
 
     loop {
         if let Some(kids) = children.get(&current_pid) {
@@ -657,8 +671,13 @@ fn get_foreground_command(shell_pid: u32) -> Option<String> {
                 .or_else(|| kids.first());
             if let Some((kid_pid, kid_cmd)) = chosen {
                 if is_ssh_command(kid_cmd) {
-                    ssh_cmd = Some(kid_cmd.clone());
+                    // Don't count ssh children of non-interactive wrappers (scp, rsync, git, sftp)
+                    let is_wrapper_child = parent_cmd.as_ref().map_or(false, |p| is_ssh_wrapper(p));
+                    if !is_wrapper_child {
+                        ssh_cmd = Some(kid_cmd.clone());
+                    }
                 }
+                parent_cmd = Some(kid_cmd.clone());
                 current_pid = *kid_pid;
             } else {
                 break;
@@ -680,6 +699,17 @@ fn is_ssh_command_win(cmd: &[std::ffi::OsString]) -> bool {
         .unwrap_or("")
         .to_lowercase();
     matches!(basename.as_str(), "ssh" | "mosh" | "autossh")
+}
+
+#[cfg(windows)]
+fn is_ssh_wrapper_win(cmd: &[std::ffi::OsString]) -> bool {
+    let exe = cmd.first().map(|s| s.to_string_lossy()).unwrap_or_default();
+    let basename = std::path::Path::new(exe.as_ref())
+        .file_stem()
+        .and_then(|n| n.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    matches!(basename.as_str(), "scp" | "rsync" | "git" | "sftp" | "git-remote-ssh")
 }
 
 #[cfg(windows)]
@@ -705,6 +735,7 @@ fn get_foreground_command(shell_pid: u32) -> Option<String> {
     // Walk tree from shell_pid, preferring SSH children
     let mut current_pid = shell_pid;
     let mut ssh_cmd: Option<String> = None;
+    let mut parent_cmd: Option<Vec<std::ffi::OsString>> = None;
 
     loop {
         if let Some(kids) = children.get(&current_pid) {
@@ -717,12 +748,17 @@ fn get_foreground_command(shell_pid: u32) -> Option<String> {
                 .or_else(|| kids.first());
             if let Some((kid_pid, kid_cmd)) = chosen {
                 if is_ssh_command_win(kid_cmd) {
-                    let cmd_str: Vec<String> = kid_cmd
-                        .iter()
-                        .map(|s| s.to_string_lossy().into_owned())
-                        .collect();
-                    ssh_cmd = Some(cmd_str.join(" "));
+                    // Don't count ssh children of non-interactive wrappers (scp, rsync, git, sftp)
+                    let is_wrapper_child = parent_cmd.as_ref().map_or(false, |p| is_ssh_wrapper_win(p));
+                    if !is_wrapper_child {
+                        let cmd_str: Vec<String> = kid_cmd
+                            .iter()
+                            .map(|s| s.to_string_lossy().into_owned())
+                            .collect();
+                        ssh_cmd = Some(cmd_str.join(" "));
+                    }
                 }
+                parent_cmd = Some(kid_cmd.clone());
                 current_pid = *kid_pid;
             } else {
                 break;
