@@ -24,7 +24,7 @@
   import { isModKey, isMac } from '$lib/utils/platform';
   import { open as dialogOpen, save as dialogSave } from '@tauri-apps/plugin-dialog';
   import { openFileFromTerminal } from '$lib/utils/openFile';
-  import { detectLanguageFromPath } from '$lib/utils/languageDetect';
+  import { detectLanguageFromPath, isImageFile, isPdfFile } from '$lib/utils/languageDetect';
   import { readFile } from '$lib/tauri/commands';
   import type { EditorFileInfo } from '$lib/tauri/types';
   // Side-effect import: subscribes to activity store for OS notifications
@@ -493,12 +493,15 @@
             const fileName = filePath.split('/').pop() ?? filePath;
             const language = detectLanguageFromPath(filePath);
             // Validate the file can be read before creating the tab
-            try {
-              await readFile(filePath);
-            } catch (err) {
-              const { dispatch } = await import('$lib/stores/notificationDispatch');
-              dispatch('Cannot open file', String(err), 'error');
-              return;
+            // Skip for images and PDFs — they use readFileBase64 in EditorPane
+            if (!isImageFile(filePath) && !isPdfFile(filePath)) {
+              try {
+                await readFile(filePath);
+              } catch (err) {
+                const { dispatch } = await import('$lib/stores/notificationDispatch');
+                dispatch('Cannot open file', String(err), 'error');
+                return;
+              }
             }
             const fileInfo: EditorFileInfo = {
               file_path: filePath,
