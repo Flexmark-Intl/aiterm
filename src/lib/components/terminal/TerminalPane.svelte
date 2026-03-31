@@ -888,13 +888,16 @@
             logInfo(`drag-drop SSH: uploading ${count} file(s) to ${remoteDir} via ${sshCommand} (claude=${isClaudeSession})`);
             logInfo(`drag-drop SSH: paths=${JSON.stringify(paths)}`);
             toastStore.addToast('SCP Upload', `Uploading ${count} file${count > 1 ? 's' : ''}…`, 'info');
-            scpUploadFiles(sshCommand, paths, remoteDir).then(() => {
+            scpUploadFiles(sshCommand, paths, remoteDir).then(async () => {
               const basenames = paths.map(p => p.split('/').pop() ?? p);
               if (isClaudeSession) {
-                // Paste full temp paths for Claude to read as file references
-                const tempPaths = basenames.map(n => `/tmp/aiterm-uploads/${n}`).join(' ');
-                const bytes = Array.from(new TextEncoder().encode(tempPaths));
-                writeTerminal(ptyId, bytes).catch(e => logError(String(e)));
+                // Write each path separately so Claude Code detects each as a file reference
+                for (let i = 0; i < basenames.length; i++) {
+                  const path = `/tmp/aiterm-uploads/${basenames[i]}`;
+                  const bytes = Array.from(new TextEncoder().encode(path + ' '));
+                  if (i > 0) await new Promise(r => setTimeout(r, 200));
+                  await writeTerminal(ptyId, bytes);
+                }
                 toastStore.addToast('SCP Upload', `${count} file${count > 1 ? 's' : ''} uploaded`, 'success');
               } else {
                 // Non-Claude: clickable toast to list uploaded files (no echo to prompt)
@@ -1143,7 +1146,7 @@
                   if (!text) continue;
                   for (const re of patterns) {
                     const match = text.match(re);
-                    if (match?.[1]) { remoteCwd = match[1]; break; }
+                    if (match?.[1]) { remoteCwd = match[1].trim(); break; }
                   }
                   if (remoteCwd) break;
                 }
@@ -1208,7 +1211,7 @@
           if (!text) continue;
           for (const re of patterns) {
             const match = text.match(re);
-            if (match?.[1]) { remoteCwd = match[1]; break; }
+            if (match?.[1]) { remoteCwd = match[1].trim(); break; }
           }
           if (remoteCwd) break;
         }

@@ -143,7 +143,7 @@ function createTerminalsStore() {
         const patterns = getCompiledTitlePatterns(preferencesStore.promptPatterns);
         for (const re of patterns) {
           const m = patch.title.match(re);
-          if (m?.[1]) { patch.promptCwd = m[1]; break; }
+          if (m?.[1]) { patch.promptCwd = m[1].trim(); break; }
         }
       }
       Object.assign(instance.osc, patch);

@@ -74,7 +74,7 @@ export function compilePromptPattern(pattern: string, opts?: { optionalPrompt?: 
 export function extractDirFromTitle(title: string, patterns: RegExp[]): string {
   for (const re of patterns) {
     const m = title.match(re);
-    if (m?.[1]) return m[1];
+    if (m?.[1]) return m[1].trim();
   }
   return title;
 }
