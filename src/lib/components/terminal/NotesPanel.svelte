@@ -172,6 +172,7 @@
   let dragging = $state(false);
   let dragStartX = 0;
   let dragStartWidth = 0;
+  let panelEl = $state<HTMLElement | null>(null);
 
   function handleResizePointerDown(e: PointerEvent) {
     e.preventDefault();
@@ -184,7 +185,9 @@
   function handleResizePointerMove(e: PointerEvent) {
     if (!dragging) return;
     const delta = dragStartX - e.clientX;
-    const newWidth = Math.max(200, Math.min(600, dragStartWidth + delta));
+    const paneWidth = panelEl?.parentElement?.clientWidth ?? window.innerWidth;
+    const maxWidth = Math.floor(paneWidth * 0.9);
+    const newWidth = Math.max(200, Math.min(maxWidth, dragStartWidth + delta));
     preferencesStore.setNotesWidth(newWidth);
   }
 
@@ -323,7 +326,7 @@
 
 </script>
 
-<div class="notes-panel" style:width="{preferencesStore.notesWidth}px" style:min-width="{preferencesStore.notesWidth}px">
+<div class="notes-panel" bind:this={panelEl} style:width="{preferencesStore.notesWidth}px" style:min-width="{preferencesStore.notesWidth}px">
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="resize-handle"

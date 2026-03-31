@@ -142,6 +142,12 @@ function createClaudeStateStore() {
       return false;
     },
 
+    /** Clear Claude session for a tab (e.g. when shell prompt is detected). */
+    clearSession(tabId: string) {
+      removeSession(tabId);
+      setVariable(tabId, 'claudeAction', '');
+    },
+
     /** Check if any tab in the list has an active Claude session. */
     hasActive(tabIds: string[]): boolean {
       for (const id of tabIds) {

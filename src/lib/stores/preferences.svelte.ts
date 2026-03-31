@@ -314,7 +314,7 @@ function createPreferencesStore() {
     },
 
     async setNotesWidth(value: number) {
-      notesWidth = Math.max(200, Math.min(600, value));
+      notesWidth = Math.max(200, value);
       await this.save();
     },
 
