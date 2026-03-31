@@ -6,6 +6,7 @@ import { preferencesStore } from '$lib/stores/preferences.svelte';
 import { activityStore } from '$lib/stores/activity.svelte';
 import { getCompiledPatterns } from '$lib/utils/promptPattern';
 import { error as logError } from '@tauri-apps/plugin-log';
+import { pendingResumePanes } from '$lib/stores/resumeGate.svelte';
 import { getVariables } from '$lib/stores/triggers.svelte';
 import { CLAUDE_RESUME_COMMAND } from '$lib/triggers/defaults';
 
@@ -900,6 +901,14 @@ function createWorkspacesStore() {
                 const newActiveId = p.active_tab_id === tabId
                   ? pickNextActiveTab(newTabs, oldIndex)
                   : p.active_tab_id;
+                // If the next active tab is a suspended terminal, gate it behind resume prompt
+                if (newActiveId && newActiveId !== p.active_tab_id) {
+                  const nextTab = newTabs.find(t => t.id === newActiveId);
+                  const isNextTerminal = nextTab && (nextTab.tab_type === 'terminal' || !nextTab.tab_type);
+                  if (isNextTerminal && !terminalsStore.get(newActiveId)) {
+                    pendingResumePanes.add(p.id);
+                  }
+                }
                 return {
                   ...p,
                   tabs: newTabs,

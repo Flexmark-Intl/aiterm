@@ -60,18 +60,18 @@
           if (!tabId) continue;
           const tab = pane.tabs.find(t => t.id === tabId);
           const isTerminal = tab && (tab.tab_type === 'terminal' || !tab.tab_type);
-          const isSuspended = isTerminal && !terminalsStore.get(tabId) && !activatedTabIds.has(tabId) && !!tab.scrollback && !terminalsStore.hasSplitContext(tabId);
+          const isSuspended = isTerminal && !terminalsStore.get(tabId) && !activatedTabIds.has(tabId);
 
-          if (initialActivationDone && isSuspended) {
-            // Active tab is a suspended terminal with saved scrollback — show resume prompt.
-            // This covers workspace switches landing on a suspended tab AND tab closes
-            // where the next tab in line is suspended. New tabs (no scrollback) skip this.
+          if (initialActivationDone && workspaceSwitched && isSuspended) {
+            // Workspace switch landed on a suspended tab — show resume prompt
             pendingResumePanes.add(pane.id);
-          } else if (pendingResumePanes.has(pane.id) && !isSuspended) {
+          } else if (pendingResumePanes.has(pane.id) && isSuspended) {
+            // Pane is pending resume and new active tab is also suspended — keep waiting
+          } else if (pendingResumePanes.has(pane.id)) {
             // User clicked a non-suspended tab within a pending-resume pane — activate it
             activatedTabIds.add(tabId);
             pendingResumePanes.delete(pane.id);
-          } else if (!pendingResumePanes.has(pane.id)) {
+          } else {
             activatedTabIds.add(tabId);
           }
         }
@@ -84,6 +84,8 @@
         const w = allWorkspaces.find(x => x.id === wsId);
         if (w?.suspended) {
           activatedWorkspaceIds.delete(wsId);
+          // Reset lastActiveWorkspaceId so resuming this workspace triggers workspaceSwitched
+          if (wsId === lastActiveWorkspaceId) lastActiveWorkspaceId = null;
           for (const pane of w.panes) {
             for (const tab of pane.tabs) {
               activatedTabIds.delete(tab.id);
