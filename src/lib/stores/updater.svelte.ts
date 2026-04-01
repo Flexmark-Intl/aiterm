@@ -101,6 +101,25 @@ function createUpdaterStore() {
     }
   }
 
+  /** Re-check for updates and return the newer update if one exists beyond currentUpdate */
+  async function recheckForNewer(): Promise<Update | null> {
+    if (!currentUpdate) return null;
+    try {
+      const freshUpdate = await check();
+      if (freshUpdate && isNewerVersion(freshUpdate.version, currentUpdate.version)) {
+        return freshUpdate;
+      }
+    } catch (e) {
+      logError(`Re-check failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    return null;
+  }
+
+  /** Switch currentUpdate to a different update object (e.g. a newer one found during re-check) */
+  function switchToUpdate(update: Update) {
+    currentUpdate = update;
+  }
+
   async function downloadAndInstall() {
     if (!currentUpdate || downloading) return;
     downloading = true;
@@ -137,6 +156,8 @@ function createUpdaterStore() {
     /** True when a toast click requested showing the What's New modal */
     get showWhatsNewRequested() { return showWhatsNewRequested; },
     checkForUpdates,
+    recheckForNewer,
+    switchToUpdate,
     downloadAndInstall,
     fetchReleaseNotes,
     dismiss,

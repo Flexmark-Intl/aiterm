@@ -16,9 +16,17 @@
     installLabel?: string;
     /** Disable the install button (e.g. while downloading) */
     installDisabled?: boolean;
+    /** When set, shows a "newer version available" choice prompt instead of the normal install button */
+    newerVersionPrompt?: { version: string; originalVersion: string };
+    /** Called when user chooses to install the latest (newer) version */
+    oninstallLatest?: () => void;
+    /** Called when user chooses to install the originally found version */
+    oninstallOriginal?: () => void;
+    /** Called when user wants to review the latest version's notes */
+    onreviewLatest?: () => void;
   }
 
-  let { open, onclose, version, entries, title, oninstall, installLabel, installDisabled }: Props = $props();
+  let { open, onclose, version, entries, title, oninstall, installLabel, installDisabled, newerVersionPrompt, oninstallLatest, oninstallOriginal, onreviewLatest }: Props = $props();
 
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
@@ -87,7 +95,17 @@
         {/each}
       </div>
 
-      {#if oninstall}
+      {#if newerVersionPrompt}
+        <div class="footer newer-prompt">
+          <p class="newer-msg">A newer version <strong>v{newerVersionPrompt.version}</strong> is now available!</p>
+          <div class="newer-actions">
+            <button class="install-btn" onclick={oninstallLatest}>Update to v{newerVersionPrompt.version}</button>
+            <button class="install-btn secondary" onclick={oninstallOriginal}>Update to v{newerVersionPrompt.originalVersion}</button>
+            <button class="install-btn secondary" onclick={onreviewLatest}>Review v{newerVersionPrompt.version}</button>
+          </div>
+          <span class="install-hint">The app will restart to apply the update</span>
+        </div>
+      {:else if oninstall}
         <div class="footer">
           <button class="install-btn" onclick={oninstall} disabled={installDisabled}>
             {installLabel ?? 'Install & Restart'}
@@ -209,5 +227,31 @@
   .install-hint {
     font-size: 0.769rem;
     color: var(--fg-dim);
+  }
+
+  .newer-prompt {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .newer-msg {
+    margin: 0;
+    font-size: 0.923rem;
+    color: var(--fg);
+  }
+
+  .newer-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .install-btn.secondary {
+    background: var(--bg-light);
+    color: var(--fg);
+  }
+
+  .install-btn.secondary:hover {
+    filter: brightness(1.3);
   }
 </style>

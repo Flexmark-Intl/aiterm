@@ -18,9 +18,13 @@
   import { updaterStore } from '$lib/stores/updater.svelte';
   import ChangelogModal from '$lib/components/ChangelogModal.svelte';
   import type { ChangelogEntry } from '$lib/components/ChangelogModal.svelte';
+  import type { Update } from '@tauri-apps/plugin-updater';
 
   let showWhatsNew = $state(false);
   let whatsNewEntries = $state<ChangelogEntry[]>([]);
+  let newerVersionPrompt = $state<{ version: string; originalVersion: string } | undefined>(undefined);
+  let newerUpdate = $state<Update | null>(null);
+  let rechecking = $state(false);
 
   async function openWhatsNew() {
     const entries = await updaterStore.fetchReleaseNotes();
@@ -39,6 +43,50 @@
   });
 
   async function handleInstallFromModal() {
+    if (rechecking) return;
+    rechecking = true;
+    try {
+      const newer = await updaterStore.recheckForNewer();
+      if (newer) {
+        newerUpdate = newer;
+        newerVersionPrompt = {
+          version: newer.version,
+          originalVersion: updaterStore.currentUpdate!.version,
+        };
+        return;
+      }
+    } finally {
+      rechecking = false;
+    }
+    await proceedWithInstall();
+  }
+
+  async function handleInstallLatest() {
+    if (newerUpdate) {
+      updaterStore.switchToUpdate(newerUpdate);
+    }
+    newerVersionPrompt = undefined;
+    newerUpdate = null;
+    await proceedWithInstall();
+  }
+
+  async function handleInstallOriginal() {
+    newerVersionPrompt = undefined;
+    newerUpdate = null;
+    await proceedWithInstall();
+  }
+
+  async function handleReviewLatest() {
+    if (newerUpdate) {
+      updaterStore.switchToUpdate(newerUpdate);
+    }
+    newerVersionPrompt = undefined;
+    newerUpdate = null;
+    const entries = await updaterStore.fetchReleaseNotes();
+    whatsNewEntries = entries;
+  }
+
+  async function proceedWithInstall() {
     await updaterStore.downloadAndInstall();
     if (updaterStore.installed) {
       updaterStore.restart();
@@ -501,13 +549,17 @@
 
 <ChangelogModal
   open={showWhatsNew}
-  onclose={() => { showWhatsNew = false; }}
+  onclose={() => { showWhatsNew = false; newerVersionPrompt = undefined; newerUpdate = null; }}
   version={appVersion}
   entries={whatsNewEntries}
   title="What's New"
   oninstall={updaterStore.currentUpdate && !updaterStore.installed ? handleInstallFromModal : undefined}
-  installLabel={updaterStore.downloading ? 'Downloading…' : updaterStore.installed ? 'Restarting…' : 'Install & Restart'}
-  installDisabled={updaterStore.downloading || updaterStore.installed}
+  installLabel={rechecking ? 'Checking…' : updaterStore.downloading ? 'Downloading…' : updaterStore.installed ? 'Restarting…' : 'Install & Restart'}
+  installDisabled={rechecking || updaterStore.downloading || updaterStore.installed}
+  {newerVersionPrompt}
+  oninstallLatest={handleInstallLatest}
+  oninstallOriginal={handleInstallOriginal}
+  onreviewLatest={handleReviewLatest}
 />
 
 <style>
