@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.8.5
+
+- Fix remote image preview blocked by CSP missing img-src data: directive
+
 ## v1.8.4
 
 - Notes panel dynamic max width (caps at 90% of pane width instead of hardcoded 600px)
