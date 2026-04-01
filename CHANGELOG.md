@@ -1,7 +1,9 @@
 # Changelog
 
-## v1.8.5
+## v1.8.6
 
+- Re-check for newer version before installing update (choice prompt if a newer release appeared)
+- Add openFile in-place tab replacement (targetTabId) and SSH-aware file opening via SCP
 - Fix remote image preview blocked by CSP missing img-src data: directive
 
 ## v1.8.4
