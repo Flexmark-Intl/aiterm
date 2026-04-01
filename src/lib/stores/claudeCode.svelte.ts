@@ -81,6 +81,7 @@ function createClaudeCodeStore() {
           result = await handleOpenFile(args as {
             filePath: string;
             tabId?: string;
+            targetTabId?: string;
             startLine?: number;
             endLine?: number;
             startText?: string;
@@ -313,12 +314,72 @@ function createClaudeCodeStore() {
   async function handleOpenFile(args: {
     filePath: string;
     tabId?: string;
+    targetTabId?: string;
     startLine?: number;
     endLine?: number;
     startText?: string;
     endText?: string;
   }) {
-    const { filePath, tabId, startLine, endLine, startText, endText } = args;
+    const { filePath, tabId, targetTabId, startLine, endLine, startText, endText } = args;
+    const fileName = filePath.split('/').pop() ?? filePath;
+    const { detectLanguageFromPath } = await import('$lib/utils/languageDetect');
+    const language = detectLanguageFromPath(filePath);
+
+    // Detect SSH context from the session's terminal tab
+    let sshCommand: string | null = null;
+    if (tabId) {
+      const instance = terminalsStore.get(tabId);
+      if (instance) {
+        try {
+          const ptyInfo = await commands.getPtyInfo(instance.ptyId);
+          sshCommand = ptyInfo.foreground_command;
+        } catch { /* ignore */ }
+      }
+      // Fallback: persisted SSH command on the tab
+      if (!sshCommand) {
+        for (const ws of workspacesStore.workspaces) {
+          for (const pane of ws.panes) {
+            const tab = pane.tabs.find(t => t.id === tabId);
+            if (tab) {
+              sshCommand = tab.restore_ssh_command ?? tab.auto_resume_ssh_command ?? null;
+              break;
+            }
+          }
+          if (sshCommand) break;
+        }
+      }
+    }
+    const isRemote = !!sshCommand;
+
+    const fileInfo = {
+      file_path: filePath,
+      is_remote: isRemote,
+      remote_ssh_command: isRemote ? sshCommand : null,
+      remote_path: isRemote ? filePath : null,
+      language,
+    };
+
+    // Replace file in an existing tab if targetTabId is provided
+    if (targetTabId) {
+      let found = false;
+      for (const ws of workspacesStore.workspaces) {
+        for (const pane of ws.panes) {
+          const tab = pane.tabs.find(t => t.id === targetTabId && t.tab_type === 'editor');
+          if (tab) {
+            await workspacesStore.updateEditorTabFile(targetTabId, fileName, fileInfo);
+            window.dispatchEvent(new CustomEvent('editor-replace-file', { detail: { tabId: targetTabId } }));
+            await workspacesStore.setActiveTab(ws.id, pane.id, targetTabId);
+            found = true;
+            break;
+          }
+        }
+        if (found) break;
+      }
+      if (!found) {
+        return { success: false, message: `Editor tab ${targetTabId} not found` };
+      }
+      return { success: true, filePath, tabId: targetTabId };
+    }
 
     // Check if file is already open
     let existingTabId: string | null = null;
@@ -343,35 +404,26 @@ function createClaudeCodeStore() {
       if (startLine !== undefined || startText) {
         pendingSelections.set(existingTabId, { startLine, endLine, startText, endText });
       }
-    } else {
-      // Open in the session tab's pane, falling back to active workspace
-      const target = resolvePane(tabId);
-      if (!target) {
-        return { success: false, message: 'No active pane' };
-      }
-      const { ws, pane } = target;
-
-      const fileName = filePath.split('/').pop() ?? filePath;
-      const { detectLanguageFromPath } = await import('$lib/utils/languageDetect');
-      const language = detectLanguageFromPath(filePath);
-
-      // Insert after the session tab (tabId) if it's in this pane
-      const afterTabId = tabId && pane.tabs.some(t => t.id === tabId) ? tabId : pane.active_tab_id ?? undefined;
-
-      const tab = await workspacesStore.createEditorTab(ws.id, pane.id, fileName, {
-        file_path: filePath,
-        is_remote: false,
-        remote_ssh_command: null,
-        remote_path: null,
-        language,
-      }, afterTabId);
-
-      if (startLine !== undefined || startText) {
-        pendingSelections.set(tab.id, { startLine, endLine, startText, endText });
-      }
+      return { success: true, filePath, tabId: existingTabId };
     }
 
-    return { success: true, filePath };
+    // Open in the session tab's pane, falling back to active workspace
+    const target = resolvePane(tabId);
+    if (!target) {
+      return { success: false, message: 'No active pane' };
+    }
+    const { ws, pane } = target;
+
+    // Insert after the session tab (tabId) if it's in this pane
+    const afterTabId = tabId && pane.tabs.some(t => t.id === tabId) ? tabId : pane.active_tab_id ?? undefined;
+
+    const tab = await workspacesStore.createEditorTab(ws.id, pane.id, fileName, fileInfo, afterTabId);
+
+    if (startLine !== undefined || startText) {
+      pendingSelections.set(tab.id, { startLine, endLine, startText, endText });
+    }
+
+    return { success: true, filePath, tabId: tab.id };
   }
 
   async function handleOpenDiff(requestId: string, args: {

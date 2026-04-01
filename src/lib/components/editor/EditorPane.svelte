@@ -378,6 +378,156 @@
     }
   }
 
+  function handleEditorReplaceFile(e: Event) {
+    const detail = (e as CustomEvent).detail;
+    if (detail?.tabId === tabId) {
+      replaceFile();
+    }
+  }
+
+  async function replaceFile() {
+    // Load new content in the background before swapping — keeps old content
+    // visible so the tab doesn't flash a loading state.
+    const filePath = editorFile.remote_path ?? editorFile.file_path;
+    const isRemote = editorFile.is_remote && editorFile.remote_ssh_command && editorFile.remote_path;
+
+    try {
+      if (isImageFile(filePath)) {
+        const mime = getImageMimeType(filePath) ?? 'image/png';
+        let data: string;
+        let size: number;
+        if (isRemote) {
+          const result = await scpReadFileBase64(editorFile.remote_ssh_command!, editorFile.remote_path!);
+          data = result.data; size = result.size;
+        } else {
+          const result = await readFileBase64(editorFile.file_path);
+          data = result.data; size = result.size;
+        }
+        // Swap in new image atomically — no loading flash
+        stopWatching();
+        if (editorView) { editorView.destroy(); editorView = null; }
+        if (pdfDoc) { pdfDoc.destroy(); pdfDoc = null; }
+        pdfPageCount = 0; pdfFileSize = 0;
+        errorMsg = null; dirty = false;
+        imageDataUrl = `data:${mime};base64,${data}`;
+        imageFileSize = size;
+        imageNaturalWidth = 0;
+        imageNaturalHeight = 0;
+        imageZoom = 0;
+        loading = false;
+      } else if (isPdfFile(filePath)) {
+        let data: string;
+        let size: number;
+        if (isRemote) {
+          const result = await scpReadFileBase64(editorFile.remote_ssh_command!, editorFile.remote_path!);
+          data = result.data; size = result.size;
+        } else {
+          const result = await readFileBase64(editorFile.file_path);
+          data = result.data; size = result.size;
+        }
+        const pdfjsLib = await import('pdfjs-dist');
+        const raw = Uint8Array.from(atob(data), c => c.charCodeAt(0));
+        const doc = await pdfjsLib.getDocument({ data: raw }).promise;
+        // Swap in new PDF
+        stopWatching();
+        if (editorView) { editorView.destroy(); editorView = null; }
+        if (pdfDoc) pdfDoc.destroy();
+        imageDataUrl = null; imageFileSize = 0;
+        errorMsg = null; dirty = false;
+        pdfDoc = doc;
+        pdfPageCount = doc.numPages;
+        pdfFileSize = size;
+        pdfCanvasRefs = new Array(doc.numPages);
+        pdfTextLayerRefs = new Array(doc.numPages);
+        loading = false;
+        requestAnimationFrame(() => renderPdfPages());
+      } else {
+        let content: string;
+        if (isRemote) {
+          const result = await scpReadFile(editorFile.remote_ssh_command!, editorFile.remote_path!);
+          content = result.content;
+        } else {
+          const result = await readFile(editorFile.file_path);
+          content = result.content;
+        }
+        // Swap in new text content
+        stopWatching();
+        if (pdfDoc) { pdfDoc.destroy(); pdfDoc = null; }
+        imageDataUrl = null; imageFileSize = 0;
+        pdfPageCount = 0; pdfFileSize = 0;
+        errorMsg = null;
+
+        if (editorView) {
+          // Reuse existing editor — just replace content
+          originalContent = content;
+          editorView.dispatch({
+            changes: { from: 0, to: editorView.state.doc.length, insert: content },
+          });
+          dirty = false;
+          setEditorDirty(tabId, false);
+          registerEditor(tabId, editorView, editorFile.file_path);
+        } else {
+          // Create new editor (switching from image/PDF to text)
+          originalContent = content;
+          const langId = editorFile.language ?? detectLanguageFromContent(content);
+          const langExt = langId ? await loadLanguageExtension(langId) : null;
+
+          const extensions = [
+            lineNumbers(),
+            highlightActiveLineGutter(),
+            highlightSpecialChars(),
+            history(),
+            foldGutter(),
+            dropCursor(),
+            EditorState.allowMultipleSelections.of(true),
+            indentOnInput(),
+            bracketMatching(),
+            closeBrackets(),
+            rectangularSelection(),
+            crosshairCursor(),
+            highlightActiveLine(),
+            highlightSelectionMatches(),
+            wrapCompartment.of([]),
+            search({ top: true }),
+            keymap.of([
+              ...closeBracketsKeymap,
+              ...defaultKeymap,
+              ...searchKeymap,
+              ...historyKeymap,
+              ...foldKeymap,
+              indentWithTab,
+            ]),
+            ...buildEditorExtension(getTheme(preferencesStore.theme, preferencesStore.customThemes)),
+            EditorView.updateListener.of((update) => {
+              if (update.docChanged) {
+                const isDirty = update.state.doc.toString() !== originalContent;
+                dirty = isDirty;
+                setEditorDirty(tabId, isDirty);
+              }
+            }),
+            EditorView.theme({
+              '&': { height: '100%', fontSize: `${preferencesStore.fontSize}px` },
+              '.cm-scroller': { fontFamily: `"${preferencesStore.fontFamily}", Monaco, "Courier New", monospace`, overflow: 'auto' },
+            }),
+            keymap.of([{ key: 'Mod-s', run: () => { saveFile(); return true; } }]),
+          ];
+          if (langExt) extensions.push(langExt);
+
+          editorView = new EditorView({
+            state: EditorState.create({ doc: content, extensions }),
+            parent: containerRef,
+          });
+          registerEditor(tabId, editorView, editorFile.file_path);
+        }
+        loading = false;
+      }
+    } catch (e) {
+      errorMsg = String(e);
+      loading = false;
+      logError(`Failed to replace file: ${e}`);
+    }
+  }
+
   async function reloadFile() {
     const filePath = editorFile.remote_path ?? editorFile.file_path;
     const fileName = filePath.split('/').pop() ?? 'file';
@@ -707,6 +857,7 @@
     window.addEventListener('terminal-slot-ready', handleSlotReady);
     window.addEventListener('editor-save', handleEditorSave);
     window.addEventListener('editor-reload', handleEditorReload);
+    window.addEventListener('editor-replace-file', handleEditorReplaceFile);
 
     const filePath = editorFile.remote_path ?? editorFile.file_path;
     const isImage = isImageFile(filePath);
@@ -961,6 +1112,7 @@
     window.removeEventListener('terminal-slot-ready', handleSlotReady);
     window.removeEventListener('editor-save', handleEditorSave);
     window.removeEventListener('editor-reload', handleEditorReload);
+    window.removeEventListener('editor-replace-file', handleEditorReplaceFile);
     unregisterEditor(tabId);
     if (editorView) {
       editorView.destroy();

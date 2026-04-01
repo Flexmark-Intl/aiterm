@@ -1103,6 +1103,19 @@ function createWorkspacesStore() {
       });
     },
 
+    async updateEditorTabFile(tabId: string, name: string, fileInfo: EditorFileInfo) {
+      await commands.updateEditorTabFile(tabId, name, fileInfo);
+      workspaces = workspaces.map(w => ({
+        ...w,
+        panes: w.panes.map(p => ({
+          ...p,
+          tabs: p.tabs.map(t =>
+            t.id === tabId ? { ...t, name, editor_file: fileInfo } : t
+          )
+        }))
+      }));
+    },
+
     async setActiveTab(workspaceId: string, paneId: string, tabId: string) {
       await commands.setActiveTab(workspaceId, paneId, tabId);
       workspaces = workspaces.map(w => {

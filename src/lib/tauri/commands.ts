@@ -239,6 +239,10 @@ export async function renameTab(workspaceId: string, paneId: string, tabId: stri
   return invoke('rename_tab', { workspaceId, paneId, tabId, name, customName: customName ?? null });
 }
 
+export async function updateEditorTabFile(tabId: string, name: string, fileInfo: EditorFileInfo): Promise<void> {
+  return invoke('update_editor_tab_file', { tabId, name, fileInfo });
+}
+
 export async function setActiveWorkspace(workspaceId: string): Promise<void> {
   return invoke('set_active_workspace', { workspaceId });
 }

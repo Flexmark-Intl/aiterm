@@ -131,11 +131,12 @@ pub fn tool_list_response() -> Value {
     tools.extend(serde_json::json!([
         {
             "name": "openFile",
-            "description": "Open a file in the aiTerm IDE editor tab. Use this tool whenever you need to show the user a file — do NOT use shell 'open' or other OS commands. Supports optional line range or text range selection to highlight a specific section.",
+            "description": "Open a file in the aiTerm IDE editor tab. Use this tool whenever you need to show the user a file — do NOT use shell 'open' or other OS commands. Supports optional line range or text range selection to highlight a specific section. Returns the tabId of the opened tab. To update an existing tab with a new file (e.g. iteratively showing screenshots, test results, or build output in the same tab), pass the returned tabId back as targetTabId — this replaces the tab content in-place without opening a new tab.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "filePath": { "type": "string", "description": "Absolute path to the file to open" },
+                    "targetTabId": { "type": "string", "description": "Replace the file in this existing editor tab (returned from a previous openFile call) instead of opening a new tab. Use this when iterating on the same visual output — screenshots, test results, generated images — so the user sees updates in-place without tab clutter." },
                     "startLine": { "type": "number", "description": "Line number to start selection (1-based)" },
                     "endLine": { "type": "number", "description": "Line number to end selection (1-based)" },
                     "startText": { "type": "string", "description": "Text string to find and start selection at" },

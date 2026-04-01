@@ -402,6 +402,34 @@ pub fn rename_tab(
     Ok(())
 }
 
+/// Update an editor tab's file info and name (for replacing the displayed file in-place).
+/// Searches all workspaces/panes in the current window to find the tab by ID.
+#[tauri::command]
+pub fn update_editor_tab_file(
+    window: tauri::Window,
+    state: State<'_, Arc<AppState>>,
+    tab_id: String,
+    name: String,
+    file_info: EditorFileInfo,
+) -> Result<(), String> {
+    let label = window.label().to_string();
+    let mut app_data = state.app_data.write();
+    let win = app_data.window_mut(&label).ok_or("Window not found")?;
+    for workspace in &mut win.workspaces {
+        for pane in &mut workspace.panes {
+            if let Some(tab) = pane.tabs.iter_mut().find(|t| t.id == tab_id) {
+                tab.editor_file = Some(file_info);
+                tab.name = name;
+                let data_clone = app_data.clone();
+                drop(app_data);
+                let _ = save_state(&data_clone);
+                return Ok(());
+            }
+        }
+    }
+    Err("Tab not found".to_string())
+}
+
 #[tauri::command]
 pub fn set_active_workspace(window: tauri::Window, state: State<'_, Arc<AppState>>, workspace_id: String) -> Result<(), String> {
     let label = window.label().to_string();

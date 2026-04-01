@@ -377,6 +377,7 @@ pub fn run() {
             commands::workspace::delete_tab,
             commands::workspace::move_tab_to_workspace,
             commands::workspace::rename_tab,
+            commands::workspace::update_editor_tab_file,
             commands::workspace::set_active_workspace,
             commands::workspace::suspend_workspace,
             commands::workspace::resume_workspace,
