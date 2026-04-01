@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.8.4
+
+- Notes panel dynamic max width (caps at 90% of pane width instead of hardcoded 600px)
+- Fix resume gate for duplicate/reload/split tabs and all-suspended overlay resume
+- Fix Cmd+O file dialog rejecting webp/image/PDF files
+- Fix SSH auto-resume failing due to leading space in remoteCwd
+- Fix MCP bridge falsely activating during SCP/rsync/git file transfers
+- Fix drag-drop SCP upload toast and echo for non-Claude SSH sessions
+- Fix horizontal overflow clipping on markdown tables in notes panel
+
 ## v1.8.3
 
 - Fix resume gate excluding duplicate/reload/split tabs via splitContext check
