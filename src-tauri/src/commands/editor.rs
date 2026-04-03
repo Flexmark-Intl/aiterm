@@ -655,6 +655,84 @@ pub async fn git_show_file(file_path: String, git_ref: String) -> Result<String,
         .map_err(|_| "File content is not valid UTF-8".to_string())
 }
 
+#[command]
+pub async fn list_files(path: String, max_files: Option<u32>) -> Result<Vec<String>, String> {
+    let path = expand_tilde(&path);
+    let max = max_files.unwrap_or(10_000) as usize;
+    let base = std::path::PathBuf::from(&path);
+
+    if !base.is_dir() {
+        return Err(format!("Not a directory: {}", path));
+    }
+
+    let walker = ignore::WalkBuilder::new(&base)
+        .hidden(false)
+        .git_ignore(true)
+        .git_global(true)
+        .max_depth(Some(20))
+        .build();
+
+    let mut files = Vec::new();
+    for entry in walker {
+        if files.len() >= max {
+            break;
+        }
+        if let Ok(entry) = entry {
+            if entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
+                if let Ok(rel) = entry.path().strip_prefix(&base) {
+                    files.push(rel.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+    Ok(files)
+}
+
+#[command]
+pub async fn ssh_list_files(
+    ssh_command: String,
+    remote_path: String,
+    max_files: Option<u32>,
+) -> Result<Vec<String>, String> {
+    let user_host = extract_user_host(&ssh_command)?;
+    let remote_path = expand_remote_tilde(&user_host, &remote_path);
+    let max = max_files.unwrap_or(5000);
+    let quoted = shell_quote(&remote_path);
+
+    // Try git ls-files first (fast, respects .gitignore), fall back to find
+    let cmd = format!(
+        "cd {} && (git ls-files 2>/dev/null || find . -type f -maxdepth 10) | head -{}",
+        quoted, max
+    );
+
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(15),
+        tokio::process::Command::new("ssh")
+            .arg("-o").arg("BatchMode=yes")
+            .arg("-o").arg("ConnectTimeout=10")
+            .arg(&user_host)
+            .arg(&cmd)
+            .output()
+    )
+    .await
+    .map_err(|_| "SSH connection timed out (15s)".to_string())?
+    .map_err(|e| format!("SSH failed: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("SSH list files failed: {}", stderr.trim()));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let files: Vec<String> = stdout
+        .lines()
+        .filter(|line| !line.is_empty())
+        .map(|line| line.strip_prefix("./").unwrap_or(line).to_string())
+        .collect();
+
+    Ok(files)
+}
+
 /// Background polling loop for remote file watchers.
 /// Groups files by user@host, runs one batched stat per host every 3 seconds.
 async fn remote_file_poll_loop(state: Arc<AppState>, app: tauri::AppHandle) {

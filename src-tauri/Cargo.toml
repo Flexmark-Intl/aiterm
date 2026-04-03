@@ -43,6 +43,7 @@ notify-debouncer-mini = "0.5"
 sysinfo = "0.33"
 alacritty_terminal = "0.25"
 rusqlite = { version = "0.31", features = ["bundled"] }
+ignore = "0.4"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 

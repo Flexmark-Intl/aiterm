@@ -24,6 +24,7 @@
   import { isModKey, isMac } from '$lib/utils/platform';
   import { open as dialogOpen, save as dialogSave } from '@tauri-apps/plugin-dialog';
   import { openFileFromTerminal } from '$lib/utils/openFile';
+  import QuickOpen from '$lib/components/QuickOpen.svelte';
   import { detectLanguageFromPath, isImageFile, isPdfFile } from '$lib/utils/languageDetect';
   import { readFile } from '$lib/tauri/commands';
   import type { EditorFileInfo } from '$lib/tauri/types';
@@ -39,6 +40,7 @@
   let showImportPreview = $state(false);
   let importPreview = $state<ImportPreview | null>(null);
   let importFilePath = $state('');
+  let showQuickOpen = $state(false);
 
   // Apply UI theme reactively (runs outside onMount so it reacts to changes)
   $effect(() => {
@@ -686,10 +688,41 @@
       }
     }
 
+    // Double-Alt detection for Quick Open
+    let lastAltUp = 0;
+    let altPressClean = true;
+
+    function handleKeydownAlt(e: KeyboardEvent) {
+      // If any non-Alt key is pressed while Alt is held, mark as dirty
+      if (e.altKey && e.key !== 'Alt') {
+        altPressClean = false;
+      }
+    }
+
+    function handleKeyupAlt(e: KeyboardEvent) {
+      if (e.key !== 'Alt') return;
+      if (!altPressClean) {
+        altPressClean = true;
+        return;
+      }
+      const now = Date.now();
+      if (now - lastAltUp < 400) {
+        lastAltUp = 0;
+        if (!showQuickOpen) showQuickOpen = true;
+      } else {
+        lastAltUp = now;
+      }
+      altPressClean = true;
+    }
+
     window.addEventListener('keydown', handleKeydown, true);
+    window.addEventListener('keydown', handleKeydownAlt, true);
+    window.addEventListener('keyup', handleKeyupAlt, true);
 
     return () => {
       window.removeEventListener('keydown', handleKeydown, true);
+      window.removeEventListener('keydown', handleKeydownAlt, true);
+      window.removeEventListener('keyup', handleKeyupAlt, true);
       unlistenClose?.();
       unlistenQuit?.();
       unlistenReloadTab?.();
@@ -720,5 +753,24 @@
   filePath={importFilePath}
   onclose={() => { showImportPreview = false; }}
   onimported={() => { showImportPreview = false; window.location.reload(); }}
+/>
+<QuickOpen
+  open={showQuickOpen}
+  onclose={() => { showQuickOpen = false; }}
+  onselect={(filePath) => {
+    showQuickOpen = false;
+    const ws = workspacesStore.activeWorkspace;
+    const pane = workspacesStore.activePane;
+    const tab = workspacesStore.activeTab;
+    if (ws && pane && tab && tab.tab_type === 'terminal') {
+      openFileFromTerminal(ws.id, pane.id, tab.id, filePath);
+    } else if (ws && pane) {
+      // Find a terminal tab in pane for context
+      const termTab = pane.tabs.find(t => t.tab_type === 'terminal');
+      if (termTab) {
+        openFileFromTerminal(ws.id, pane.id, termTab.id, filePath);
+      }
+    }
+  }}
 />
 <Toast />
