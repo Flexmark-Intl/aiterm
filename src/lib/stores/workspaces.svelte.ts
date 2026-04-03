@@ -126,6 +126,14 @@ function createWorkspacesStore() {
   let _recentTick = $state(0);
   let _recentTimer: ReturnType<typeof setInterval> | null = null;
 
+  /** Find a tab by workspace/pane/tab IDs (helper for direct mutations). */
+  function findTab(workspaceId: string, paneId: string, tabId: string) {
+    const ws = workspaces.find(w => w.id === workspaceId);
+    const pane = ws?.panes.find(p => p.id === paneId);
+    const tab = pane?.tabs.find(t => t.id === tabId);
+    return { ws, pane, tab };
+  }
+
   const recentWorkspaces = $derived.by(() => {
     void _recentTick; // subscribe to tick for expiry re-evaluation
     const now = Date.now();
@@ -296,9 +304,7 @@ function createWorkspacesStore() {
       const workspace = await commands.createWorkspace(name);
       // Insert after the currently active workspace, or append if none active
       const activeIdx = workspaces.findIndex(w => w.id === activeWorkspaceId);
-      const newList = [...workspaces];
-      newList.splice(activeIdx + 1, 0, workspace);
-      workspaces = newList;
+      workspaces.splice(activeIdx + 1, 0, workspace);
       activeWorkspaceId = workspace.id;
       await commands.reorderWorkspaces(workspaces.map(w => w.id));
       return workspace;
@@ -307,7 +313,7 @@ function createWorkspacesStore() {
     async deleteWorkspace(workspaceId: string) {
       const oldIndex = workspaces.findIndex(w => w.id === workspaceId);
       await commands.deleteWorkspace(workspaceId);
-      workspaces = workspaces.filter(w => w.id !== workspaceId);
+      workspaces.splice(oldIndex, 1);
       if (lastSwitchedAt.has(workspaceId)) {
         const updated = new Map(lastSwitchedAt);
         updated.delete(workspaceId);
@@ -374,9 +380,8 @@ function createWorkspacesStore() {
       // 3. Set suspended flag (persisted to backend)
       await commands.suspendWorkspace(workspaceId);
       suspendingWorkspaceIds.delete(workspaceId);
-      workspaces = workspaces.map(w =>
-        w.id === workspaceId ? { ...w, suspended: true } : w
-      );
+      const wsToSuspend = workspaces.find(w => w.id === workspaceId);
+      if (wsToSuspend) wsToSuspend.suspended = true;
       import('$lib/stores/navHistory.svelte').then(m => m.navHistoryStore.removeWorkspace(workspaceId));
 
       // 4. If this was the active workspace, switch to next non-suspended
@@ -396,9 +401,8 @@ function createWorkspacesStore() {
 
       // Clear suspended flag
       await commands.resumeWorkspace(workspaceId);
-      workspaces = workspaces.map(w =>
-        w.id === workspaceId ? { ...w, suspended: false } : w
-      );
+      const wsToResume = workspaces.find(w => w.id === workspaceId);
+      if (wsToResume) wsToResume.suspended = false;
 
       // Switch to this workspace — lazy init handles PTY spawning
       await this.setActiveWorkspace(workspaceId);
@@ -475,9 +479,8 @@ function createWorkspacesStore() {
 
     async renameWorkspace(workspaceId: string, name: string) {
       await commands.renameWorkspace(workspaceId, name);
-      workspaces = workspaces.map(w =>
-        w.id === workspaceId ? { ...w, name } : w
-      );
+      const ws = workspaces.find(w => w.id === workspaceId);
+      if (ws) ws.name = name;
     },
 
     async setActiveWorkspace(workspaceId: string) {
@@ -492,7 +495,7 @@ function createWorkspacesStore() {
       // Clear import highlight on activation
       const ws = workspaces.find(w => w.id === workspaceId);
       if (ws?.import_highlight) {
-        workspaces = workspaces.map(w => w.id === workspaceId ? { ...w, import_highlight: false } : w);
+        ws.import_highlight = false;
       }
     },
 
@@ -500,9 +503,10 @@ function createWorkspacesStore() {
       const pane = await commands.splitPane(workspaceId, targetPaneId, direction);
       // Reload workspace to get updated split_root from backend
       const data = await commands.getWindowData();
-      const ws = data.workspaces.find(w => w.id === workspaceId);
-      if (ws) {
-        workspaces = workspaces.map(w => w.id === workspaceId ? ws : w);
+      const freshWs = data.workspaces.find(w => w.id === workspaceId);
+      if (freshWs) {
+        const idx = workspaces.findIndex(w => w.id === workspaceId);
+        if (idx >= 0) workspaces[idx] = freshWs;
       }
       return pane;
     },
@@ -530,9 +534,10 @@ function createWorkspacesStore() {
 
         // Reload workspace to get updated split_root
         const data = await commands.getWindowData();
-        const ws = data.workspaces.find(w => w.id === workspaceId);
-        if (ws) {
-          workspaces = workspaces.map(w => w.id === workspaceId ? ws : w);
+        const freshWsEditor = data.workspaces.find(w => w.id === workspaceId);
+        if (freshWsEditor) {
+          const idx = workspaces.findIndex(w => w.id === workspaceId);
+          if (idx >= 0) workspaces[idx] = freshWsEditor;
         }
         return newPane;
       }
@@ -649,9 +654,10 @@ function createWorkspacesStore() {
 
       // 5. Reload workspace to get updated split_root
       const data = await commands.getWindowData();
-      const ws = data.workspaces.find(w => w.id === workspaceId);
-      if (ws) {
-        workspaces = workspaces.map(w => w.id === workspaceId ? ws : w);
+      const freshWsSplit = data.workspaces.find(w => w.id === workspaceId);
+      if (freshWsSplit) {
+        const idx = workspaces.findIndex(w => w.id === workspaceId);
+        if (idx >= 0) workspaces[idx] = freshWsSplit;
       }
       return newPane;
     },
@@ -660,35 +666,24 @@ function createWorkspacesStore() {
       await commands.deletePane(workspaceId, paneId);
       // Reload workspace to get updated split_root from backend
       const data = await commands.getWindowData();
-      const ws = data.workspaces.find(w => w.id === workspaceId);
-      if (ws) {
-        workspaces = workspaces.map(w => w.id === workspaceId ? ws : w);
+      const freshWsPane = data.workspaces.find(w => w.id === workspaceId);
+      if (freshWsPane) {
+        const idx = workspaces.findIndex(w => w.id === workspaceId);
+        if (idx >= 0) workspaces[idx] = freshWsPane;
       }
     },
 
     async renamePane(workspaceId: string, paneId: string, name: string) {
       await commands.renamePane(workspaceId, paneId, name);
-      workspaces = workspaces.map(w => {
-        if (w.id === workspaceId) {
-          return {
-            ...w,
-            panes: w.panes.map(p =>
-              p.id === paneId ? { ...p, name } : p
-            )
-          };
-        }
-        return w;
-      });
+      const ws = workspaces.find(w => w.id === workspaceId);
+      const pane = ws?.panes.find(p => p.id === paneId);
+      if (pane) pane.name = name;
     },
 
     async setActivePane(workspaceId: string, paneId: string) {
       await commands.setActivePane(workspaceId, paneId);
-      workspaces = workspaces.map(w => {
-        if (w.id === workspaceId) {
-          return { ...w, active_pane_id: paneId };
-        }
-        return w;
-      });
+      const ws = workspaces.find(w => w.id === workspaceId);
+      if (ws) ws.active_pane_id = paneId;
     },
 
     async createTab(workspaceId: string, paneId: string, name: string, options?: { append?: boolean }) {
@@ -779,29 +774,15 @@ function createWorkspacesStore() {
         }
       }
 
-      workspaces = workspaces.map(w => {
-        if (w.id === workspaceId) {
-          return {
-            ...w,
-            panes: w.panes.map(p => {
-              if (p.id === paneId) {
-                const insertIdx = afterTabId
-                  ? p.tabs.findIndex(t => t.id === afterTabId) + 1
-                  : p.tabs.length;
-                const newTabs = [...p.tabs];
-                newTabs.splice(insertIdx >= 0 ? insertIdx : p.tabs.length, 0, tab);
-                return {
-                  ...p,
-                  tabs: newTabs,
-                  active_tab_id: tab.id
-                };
-              }
-              return p;
-            })
-          };
-        }
-        return w;
-      });
+      const wsForTab = workspaces.find(w => w.id === workspaceId);
+      const paneForTab = wsForTab?.panes.find(p => p.id === paneId);
+      if (paneForTab) {
+        const insertIdx = afterTabId
+          ? paneForTab.tabs.findIndex(t => t.id === afterTabId) + 1
+          : paneForTab.tabs.length;
+        paneForTab.tabs.splice(insertIdx >= 0 ? insertIdx : paneForTab.tabs.length, 0, tab);
+        paneForTab.active_tab_id = tab.id;
+      }
       return tab;
     },
 
@@ -810,56 +791,27 @@ function createWorkspacesStore() {
       const pane = workspaces.flatMap(w => w.panes).find(p => p.id === paneId);
       const afterTabId = insertAfterTabId ?? pane?.active_tab_id ?? undefined;
       const tab = await commands.createEditorTab(workspaceId, paneId, name, fileInfo, afterTabId);
-      workspaces = workspaces.map(w => {
-        if (w.id === workspaceId) {
-          return {
-            ...w,
-            panes: w.panes.map(p => {
-              if (p.id === paneId) {
-                // Insert directly after the target tab
-                const targetIdx = afterTabId ? p.tabs.findIndex(t => t.id === afterTabId) : p.tabs.findIndex(t => t.id === p.active_tab_id);
-                const insertIdx = targetIdx === -1 ? p.tabs.length : targetIdx + 1;
-                const newTabs = [...p.tabs];
-                newTabs.splice(insertIdx, 0, tab);
-                return {
-                  ...p,
-                  tabs: newTabs,
-                  active_tab_id: tab.id
-                };
-              }
-              return p;
-            })
-          };
-        }
-        return w;
-      });
+      const wsForEditor = workspaces.find(w => w.id === workspaceId);
+      const paneForEditor = wsForEditor?.panes.find(p => p.id === paneId);
+      if (paneForEditor) {
+        const targetIdx = afterTabId ? paneForEditor.tabs.findIndex(t => t.id === afterTabId) : paneForEditor.tabs.findIndex(t => t.id === paneForEditor.active_tab_id);
+        const insertIdx = targetIdx === -1 ? paneForEditor.tabs.length : targetIdx + 1;
+        paneForEditor.tabs.splice(insertIdx, 0, tab);
+        paneForEditor.active_tab_id = tab.id;
+      }
       return tab;
     },
 
     async createDiffTab(workspaceId: string, paneId: string, name: string, diffContext: DiffContext, afterTabId?: string | null) {
       const tab = await commands.createDiffTab(workspaceId, paneId, name, diffContext, afterTabId);
-      workspaces = workspaces.map(w => {
-        if (w.id === workspaceId) {
-          return {
-            ...w,
-            panes: w.panes.map(p => {
-              if (p.id === paneId) {
-                const activeIdx = p.tabs.findIndex(t => t.id === (afterTabId ?? p.active_tab_id));
-                const insertIdx = activeIdx === -1 ? p.tabs.length : activeIdx + 1;
-                const newTabs = [...p.tabs];
-                newTabs.splice(insertIdx, 0, tab);
-                return {
-                  ...p,
-                  tabs: newTabs,
-                  active_tab_id: tab.id
-                };
-              }
-              return p;
-            })
-          };
-        }
-        return w;
-      });
+      const wsForDiffTab = workspaces.find(w => w.id === workspaceId);
+      const paneForDiffTab = wsForDiffTab?.panes.find(p => p.id === paneId);
+      if (paneForDiffTab) {
+        const activeIdx = paneForDiffTab.tabs.findIndex(t => t.id === (afterTabId ?? paneForDiffTab.active_tab_id));
+        const insertIdx = activeIdx === -1 ? paneForDiffTab.tabs.length : activeIdx + 1;
+        paneForDiffTab.tabs.splice(insertIdx, 0, tab);
+        paneForDiffTab.active_tab_id = tab.id;
+      }
       return tab;
     },
 
@@ -890,37 +842,24 @@ function createWorkspacesStore() {
         }
       }
       await commands.deleteTab(workspaceId, paneId, tabId);
-      workspaces = workspaces.map(w => {
-        if (w.id === workspaceId) {
-          return {
-            ...w,
-            panes: w.panes.map(p => {
-              if (p.id === paneId) {
-                const oldIndex = p.tabs.findIndex(t => t.id === tabId);
-                const newTabs = p.tabs.filter(t => t.id !== tabId);
-                const newActiveId = p.active_tab_id === tabId
-                  ? pickNextActiveTab(newTabs, oldIndex)
-                  : p.active_tab_id;
-                // If the next active tab is a suspended terminal, gate it behind resume prompt
-                if (newActiveId && newActiveId !== p.active_tab_id) {
-                  const nextTab = newTabs.find(t => t.id === newActiveId);
-                  const isNextTerminal = nextTab && (nextTab.tab_type === 'terminal' || !nextTab.tab_type);
-                  if (isNextTerminal && !terminalsStore.get(newActiveId)) {
-                    pendingResumePanes.add(p.id);
-                  }
-                }
-                return {
-                  ...p,
-                  tabs: newTabs,
-                  active_tab_id: newActiveId
-                };
-              }
-              return p;
-            })
-          };
+      const wsForDelete = workspaces.find(w => w.id === workspaceId);
+      const paneForDelete = wsForDelete?.panes.find(p => p.id === paneId);
+      if (paneForDelete) {
+        const oldIndex = paneForDelete.tabs.findIndex(t => t.id === tabId);
+        paneForDelete.tabs.splice(oldIndex, 1);
+        if (paneForDelete.active_tab_id === tabId) {
+          const newActiveId = pickNextActiveTab(paneForDelete.tabs, oldIndex);
+          // If the next active tab is a suspended terminal, gate it behind resume prompt
+          if (newActiveId && newActiveId !== paneForDelete.active_tab_id) {
+            const nextTab = paneForDelete.tabs.find(t => t.id === newActiveId);
+            const isNextTerminal = nextTab && (nextTab.tab_type === 'terminal' || !nextTab.tab_type);
+            if (isNextTerminal && !terminalsStore.get(newActiveId)) {
+              pendingResumePanes.add(paneForDelete.id);
+            }
+          }
+          paneForDelete.active_tab_id = newActiveId;
         }
-        return w;
-      });
+      }
       import('$lib/stores/navHistory.svelte').then(m => m.navHistoryStore.removeTab(tabId));
     },
 
@@ -971,26 +910,16 @@ function createWorkspacesStore() {
       };
 
       // Update local state
-      workspaces = workspaces.map(w => {
-        if (w.id === workspaceId) {
-          return {
-            ...w,
-            archived_tabs: [...w.archived_tabs, archivedTab],
-            panes: w.panes.map(p => {
-              if (p.id === paneId) {
-                const oldIndex = p.tabs.findIndex(t => t.id === tabId);
-                const newTabs = p.tabs.filter(t => t.id !== tabId);
-                const newActiveId = p.active_tab_id === tabId
-                  ? pickNextActiveTab(newTabs, oldIndex)
-                  : p.active_tab_id;
-                return { ...p, tabs: newTabs, active_tab_id: newActiveId };
-              }
-              return p;
-            })
-          };
+      if (!ws) return;
+      ws.archived_tabs.push(archivedTab);
+      const archivePane = ws.panes.find(p => p.id === paneId);
+      if (archivePane) {
+        const oldIndex = archivePane.tabs.findIndex(t => t.id === tabId);
+        archivePane.tabs.splice(oldIndex, 1);
+        if (archivePane.active_tab_id === tabId) {
+          archivePane.active_tab_id = pickNextActiveTab(archivePane.tabs, oldIndex);
         }
-        return w;
-      });
+      }
     },
 
     async restoreArchivedTab(workspaceId: string, tabId: string) {
@@ -1023,27 +952,14 @@ function createWorkspacesStore() {
       }
 
       // Update local state
-      workspaces = workspaces.map(w => {
-        if (w.id === workspaceId) {
-          return {
-            ...w,
-            archived_tabs: w.archived_tabs.filter(t => t.id !== tabId),
-            panes: w.panes.map(p => {
-              if (p.id === pane.id) {
-                const activeIdx = p.active_tab_id
-                  ? p.tabs.findIndex(t => t.id === p.active_tab_id)
-                  : -1;
-                const insertIdx = activeIdx >= 0 ? activeIdx + 1 : 0;
-                const newTabs = [...p.tabs];
-                newTabs.splice(insertIdx, 0, tab);
-                return { ...p, tabs: newTabs, active_tab_id: tab.id };
-              }
-              return p;
-            })
-          };
-        }
-        return w;
-      });
+      const archIdx = ws.archived_tabs.findIndex(t => t.id === tabId);
+      if (archIdx >= 0) ws.archived_tabs.splice(archIdx, 1);
+      const activeIdx = pane.active_tab_id
+        ? pane.tabs.findIndex(t => t.id === pane.active_tab_id)
+        : -1;
+      const insertIdx = activeIdx >= 0 ? activeIdx + 1 : 0;
+      pane.tabs.splice(insertIdx, 0, tab);
+      pane.active_tab_id = tab.id;
       import('$lib/stores/navHistory.svelte').then(m =>
         m.navHistoryStore.push({ workspaceId, paneId: pane.id, tabId })
       );
@@ -1051,169 +967,85 @@ function createWorkspacesStore() {
 
     async deleteArchivedTab(workspaceId: string, tabId: string) {
       await commands.deleteArchivedTab(workspaceId, tabId);
-      workspaces = workspaces.map(w => {
-        if (w.id === workspaceId) {
-          return { ...w, archived_tabs: w.archived_tabs.filter(t => t.id !== tabId) };
-        }
-        return w;
-      });
+      const ws = workspaces.find(w => w.id === workspaceId);
+      if (ws) {
+        const idx = ws.archived_tabs.findIndex(t => t.id === tabId);
+        if (idx >= 0) ws.archived_tabs.splice(idx, 1);
+      }
     },
 
     async reorderTabs(workspaceId: string, paneId: string, tabIds: string[]) {
-      workspaces = workspaces.map(w => {
-        if (w.id === workspaceId) {
-          return {
-            ...w,
-            panes: w.panes.map(p => {
-              if (p.id === paneId) {
-                const reordered = tabIds
-                  .map(id => p.tabs.find(t => t.id === id))
-                  .filter((t): t is Tab => t !== undefined);
-                return { ...p, tabs: reordered };
-              }
-              return p;
-            })
-          };
-        }
-        return w;
-      });
+      const ws = workspaces.find(w => w.id === workspaceId);
+      const pane = ws?.panes.find(p => p.id === paneId);
+      if (pane) {
+        const reordered = tabIds
+          .map(id => pane.tabs.find(t => t.id === id))
+          .filter((t): t is Tab => t !== undefined);
+        pane.tabs.length = 0;
+        pane.tabs.push(...reordered);
+      }
       await commands.reorderTabs(workspaceId, paneId, tabIds);
     },
 
     async renameTab(workspaceId: string, paneId: string, tabId: string, name: string, customName?: boolean) {
       await commands.renameTab(workspaceId, paneId, tabId, name, customName);
-      workspaces = workspaces.map(w => {
-        if (w.id === workspaceId) {
-          return {
-            ...w,
-            panes: w.panes.map(p => {
-              if (p.id === paneId) {
-                return {
-                  ...p,
-                  tabs: p.tabs.map(t =>
-                    t.id === tabId ? { ...t, name, ...(customName !== undefined ? { custom_name: customName } : {}) } : t
-                  )
-                };
-              }
-              return p;
-            })
-          };
-        }
-        return w;
-      });
+      const { tab } = findTab(workspaceId, paneId, tabId);
+      if (tab) {
+        tab.name = name;
+        if (customName !== undefined) tab.custom_name = customName;
+      }
     },
 
     async updateEditorTabFile(tabId: string, name: string, fileInfo: EditorFileInfo) {
       await commands.updateEditorTabFile(tabId, name, fileInfo);
-      workspaces = workspaces.map(w => ({
-        ...w,
-        panes: w.panes.map(p => ({
-          ...p,
-          tabs: p.tabs.map(t =>
-            t.id === tabId ? { ...t, name, editor_file: fileInfo } : t
-          )
-        }))
-      }));
+      for (const ws of workspaces) {
+        for (const pane of ws.panes) {
+          const tab = pane.tabs.find(t => t.id === tabId);
+          if (tab) {
+            tab.name = name;
+            tab.editor_file = fileInfo;
+            return;
+          }
+        }
+      }
     },
 
     async setActiveTab(workspaceId: string, paneId: string, tabId: string) {
       await commands.setActiveTab(workspaceId, paneId, tabId);
-      workspaces = workspaces.map(w => {
-        if (w.id === workspaceId) {
-          return {
-            ...w,
-            panes: w.panes.map(p => {
-              if (p.id === paneId) {
-                return {
-                  ...p,
-                  active_tab_id: tabId,
-                  tabs: p.tabs.map(t => t.id === tabId && t.import_highlight ? { ...t, import_highlight: false } : t),
-                };
-              }
-              return p;
-            })
-          };
-        }
-        return w;
-      });
+      const { pane, tab } = findTab(workspaceId, paneId, tabId);
+      if (pane) pane.active_tab_id = tabId;
+      if (tab?.import_highlight) tab.import_highlight = false;
     },
 
     async setTabPtyId(workspaceId: string, paneId: string, tabId: string, ptyId: string) {
       await commands.setTabPtyId(workspaceId, paneId, tabId, ptyId);
-      workspaces = workspaces.map(w => {
-        if (w.id === workspaceId) {
-          return {
-            ...w,
-            panes: w.panes.map(p => {
-              if (p.id === paneId) {
-                return {
-                  ...p,
-                  tabs: p.tabs.map(t =>
-                    t.id === tabId ? { ...t, pty_id: ptyId } : t
-                  )
-                };
-              }
-              return p;
-            })
-          };
-        }
-        return w;
-      });
+      const { tab } = findTab(workspaceId, paneId, tabId);
+      if (tab) tab.pty_id = ptyId;
     },
 
     async setTabAutoResumeContext(workspaceId: string, paneId: string, tabId: string, cwd: string | null, sshCommand: string | null, remoteCwd: string | null, command: string | null = null, pinned?: boolean) {
       await commands.setTabAutoResumeContext(workspaceId, paneId, tabId, cwd, sshCommand, remoteCwd, command, pinned);
-      workspaces = workspaces.map(w => {
-        if (w.id === workspaceId) {
-          return {
-            ...w,
-            panes: w.panes.map(p => {
-              if (p.id === paneId) {
-                return {
-                  ...p,
-                  tabs: p.tabs.map(t =>
-                    t.id === tabId ? { ...t, auto_resume_cwd: cwd, auto_resume_ssh_command: sshCommand, auto_resume_remote_cwd: remoteCwd, auto_resume_command: command, auto_resume_enabled: true, ...(command != null ? { auto_resume_remembered_command: command } : {}), ...(pinned != null ? { auto_resume_pinned: pinned } : {}) } : t
-                  )
-                };
-              }
-              return p;
-            })
-          };
-        }
-        return w;
-      });
+      const { tab } = findTab(workspaceId, paneId, tabId);
+      if (tab) {
+        tab.auto_resume_cwd = cwd;
+        tab.auto_resume_ssh_command = sshCommand;
+        tab.auto_resume_remote_cwd = remoteCwd;
+        tab.auto_resume_command = command;
+        tab.auto_resume_enabled = true;
+        if (command != null) tab.auto_resume_remembered_command = command;
+        if (pinned != null) tab.auto_resume_pinned = pinned;
+      }
     },
 
     async disableAutoResume(workspaceId: string, paneId: string, tabId: string) {
       await commands.setTabAutoResumeEnabled(workspaceId, paneId, tabId, false);
-      workspaces = workspaces.map(w => {
-        if (w.id === workspaceId) {
-          return {
-            ...w,
-            panes: w.panes.map(p => {
-              if (p.id === paneId) {
-                return {
-                  ...p,
-                  tabs: p.tabs.map(t =>
-                    t.id === tabId ? { ...t, auto_resume_enabled: false } : t
-                  )
-                };
-              }
-              return p;
-            })
-          };
-        }
-        return w;
-      });
+      const { tab } = findTab(workspaceId, paneId, tabId);
+      if (tab) tab.auto_resume_enabled = false;
     },
 
     setSplitRatioLocal(workspaceId: string, splitId: string, ratio: number) {
-      workspaces = workspaces.map(w => {
-        if (w.id === workspaceId && w.split_root) {
-          return { ...w, split_root: updateRatioInTree(w.split_root, splitId, ratio) };
-        }
-        return w;
-      });
+      const ws = workspaces.find(w => w.id === workspaceId);
+      if (ws?.split_root) ws.split_root = updateRatioInTree(ws.split_root, splitId, ratio);
     },
 
     async persistSplitRatio(workspaceId: string, splitId: string, ratio: number) {
@@ -1571,7 +1403,8 @@ function createWorkspacesStore() {
       const data = await commands.getWindowData();
       const updatedWs = data.workspaces.find(w => w.id === workspaceId);
       if (updatedWs) {
-        workspaces = workspaces.map(w => w.id === workspaceId ? updatedWs : w);
+        const idx = workspaces.findIndex(w => w.id === workspaceId);
+        if (idx >= 0) workspaces[idx] = updatedWs;
       }
     },
 
@@ -1640,7 +1473,8 @@ function createWorkspacesStore() {
       const data = await commands.getWindowData();
       const updatedWs = data.workspaces.find(w => w.id === workspaceId);
       if (updatedWs) {
-        workspaces = workspaces.map(w => w.id === workspaceId ? updatedWs : w);
+        const idx = workspaces.findIndex(w => w.id === workspaceId);
+        if (idx >= 0) workspaces[idx] = updatedWs;
       }
     },
 
@@ -1708,36 +1542,15 @@ function createWorkspacesStore() {
 
     async setTabNotes(workspaceId: string, paneId: string, tabId: string, notes: string | null) {
       await commands.setTabNotes(workspaceId, paneId, tabId, notes);
-      workspaces = workspaces.map(w => {
-        if (w.id === workspaceId) {
-          return {
-            ...w,
-            panes: w.panes.map(p => {
-              if (p.id === paneId) {
-                return {
-                  ...p,
-                  tabs: p.tabs.map(t =>
-                    t.id === tabId ? { ...t, notes } : t
-                  )
-                };
-              }
-              return p;
-            })
-          };
-        }
-        return w;
-      });
+      const { tab } = findTab(workspaceId, paneId, tabId);
+      if (tab) tab.notes = notes;
     },
 
     async addWorkspaceNote(workspaceId: string, content: string, mode: string | null): Promise<WorkspaceNote | null> {
       try {
         const note = await commands.addWorkspaceNote(workspaceId, content, mode);
-        workspaces = workspaces.map(w => {
-          if (w.id === workspaceId) {
-            return { ...w, workspace_notes: [...w.workspace_notes, note] };
-          }
-          return w;
-        });
+        const ws = workspaces.find(w => w.id === workspaceId);
+        if (ws) ws.workspace_notes.push(note);
         return note;
       } catch (e) {
         logError(`Failed to add workspace note: ${e}`);
@@ -1747,50 +1560,28 @@ function createWorkspacesStore() {
 
     async updateWorkspaceNote(workspaceId: string, noteId: string, content: string, mode: string | null) {
       await commands.updateWorkspaceNote(workspaceId, noteId, content, mode);
-      workspaces = workspaces.map(w => {
-        if (w.id === workspaceId) {
-          return {
-            ...w,
-            workspace_notes: w.workspace_notes.map(n =>
-              n.id === noteId ? { ...n, content, mode, updated_at: new Date().toISOString() } : n
-            )
-          };
-        }
-        return w;
-      });
+      const ws = workspaces.find(w => w.id === workspaceId);
+      const note = ws?.workspace_notes.find(n => n.id === noteId);
+      if (note) {
+        note.content = content;
+        note.mode = mode;
+        note.updated_at = new Date().toISOString();
+      }
     },
 
     async deleteWorkspaceNote(workspaceId: string, noteId: string) {
       await commands.deleteWorkspaceNote(workspaceId, noteId);
-      workspaces = workspaces.map(w => {
-        if (w.id === workspaceId) {
-          return { ...w, workspace_notes: w.workspace_notes.filter(n => n.id !== noteId) };
-        }
-        return w;
-      });
+      const ws = workspaces.find(w => w.id === workspaceId);
+      if (ws) {
+        const idx = ws.workspace_notes.findIndex(n => n.id === noteId);
+        if (idx >= 0) ws.workspace_notes.splice(idx, 1);
+      }
     },
 
     async setTabNotesMode(workspaceId: string, paneId: string, tabId: string, notesMode: string | null) {
       await commands.setTabNotesMode(workspaceId, paneId, tabId, notesMode);
-      workspaces = workspaces.map(w => {
-        if (w.id === workspaceId) {
-          return {
-            ...w,
-            panes: w.panes.map(p => {
-              if (p.id === paneId) {
-                return {
-                  ...p,
-                  tabs: p.tabs.map(t =>
-                    t.id === tabId ? { ...t, notes_mode: notesMode } : t
-                  )
-                };
-              }
-              return p;
-            })
-          };
-        }
-        return w;
-      });
+      const { tab } = findTab(workspaceId, paneId, tabId);
+      if (tab) tab.notes_mode = notesMode;
     },
   };
 }

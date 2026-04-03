@@ -38,10 +38,29 @@
 
   $effect.pre(() => {
     const id = workspacesStore.activeWorkspaceId;
-    const allWorkspaces = workspacesStore.workspaces;
 
-    // All mutations to activatedWorkspaceIds/activatedTabIds must be untracked
-    // to avoid effect_update_depth_exceeded — we read and write the same SvelteSet.
+    // Read workspace structure outside untrack() so the effect re-runs when
+    // panes, tabs, or active_tab_id change via fine-grained Svelte 5 reactivity.
+    // Only SvelteSet mutations (activatedTabIds, activatedWorkspaceIds, pendingResumePanes)
+    // stay inside untrack() to avoid effect_update_depth_exceeded.
+    const ws = workspacesStore.workspaces.find(w => w.id === id);
+    const paneSnapshots = ws?.panes.map(p => ({
+      id: p.id,
+      active_tab_id: p.active_tab_id,
+      tabs: p.tabs,
+    })) ?? [];
+
+    // Snapshot suspended workspaces for cleanup
+    const suspendedSnapshots: { id: string; panes: { id: string; tabIds: string[] }[] }[] = [];
+    for (const w of workspacesStore.workspaces) {
+      if (w.suspended) {
+        suspendedSnapshots.push({
+          id: w.id,
+          panes: w.panes.map(p => ({ id: p.id, tabIds: p.tabs.map(t => t.id) })),
+        });
+      }
+    }
+
     untrack(() => {
       const workspaceSwitched = id !== lastActiveWorkspaceId;
       if (id) {
@@ -53,42 +72,37 @@
       // Uses $effect.pre so activatedTabIds is updated before DOM render,
       // avoiding a frame where the tab slot is empty.
       // On workspace switch (not initial load), suspended tabs show a resume prompt.
-      const ws = allWorkspaces.find(w => w.id === id);
-      if (ws) {
-        for (const pane of ws.panes) {
-          const tabId = pane.active_tab_id;
-          if (!tabId) continue;
-          const tab = pane.tabs.find(t => t.id === tabId);
-          const isTerminal = tab && (tab.tab_type === 'terminal' || !tab.tab_type);
-          const isSuspended = isTerminal && !terminalsStore.get(tabId) && !activatedTabIds.has(tabId);
+      for (const paneSnap of paneSnapshots) {
+        const tabId = paneSnap.active_tab_id;
+        if (!tabId) continue;
+        const tab = paneSnap.tabs.find(t => t.id === tabId);
+        const isTerminal = tab && (tab.tab_type === 'terminal' || !tab.tab_type);
+        const isSuspended = isTerminal && !terminalsStore.get(tabId) && !activatedTabIds.has(tabId);
 
-          if (initialActivationDone && workspaceSwitched && isSuspended) {
-            // Workspace switch landed on a suspended tab — show resume prompt
-            pendingResumePanes.add(pane.id);
-          } else if (pendingResumePanes.has(pane.id) && isSuspended) {
-            // Pane is pending resume and new active tab is also suspended — keep waiting
-          } else if (pendingResumePanes.has(pane.id)) {
-            // User clicked a non-suspended tab within a pending-resume pane — activate it
-            activatedTabIds.add(tabId);
-            pendingResumePanes.delete(pane.id);
-          } else {
-            activatedTabIds.add(tabId);
-          }
+        if (initialActivationDone && workspaceSwitched && isSuspended) {
+          // Workspace switch landed on a suspended tab — show resume prompt
+          pendingResumePanes.add(paneSnap.id);
+        } else if (pendingResumePanes.has(paneSnap.id) && isSuspended) {
+          // Pane is pending resume and new active tab is also suspended — keep waiting
+        } else if (pendingResumePanes.has(paneSnap.id)) {
+          // User clicked a non-suspended tab within a pending-resume pane — activate it
+          activatedTabIds.add(tabId);
+          pendingResumePanes.delete(paneSnap.id);
+        } else {
+          activatedTabIds.add(tabId);
         }
-        if (workspaceSwitched) initialActivationDone = true;
       }
+      if (workspaceSwitched) initialActivationDone = true;
 
       // Clean up suspended workspaces — remove from activated sets so their
       // TerminalPane/EditorPane/DiffPane components get destroyed, freeing resources.
-      for (const wsId of activatedWorkspaceIds) {
-        const w = allWorkspaces.find(x => x.id === wsId);
-        if (w?.suspended) {
-          activatedWorkspaceIds.delete(wsId);
-          // Reset lastActiveWorkspaceId so resuming this workspace triggers workspaceSwitched
-          if (wsId === lastActiveWorkspaceId) lastActiveWorkspaceId = null;
-          for (const pane of w.panes) {
-            for (const tab of pane.tabs) {
-              activatedTabIds.delete(tab.id);
+      for (const snap of suspendedSnapshots) {
+        if (activatedWorkspaceIds.has(snap.id)) {
+          activatedWorkspaceIds.delete(snap.id);
+          if (snap.id === lastActiveWorkspaceId) lastActiveWorkspaceId = null;
+          for (const pane of snap.panes) {
+            for (const tabId of pane.tabIds) {
+              activatedTabIds.delete(tabId);
             }
             pendingResumePanes.delete(pane.id);
           }
@@ -101,16 +115,17 @@
   // listen for resumePane clearing the set and activate the current tab.
   $effect.pre(() => {
     const id = workspacesStore.activeWorkspaceId;
-    const allWorkspaces = workspacesStore.workspaces;
     // Re-run when pendingResumePanes changes size
     void pendingResumePanes.size;
+
+    // Read pane data outside untrack() for fine-grained reactivity
+    const ws = workspacesStore.workspaces.find(w => w.id === id);
+    const paneData = ws?.panes.map(p => ({ id: p.id, active_tab_id: p.active_tab_id })) ?? [];
+
     untrack(() => {
-      const ws = allWorkspaces.find(w => w.id === id);
-      if (!ws) return;
-      for (const pane of ws.panes) {
-        const tabId = pane.active_tab_id;
-        if (tabId && !pendingResumePanes.has(pane.id)) {
-          activatedTabIds.add(tabId);
+      for (const p of paneData) {
+        if (p.active_tab_id && !pendingResumePanes.has(p.id)) {
+          activatedTabIds.add(p.active_tab_id);
         }
       }
     });
