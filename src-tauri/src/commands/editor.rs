@@ -656,9 +656,42 @@ pub async fn git_show_file(file_path: String, git_ref: String) -> Result<String,
 }
 
 #[command]
-pub async fn list_files(path: String, max_files: Option<u32>) -> Result<Vec<String>, String> {
+pub async fn is_directory(path: String) -> Result<bool, String> {
+    let path = expand_tilde(&path);
+    Ok(std::path::Path::new(&path).is_dir())
+}
+
+#[command]
+pub async fn ssh_is_directory(ssh_command: String, remote_path: String) -> Result<bool, String> {
+    let user_host = extract_user_host(&ssh_command)?;
+    let remote_path = expand_remote_tilde(&user_host, &remote_path);
+    let quoted = shell_quote(&remote_path);
+
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        tokio::process::Command::new("ssh")
+            .arg("-o").arg("BatchMode=yes")
+            .arg("-o").arg("ConnectTimeout=5")
+            .arg(&user_host)
+            .arg(format!("test -d {}", quoted))
+            .output()
+    )
+    .await
+    .map_err(|_| "SSH timed out".to_string())?
+    .map_err(|e| format!("SSH failed: {}", e))?;
+
+    Ok(output.status.success())
+}
+
+#[command]
+pub async fn list_files(
+    path: String,
+    max_files: Option<u32>,
+    show_hidden: Option<bool>,
+) -> Result<Vec<String>, String> {
     let path = expand_tilde(&path);
     let max = max_files.unwrap_or(10_000) as usize;
+    let hidden = show_hidden.unwrap_or(false);
     let base = std::path::PathBuf::from(&path);
 
     if !base.is_dir() {
@@ -666,26 +699,37 @@ pub async fn list_files(path: String, max_files: Option<u32>) -> Result<Vec<Stri
     }
 
     let walker = ignore::WalkBuilder::new(&base)
-        .hidden(false)
+        .hidden(!hidden)
         .git_ignore(true)
         .git_global(true)
         .max_depth(Some(20))
         .build();
 
-    let mut files = Vec::new();
+    let mut entries: Vec<(String, u64)> = Vec::new();
     for entry in walker {
-        if files.len() >= max {
+        if entries.len() >= max {
             break;
         }
         if let Ok(entry) = entry {
             if entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
                 if let Ok(rel) = entry.path().strip_prefix(&base) {
-                    files.push(rel.to_string_lossy().to_string());
+                    let mtime = entry
+                        .metadata()
+                        .ok()
+                        .and_then(|m| m.modified().ok())
+                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0);
+                    entries.push((rel.to_string_lossy().to_string(), mtime));
                 }
             }
         }
     }
-    Ok(files)
+
+    // Sort by mtime descending (most recently modified first)
+    entries.sort_by(|a, b| b.1.cmp(&a.1));
+
+    Ok(entries.into_iter().map(|(path, _)| path).collect())
 }
 
 #[command]
@@ -693,16 +737,27 @@ pub async fn ssh_list_files(
     ssh_command: String,
     remote_path: String,
     max_files: Option<u32>,
+    show_hidden: Option<bool>,
 ) -> Result<Vec<String>, String> {
     let user_host = extract_user_host(&ssh_command)?;
     let remote_path = expand_remote_tilde(&user_host, &remote_path);
     let max = max_files.unwrap_or(5000);
+    let hidden = show_hidden.unwrap_or(false);
     let quoted = shell_quote(&remote_path);
 
-    // Try git ls-files first (fast, respects .gitignore), fall back to find
+    // Build find command: exclude hidden dirs/files unless show_hidden is set
+    // -maxdepth must come before other predicates (GNU find warns otherwise)
+    let find_cmd = if hidden {
+        "find . -maxdepth 10 -type f".to_string()
+    } else {
+        "find . -maxdepth 10 -path '*/.*' -prune -o -type f -print".to_string()
+    };
+
+    // git ls-files respects .gitignore; use find as fallback
+    // Sort results by mtime (newest first) via ls -t
     let cmd = format!(
-        "cd {} && (git ls-files 2>/dev/null || find . -type f -maxdepth 10) | head -{}",
-        quoted, max
+        "cd {} && {{ git ls-files -z 2>/dev/null | xargs -0 ls -1t 2>/dev/null || {} -printf '%T@\\t%P\\n' | sort -rn | cut -f2; }} | head -{}",
+        quoted, find_cmd, max
     );
 
     let output = tokio::time::timeout(

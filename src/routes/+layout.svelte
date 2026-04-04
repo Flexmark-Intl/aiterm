@@ -473,6 +473,14 @@
         return;
       }
 
+      // Cmd+P - Quick Open file search
+      if (isMeta && !e.shiftKey && e.key.toLowerCase() === 'p') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!showQuickOpen) showQuickOpen = true;
+        return;
+      }
+
       // Cmd+O - Open file in editor tab
       if (isMeta && !e.shiftKey && e.key.toLowerCase() === 'o') {
         e.preventDefault();
@@ -756,7 +764,11 @@
 />
 <QuickOpen
   open={showQuickOpen}
-  onclose={() => { showQuickOpen = false; }}
+  onclose={() => {
+    showQuickOpen = false;
+    const tab = workspacesStore.activeTab;
+    if (tab?.tab_type === 'terminal') terminalsStore.focusTerminal(tab.id);
+  }}
   onselect={(filePath) => {
     showQuickOpen = false;
     const ws = workspacesStore.activeWorkspace;

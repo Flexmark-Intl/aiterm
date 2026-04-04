@@ -439,6 +439,8 @@ pub fn run() {
             commands::editor::unwatch_remote_file,
             commands::editor::get_remote_file_mtime,
             commands::editor::git_show_file,
+            commands::editor::is_directory,
+            commands::editor::ssh_is_directory,
             commands::editor::list_files,
             commands::editor::ssh_list_files,
             commands::claude_code::claude_code_respond,

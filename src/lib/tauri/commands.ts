@@ -508,12 +508,20 @@ export async function scpUploadFiles(sshCommand: string, localPaths: string[], r
   return invoke('scp_upload_files', { sshCommand, localPaths, remoteDir });
 }
 
-export async function listFiles(path: string, maxFiles?: number): Promise<string[]> {
-  return invoke('list_files', { path, maxFiles: maxFiles ?? null });
+export async function isDirectory(path: string): Promise<boolean> {
+  return invoke('is_directory', { path });
 }
 
-export async function sshListFiles(sshCommand: string, remotePath: string, maxFiles?: number): Promise<string[]> {
-  return invoke('ssh_list_files', { sshCommand, remotePath, maxFiles: maxFiles ?? null });
+export async function sshIsDirectory(sshCommand: string, remotePath: string): Promise<boolean> {
+  return invoke('ssh_is_directory', { sshCommand, remotePath });
+}
+
+export async function listFiles(path: string, maxFiles?: number, showHidden?: boolean): Promise<string[]> {
+  return invoke('list_files', { path, maxFiles: maxFiles ?? null, showHidden: showHidden ?? null });
+}
+
+export async function sshListFiles(sshCommand: string, remotePath: string, maxFiles?: number, showHidden?: boolean): Promise<string[]> {
+  return invoke('ssh_list_files', { sshCommand, remotePath, maxFiles: maxFiles ?? null, showHidden: showHidden ?? null });
 }
 
 export async function createEditorTab(workspaceId: string, paneId: string, name: string, fileInfo: EditorFileInfo, afterTabId?: string): Promise<Tab> {
