@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.9.0
+
+- Add Quick Open file search palette (double-press Alt/Opt or Cmd+P) with fuzzy matching, glob patterns, and SSH remote support
+- Add directory navigation in Quick Open (Tab to enter, Backspace to go back, dotfile toggle)
+- Add recently-opened and mtime-sorted file ordering in Quick Open
+- Convert workspaces store to Svelte 5 direct mutations, fixing notes panel reverting edits during terminal output
+
 ## v1.8.6
 
 - Re-check for newer version before installing update (choice prompt if a newer release appeared)
