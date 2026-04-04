@@ -981,8 +981,7 @@ function createWorkspacesStore() {
         const reordered = tabIds
           .map(id => pane.tabs.find(t => t.id === id))
           .filter((t): t is Tab => t !== undefined);
-        pane.tabs.length = 0;
-        pane.tabs.push(...reordered);
+        pane.tabs.splice(0, pane.tabs.length, ...reordered);
       }
       await commands.reorderTabs(workspaceId, paneId, tabIds);
     },
