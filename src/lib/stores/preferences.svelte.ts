@@ -62,6 +62,8 @@ function createPreferencesStore() {
   let autoSuspendMinutes = $state(0);
   let groupActiveTabs = $state(false);
   let autoCheckUpdates = $state(true);
+  let quickOpenShowHidden = $state(false);
+  let quickOpenShowIgnored = $state(false);
 
   return {
     /** Resolves once the initial load() has completed. */
@@ -121,6 +123,8 @@ function createPreferencesStore() {
     get autoSuspendMinutes() { return autoSuspendMinutes; },
     get groupActiveTabs() { return groupActiveTabs; },
     get autoCheckUpdates() { return autoCheckUpdates; },
+    get quickOpenShowHidden() { return quickOpenShowHidden; },
+    get quickOpenShowIgnored() { return quickOpenShowIgnored; },
 
     async load() {
       const prefs = await commands.getPreferences();
@@ -190,6 +194,8 @@ function createPreferencesStore() {
       autoSuspendMinutes = prefs.auto_suspend_minutes ?? 0;
       groupActiveTabs = prefs.group_active_tabs ?? false;
       autoCheckUpdates = prefs.auto_check_updates ?? true;
+      quickOpenShowHidden = prefs.quick_open_show_hidden ?? false;
+      quickOpenShowIgnored = prefs.quick_open_show_ignored ?? false;
       _resolveReady();
     },
 
@@ -461,6 +467,16 @@ function createPreferencesStore() {
       await this.save();
     },
 
+    async setQuickOpenShowHidden(value: boolean) {
+      quickOpenShowHidden = value;
+      await this.save();
+    },
+
+    async setQuickOpenShowIgnored(value: boolean) {
+      quickOpenShowIgnored = value;
+      await this.save();
+    },
+
     async addCustomTheme(t: Theme) {
       customThemes = [...customThemes, t];
       await this.save();
@@ -539,6 +555,8 @@ function createPreferencesStore() {
       autoSuspendMinutes = prefs.auto_suspend_minutes ?? 0;
       groupActiveTabs = prefs.group_active_tabs ?? false;
       autoCheckUpdates = prefs.auto_check_updates ?? true;
+      quickOpenShowHidden = prefs.quick_open_show_hidden ?? false;
+      quickOpenShowIgnored = prefs.quick_open_show_ignored ?? false;
     },
 
     async save() {
@@ -599,6 +617,8 @@ function createPreferencesStore() {
         backup_trim_enabled: backupTrimEnabled,
         backup_trim_age: backupTrimAge,
         auto_check_updates: autoCheckUpdates,
+        quick_open_show_hidden: quickOpenShowHidden,
+        quick_open_show_ignored: quickOpenShowIgnored,
       };
       await commands.setPreferences(prefs);
     }

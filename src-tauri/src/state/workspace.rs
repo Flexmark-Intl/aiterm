@@ -745,6 +745,14 @@ pub struct Preferences {
     /// Automatically check for updates on app launch
     #[serde(default = "default_true")]
     pub auto_check_updates: bool,
+
+    /// Quick Open: show hidden/dotfiles by default
+    #[serde(default)]
+    pub quick_open_show_hidden: bool,
+
+    /// Quick Open: show gitignored files by default
+    #[serde(default)]
+    pub quick_open_show_ignored: bool,
 }
 
 impl Default for Preferences {
@@ -807,6 +815,8 @@ impl Default for Preferences {
             auto_suspend_minutes: 0,
             group_active_tabs: false,
             auto_check_updates: true,
+            quick_open_show_hidden: false,
+            quick_open_show_ignored: false,
         }
     }
 }

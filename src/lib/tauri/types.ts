@@ -185,6 +185,8 @@ export interface Preferences {
   auto_suspend_minutes: number;
   group_active_tabs: boolean;
   auto_check_updates: boolean;
+  quick_open_show_hidden: boolean;
+  quick_open_show_ignored: boolean;
 }
 
 export interface WindowData {

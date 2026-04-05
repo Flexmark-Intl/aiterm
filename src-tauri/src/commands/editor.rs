@@ -688,10 +688,12 @@ pub async fn list_files(
     path: String,
     max_files: Option<u32>,
     show_hidden: Option<bool>,
+    show_ignored: Option<bool>,
 ) -> Result<Vec<String>, String> {
     let path = expand_tilde(&path);
     let max = max_files.unwrap_or(10_000) as usize;
     let hidden = show_hidden.unwrap_or(false);
+    let no_ignore = show_ignored.unwrap_or(false);
     let base = std::path::PathBuf::from(&path);
 
     if !base.is_dir() {
@@ -700,9 +702,28 @@ pub async fn list_files(
 
     let walker = ignore::WalkBuilder::new(&base)
         .hidden(!hidden)
-        .git_ignore(true)
-        .git_global(true)
+        .git_ignore(!no_ignore)
+        .git_global(!no_ignore)
+        .git_exclude(!no_ignore)
         .max_depth(Some(20))
+        .filter_entry(|entry| {
+            // Allow .git/ files at depth 1 (e.g. .git/config) but skip deeper traversal.
+            // This prevents the massive .git/objects/ tree from flooding results while
+            // still showing useful top-level .git files like HEAD, config, description.
+            let path = entry.path();
+            for (i, component) in path.components().enumerate() {
+                if let std::path::Component::Normal(name) = component {
+                    if name == ".git" {
+                        // Count how many components follow .git
+                        let depth_after_git = path.components().count() - i - 1;
+                        // Allow .git itself (dir entry) and direct children (depth 1),
+                        // skip anything nested deeper (depth 2+)
+                        return depth_after_git <= 1;
+                    }
+                }
+            }
+            true
+        })
         .build();
 
     let mut entries: Vec<(String, u64)> = Vec::new();
@@ -738,27 +759,43 @@ pub async fn ssh_list_files(
     remote_path: String,
     max_files: Option<u32>,
     show_hidden: Option<bool>,
+    show_ignored: Option<bool>,
 ) -> Result<Vec<String>, String> {
     let user_host = extract_user_host(&ssh_command)?;
     let remote_path = expand_remote_tilde(&user_host, &remote_path);
     let max = max_files.unwrap_or(5000);
     let hidden = show_hidden.unwrap_or(false);
+    let no_ignore = show_ignored.unwrap_or(false);
     let quoted = shell_quote(&remote_path);
 
-    // Build find command: exclude hidden dirs/files unless show_hidden is set
-    // -maxdepth must come before other predicates (GNU find warns otherwise)
+    // Build find command: exclude hidden dirs/files unless show_hidden is set.
+    // Always limit .git/ to depth 1 (show HEAD, config, etc. but skip objects/).
     let find_cmd = if hidden {
-        "find . -maxdepth 10 -type f".to_string()
+        // Show dotfiles but only top-level .git/ files (HEAD, config, etc.)
+        // Skip anything nested inside .git subdirs (objects/, refs/, hooks/, logs/)
+        "find . -maxdepth 10 -path '*/.git/*/*' -prune -o -type f -print".to_string()
     } else {
         "find . -maxdepth 10 -path '*/.*' -prune -o -type f -print".to_string()
     };
 
-    // git ls-files respects .gitignore; use find as fallback
-    // Sort results by mtime (newest first) via ls -t
-    let cmd = format!(
-        "cd {} && {{ git ls-files -z 2>/dev/null | xargs -0 ls -1t 2>/dev/null || {} -printf '%T@\\t%P\\n' | sort -rn | cut -f2; }} | head -{}",
-        quoted, find_cmd, max
-    );
+    // git ls-files --cached --others --exclude-standard lists tracked + untracked
+    // files while respecting .gitignore. Plain `git ls-files` only shows tracked
+    // files, missing anything not yet committed.
+    // show_ignored: use find instead of git ls-files to bypass .gitignore entirely.
+    let cmd = if no_ignore {
+        format!(
+            "cd {} && {} | head -{}",
+            quoted, find_cmd, max
+        )
+    } else {
+        // Use git ls-files with fallback to find for non-git directories.
+        // The `| head -1` test ensures we fall back if git ls-files returns empty
+        // (e.g. empty repo with no tracked files at all).
+        format!(
+            "cd {} && {{ out=$(git ls-files --cached --others --exclude-standard 2>/dev/null) && [ -n \"$out\" ] && echo \"$out\" || {}; }} | head -{}",
+            quoted, find_cmd, max
+        )
+    };
 
     let output = tokio::time::timeout(
         std::time::Duration::from_secs(15),

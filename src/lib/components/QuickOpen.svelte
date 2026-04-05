@@ -3,6 +3,8 @@
   import { terminalsStore } from '$lib/stores/terminals.svelte';
   import { getPtyInfo, listFiles, sshListFiles, isDirectory, sshIsDirectory } from '$lib/tauri/commands';
   import { error as logError } from '@tauri-apps/plugin-log';
+  import { preferencesStore } from '$lib/stores/preferences.svelte';
+  import Tooltip from '$lib/components/Tooltip.svelte';
 
   interface Props {
     open: boolean;
@@ -21,11 +23,12 @@
   let basePath = $state('');
   let isRemote = $state(false);
   let showHidden = $state(false);
+  let showIgnored = $state(false);
   let inputRef = $state<HTMLInputElement | null>(null);
   let listRef = $state<HTMLDivElement | null>(null);
 
   // Cache: reuse file list if same CWD and within TTL
-  let cache: { cwd: string; files: string[]; capped: boolean; hidden: boolean; time: number } | null = null;
+  let cache: { cwd: string; files: string[]; capped: boolean; hidden: boolean; ignored: boolean; time: number } | null = null;
   const CACHE_TTL = 30_000;
 
   const MAX_FILES = 10_000;
@@ -181,9 +184,9 @@
     try {
       let result: string[];
       if (isRemote && ctx.sshCommand) {
-        result = await sshListFiles(ctx.sshCommand, subPath, 5000, showHidden);
+        result = await sshListFiles(ctx.sshCommand, subPath, 5000, showHidden, showIgnored);
       } else {
-        result = await listFiles(subPath, MAX_FILES, showHidden);
+        result = await listFiles(subPath, MAX_FILES, showHidden, showIgnored);
       }
       // Prefix results with the directory so they match the full relative path
       targetedFiles = result.map(f => `${dirPrefix}/${f}`);
@@ -329,7 +332,7 @@
 
     try {
       // Check cache
-      if (!forceRefresh && cache && cache.cwd === cwd && cache.hidden === showHidden && Date.now() - cache.time < CACHE_TTL) {
+      if (!forceRefresh && cache && cache.cwd === cwd && cache.hidden === showHidden && cache.ignored === showIgnored && Date.now() - cache.time < CACHE_TTL) {
         files = cache.files;
         capped = cache.capped;
         loading = false;
@@ -341,16 +344,16 @@
       const ctx = lastCtx;
 
       if (isRemote && ctx?.sshCommand) {
-        result = await sshListFiles(ctx.sshCommand, cwd, maxLimit, showHidden);
+        result = await sshListFiles(ctx.sshCommand, cwd, maxLimit, showHidden, showIgnored);
       } else {
-        result = await listFiles(cwd, maxLimit, showHidden);
+        result = await listFiles(cwd, maxLimit, showHidden, showIgnored);
       }
 
       if (!open) return;
 
       files = result;
       capped = result.length >= maxLimit;
-      cache = { cwd, files: result, capped, hidden: showHidden, time: Date.now() };
+      cache = { cwd, files: result, capped, hidden: showHidden, ignored: showIgnored, time: Date.now() };
     } catch (e) {
       if (!open) return;
       error = String(e);
@@ -475,15 +478,26 @@
       error = null;
       lastCtx = null; // force re-detection of terminal context
       navStack = [];
+      palettePos = (savedPos && validatePosition(savedPos)) ?? { x: 0, y: 0 };
+      // Sync toggle state from persisted preferences (loaded async after app start)
+      showHidden = preferencesStore.quickOpenShowHidden;
+      showIgnored = preferencesStore.quickOpenShowIgnored;
       loadFiles();
       requestAnimationFrame(() => inputRef?.focus());
     }
   });
 
-  // Reload when hidden toggle changes (while open)
   function toggleHidden() {
     showHidden = !showHidden;
-    cache = null; // invalidate cache
+    preferencesStore.setQuickOpenShowHidden(showHidden);
+    cache = null;
+    loadFiles(true);
+  }
+
+  function toggleIgnored() {
+    showIgnored = !showIgnored;
+    preferencesStore.setQuickOpenShowIgnored(showIgnored);
+    cache = null;
     loadFiles(true);
   }
 
@@ -566,6 +580,45 @@
     };
   }
 
+  // ── Dragging ────────────────────────────────────────────────────────
+  // Position persists across open/close; validated against viewport on open.
+  let dragOffset = $state<{ x: number; y: number } | null>(null);
+  let palettePos = $state<{ x: number; y: number }>({ x: 0, y: 0 });
+  let savedPos: { x: number; y: number } | null = null;
+  let paletteRef = $state<HTMLDivElement | null>(null);
+
+  /** Check if saved position keeps the palette reasonably visible. */
+  function validatePosition(pos: { x: number; y: number }): { x: number; y: number } | null {
+    // The palette is centered at ~50% horizontally, 15vh vertically via CSS.
+    // The transform offsets from that default position.
+    // Just check the offset isn't so extreme the palette is off-screen.
+    const maxX = window.innerWidth / 2;
+    const maxY = window.innerHeight * 0.7;
+    if (Math.abs(pos.x) > maxX || Math.abs(pos.y) > maxY) return null;
+    return pos;
+  }
+
+  function onDragStart(e: MouseEvent) {
+    const target = e.target as HTMLElement;
+    if (target.tagName === 'INPUT' || target.tagName === 'BUTTON' || target.closest('button')) return;
+    e.preventDefault();
+    dragOffset = { x: e.clientX - palettePos.x, y: e.clientY - palettePos.y };
+    window.addEventListener('mousemove', onDragMove);
+    window.addEventListener('mouseup', onDragEnd);
+  }
+
+  function onDragMove(e: MouseEvent) {
+    if (!dragOffset) return;
+    palettePos = { x: e.clientX - dragOffset.x, y: e.clientY - dragOffset.y };
+  }
+
+  function onDragEnd() {
+    dragOffset = null;
+    savedPos = { ...palettePos };
+    window.removeEventListener('mousemove', onDragMove);
+    window.removeEventListener('mouseup', onDragEnd);
+  }
+
   /** Build highlighted spans for a filename with matched indices. */
   function highlightChars(text: string, indices: number[], offset: number): Array<{ text: string; highlight: boolean }> {
     const indexSet = new Set(indices.filter(i => i >= offset && i < offset + text.length).map(i => i - offset));
@@ -601,8 +654,9 @@
     aria-modal="true"
     tabindex="-1"
   >
-    <div class="palette">
-      <div class="input-row">
+    <div class="palette" style={palettePos.x || palettePos.y ? `transform: translate(${palettePos.x}px, ${palettePos.y}px)` : ''}>
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="input-row" onmousedown={onDragStart}>
         <div class="input-wrapper">
           {#if navStack.length > 0}
             <button
@@ -622,24 +676,38 @@
         </div>
         {#if basePath}
           <div class="input-meta">
-            <span class="base-path" title={basePath}>
+            <div class="meta-left">
+              <Tooltip text="Refresh file list">
+                <button
+                  class="refresh-btn"
+                  onclick={() => { cache = null; loadFiles(true); }}
+                >↻</button>
+              </Tooltip>
               {#if basePath !== originalCwd}
-                <button class="home-btn" title="Return to terminal CWD" onclick={() => { navStack = []; query = ''; loadFiles(false, originalCwd); }}>⌂</button>
+                <Tooltip text="Return to terminal CWD">
+                  <button
+                    class="home-btn"
+                    onclick={() => { navStack = []; query = ''; loadFiles(false, originalCwd); }}
+                  >⌂</button>
+                </Tooltip>
               {/if}
-              {basePath}
-            </span>
+              <span class="base-path" title={basePath}>{basePath}</span>
+            </div>
             <div class="input-actions">
-              <button
-                class="toggle-btn"
-                class:active={showHidden}
-                title={showHidden ? 'Hide dotfiles' : 'Show dotfiles'}
-                onclick={toggleHidden}
-              >.*</button>
-              <button
-                class="toggle-btn"
-                title="Refresh file list"
-                onclick={() => { cache = null; loadFiles(true); }}
-              >↻</button>
+              <Tooltip text={showHidden ? 'Hide dotfiles' : 'Show dotfiles'}>
+                <button
+                  class="toggle-btn"
+                  class:active={showHidden}
+                  onclick={toggleHidden}
+                >.*</button>
+              </Tooltip>
+              <Tooltip text={showIgnored ? 'Respect .gitignore' : 'Show gitignored files'}>
+                <button
+                  class="toggle-btn"
+                  class:active={showIgnored}
+                  onclick={toggleIgnored}
+                >.gi</button>
+              </Tooltip>
             </div>
           </div>
         {/if}
@@ -745,6 +813,11 @@
     flex-direction: column;
     padding: 10px 12px 8px;
     border-bottom: 1px solid var(--bg-light);
+    cursor: grab;
+  }
+
+  .input-row:active {
+    cursor: grabbing;
   }
 
   .input-wrapper {
@@ -783,6 +856,24 @@
     min-width: 0;
   }
 
+  .refresh-btn {
+    background: none;
+    border: 1px solid var(--bg-light);
+    border-radius: 3px;
+    color: var(--fg-dim);
+    cursor: pointer;
+    font-size: 0.769rem;
+    padding: 1px 5px;
+    line-height: 1.4;
+    flex-shrink: 0;
+    font-family: inherit;
+  }
+
+  .refresh-btn:hover {
+    background: var(--bg-light);
+    color: var(--fg);
+  }
+
   input:focus {
     border-color: var(--accent);
   }
@@ -796,6 +887,14 @@
     align-items: center;
     justify-content: space-between;
     margin-top: 4px;
+  }
+
+  .meta-left {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    min-width: 0;
+    overflow: hidden;
   }
 
   .base-path {
@@ -812,17 +911,20 @@
 
   .home-btn {
     background: none;
-    border: none;
+    border: 1px solid var(--bg-light);
+    border-radius: 3px;
     color: var(--accent);
     cursor: pointer;
-    font-size: 0.846rem;
-    padding: 0 2px;
+    font-size: 0.769rem;
+    padding: 1px 5px;
+    line-height: 1.4;
     flex-shrink: 0;
-    line-height: 1;
+    font-family: inherit;
   }
 
   .home-btn:hover {
-    filter: brightness(1.3);
+    background: var(--bg-light);
+    filter: brightness(1.2);
   }
 
   .input-actions {
