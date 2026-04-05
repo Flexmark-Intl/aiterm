@@ -103,6 +103,14 @@ function createNavHistoryStore() {
       }
     },
 
+    /** Return the most recent history entry before the current cursor that isn't the tab being closed, or null. */
+    peekBackForClose(tabId: string): NavEntry | null {
+      for (let i = cursor - 1; i >= 0; i--) {
+        if (history[i].tabId !== tabId) return history[i];
+      }
+      return null;
+    },
+
     removeTab(tabId: string) {
       const currentId = cursor >= 0 ? history[cursor]?.tabId : null;
       history = history.filter(e => e.tabId !== tabId);

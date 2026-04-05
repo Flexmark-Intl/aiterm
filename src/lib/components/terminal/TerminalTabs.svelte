@@ -95,7 +95,7 @@
     const suspended: Tab[] = [];
     for (const tab of pane.tabs) {
       const isTerminal = tab.tab_type === 'terminal' || !tab.tab_type;
-      if (isTerminal && !terminalsStore.get(tab.id)) {
+      if (isTerminal && !terminalsStore.get(tab.id) && !terminalsStore.isSpawning(tab.id)) {
         suspended.push(tab);
       } else {
         active.push(tab);

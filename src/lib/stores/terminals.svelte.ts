@@ -57,6 +57,9 @@ function createTerminalsStore() {
   // Prevents pointless serialization of idle terminals, which creates large
   // temporary strings that pressure the GC (81 terminals × ~300KB = 24MB/cycle).
   const dirtyTabs = new Set<string>();
+  // Tabs whose PTY is being spawned — treated as "active" by the tab grouping
+  // logic so they don't flash into the suspended group before registration.
+  let spawningTabs = $state(new Set<string>());
 
   function emitOscChange(tabId: string, osc: OscState) {
     for (const fn of oscListeners) fn(tabId, osc);
@@ -70,6 +73,8 @@ function createTerminalsStore() {
     markDirty(tabId: string) { dirtyTabs.add(tabId); },
     isDirty(tabId: string) { return dirtyTabs.has(tabId); },
     clearDirty(tabId: string) { dirtyTabs.delete(tabId); },
+    markSpawning(tabId: string) { spawningTabs = new Set(spawningTabs).add(tabId); },
+    isSpawning(tabId: string) { return spawningTabs.has(tabId); },
     webglLoaded(tabId: string) { webglTabs = new Set(webglTabs).add(tabId); },
     webglUnloaded(tabId: string) { const s = new Set(webglTabs); s.delete(tabId); webglTabs = s; },
 
@@ -108,6 +113,11 @@ function createTerminalsStore() {
         workspaceId, paneId, tabId,
         osc: { title: null, cwd: null, cwdHost: null, promptCwd: null },
       });
+      if (spawningTabs.has(tabId)) {
+        const s = new Set(spawningTabs);
+        s.delete(tabId);
+        spawningTabs = s;
+      }
       instanceVersion++;
     },
 

@@ -782,6 +782,7 @@ function createWorkspacesStore() {
           : paneForTab.tabs.length;
         paneForTab.tabs.splice(insertIdx >= 0 ? insertIdx : paneForTab.tabs.length, 0, tab);
         paneForTab.active_tab_id = tab.id;
+        terminalsStore.markSpawning(tab.id);
       }
       return tab;
     },
@@ -798,6 +799,8 @@ function createWorkspacesStore() {
         const insertIdx = targetIdx === -1 ? paneForEditor.tabs.length : targetIdx + 1;
         paneForEditor.tabs.splice(insertIdx, 0, tab);
         paneForEditor.active_tab_id = tab.id;
+        const { navHistoryStore } = await import('$lib/stores/navHistory.svelte');
+        navHistoryStore.push({ workspaceId, paneId, tabId: tab.id });
       }
       return tab;
     },
@@ -811,6 +814,8 @@ function createWorkspacesStore() {
         const insertIdx = activeIdx === -1 ? paneForDiffTab.tabs.length : activeIdx + 1;
         paneForDiffTab.tabs.splice(insertIdx, 0, tab);
         paneForDiffTab.active_tab_id = tab.id;
+        const { navHistoryStore: navHistory } = await import('$lib/stores/navHistory.svelte');
+        navHistory.push({ workspaceId, paneId, tabId: tab.id });
       }
       return tab;
     },
@@ -848,7 +853,11 @@ function createWorkspacesStore() {
         const oldIndex = paneForDelete.tabs.findIndex(t => t.id === tabId);
         paneForDelete.tabs.splice(oldIndex, 1);
         if (paneForDelete.active_tab_id === tabId) {
-          const newActiveId = pickNextActiveTab(paneForDelete.tabs, oldIndex);
+          // Prefer nav history: go back to the tab you came from
+          const { navHistoryStore } = await import('$lib/stores/navHistory.svelte');
+          const prev = navHistoryStore.peekBackForClose(tabId);
+          const prevInPane = prev && paneForDelete.tabs.find(t => t.id === prev.tabId);
+          const newActiveId = prevInPane ? prev.tabId : pickNextActiveTab(paneForDelete.tabs, oldIndex);
           // If the next active tab is a suspended terminal, gate it behind resume prompt
           if (newActiveId && newActiveId !== paneForDelete.active_tab_id) {
             const nextTab = paneForDelete.tabs.find(t => t.id === newActiveId);
@@ -858,6 +867,8 @@ function createWorkspacesStore() {
             }
           }
           paneForDelete.active_tab_id = newActiveId;
+          navHistoryStore.removeTab(tabId);
+          return;
         }
       }
       import('$lib/stores/navHistory.svelte').then(m => m.navHistoryStore.removeTab(tabId));
@@ -917,7 +928,10 @@ function createWorkspacesStore() {
         const oldIndex = archivePane.tabs.findIndex(t => t.id === tabId);
         archivePane.tabs.splice(oldIndex, 1);
         if (archivePane.active_tab_id === tabId) {
-          archivePane.active_tab_id = pickNextActiveTab(archivePane.tabs, oldIndex);
+          const { navHistoryStore } = await import('$lib/stores/navHistory.svelte');
+          const prev = navHistoryStore.peekBackForClose(tabId);
+          const prevInPane = prev && archivePane.tabs.find(t => t.id === prev.tabId);
+          archivePane.active_tab_id = prevInPane ? prev.tabId : pickNextActiveTab(archivePane.tabs, oldIndex);
         }
       }
     },
@@ -960,6 +974,7 @@ function createWorkspacesStore() {
       const insertIdx = activeIdx >= 0 ? activeIdx + 1 : 0;
       pane.tabs.splice(insertIdx, 0, tab);
       pane.active_tab_id = tab.id;
+      terminalsStore.markSpawning(tab.id);
       import('$lib/stores/navHistory.svelte').then(m =>
         m.navHistoryStore.push({ workspaceId, paneId: pane.id, tabId })
       );
@@ -1385,6 +1400,7 @@ function createWorkspacesStore() {
       }
 
       // 8. Store split context for the new TerminalPane to consume on mount
+      terminalsStore.markSpawning(newTab.id);
       this._storeSplitContext(tabId, newTab.id, cwd, sshCommand, instance);
 
       // 9. Reorder to place new tab right after source
