@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { modLabel, altLabel } from '$lib/utils/platform';
+  import { modLabel, altLabel, isMac } from '$lib/utils/platform';
   import { slide } from 'svelte/transition';
 
   import { onMount } from 'svelte';
@@ -165,11 +165,17 @@
           <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd> <span>Redo</span></div>
         </div>
 
-        <h3 class="section-heading">Search</h3>
+        <h3 class="section-heading">Search & Navigation</h3>
         <div class="shortcut-group">
           <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>F</kbd> <span>Find / replace</span></div>
-          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>G</kbd> <span>Find next</span></div>
-          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>G</kbd> <span>Find previous</span></div>
+          {#if isMac()}
+            <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>G</kbd> <span>Find next</span></div>
+            <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>G</kbd> <span>Find previous</span></div>
+          {:else}
+            <div class="shortcut"><kbd>F3</kbd> <span>Find next</span></div>
+            <div class="shortcut"><kbd>Shift</kbd> + <kbd>F3</kbd> <span>Find previous</span></div>
+          {/if}
+          <div class="shortcut"><kbd>Ctrl</kbd> + <kbd>G</kbd> <span>Go to line</span></div>
         </div>
 
         <h3 class="section-heading">File</h3>

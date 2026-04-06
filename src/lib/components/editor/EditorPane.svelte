@@ -6,7 +6,7 @@
   import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
   import { foldGutter, indentOnInput, bracketMatching, foldKeymap } from '@codemirror/language';
   import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
-  import { search, searchKeymap, highlightSelectionMatches, getSearchQuery } from '@codemirror/search';
+  import { search, searchKeymap, highlightSelectionMatches, getSearchQuery, gotoLine } from '@codemirror/search';
   import { ViewPlugin } from '@codemirror/view';
   import type { EditorFileInfo } from '$lib/tauri/types';
   import { readFile, readFileBase64, writeFile, scpReadFile, scpReadFileBase64, scpWriteFile, watchFile, unwatchFile, getFileMtime, watchRemoteFile, unwatchRemoteFile, getRemoteFileMtime } from '$lib/tauri/commands';
@@ -981,6 +981,7 @@
             };
           }),
           keymap.of([
+            { key: 'Ctrl-g', run: gotoLine, preventDefault: true },
             ...closeBracketsKeymap,
             ...defaultKeymap,
             ...searchKeymap,
@@ -1300,22 +1301,24 @@
   {#if !loading && !errorMsg && !imageDataUrl && !pdfDoc}
     <div class="editor-bar">
       <IconButton
-        tooltip={wordWrap ? 'Disable word wrap' : 'Enable word wrap'}
+        tooltip={wordWrap ? 'Soft wrap: ON (Alt+Z)' : 'Soft wrap: OFF (Alt+Z)'}
         active={wordWrap}
         onclick={toggleWordWrap}
+        size={26}
       >
-        <Icon name="word-wrap" />
+        <Icon name="word-wrap" size={16} />
       </IconButton>
       {#if isMarkdown}
         <IconButton
-          tooltip={markdownPreview ? 'Edit' : 'Preview'}
+          tooltip={markdownPreview ? 'Edit markdown' : 'Preview markdown'}
           active={markdownPreview}
           onclick={toggleMarkdownPreview}
+          size={26}
         >
           {#if markdownPreview}
-            <Icon name="pencil" />
+            <Icon name="pencil" size={16} />
           {:else}
-            <Icon name="eye" />
+            <Icon name="eye" size={16} />
           {/if}
         </IconButton>
       {/if}
@@ -1811,12 +1814,16 @@
   /* Editor toolbar (word wrap, markdown preview) */
   .editor-bar {
     position: absolute;
-    top: 4px;
+    top: 6px;
     right: 20px;
     z-index: 5;
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 4px;
+    background: var(--bg-medium);
+    border: 1px solid var(--bg-light);
+    border-radius: 6px;
+    padding: 2px;
   }
 
   .md-render {
