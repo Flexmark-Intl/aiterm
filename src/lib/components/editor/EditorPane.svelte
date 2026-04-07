@@ -679,7 +679,7 @@
   async function handleExternalChange() {
     if (!editorView) return;
     if (!dirty) {
-      // Auto-reload silently
+      // Auto-reload silently, preserving scroll position and cursor
       try {
         let content: string;
         if (editorFile.is_remote && editorFile.remote_ssh_command && editorFile.remote_path) {
@@ -689,13 +689,27 @@
           const result = await readFile(editorFile.file_path);
           content = result.content;
         }
-        originalContent = content;
-        editorView.dispatch({
-          changes: { from: 0, to: editorView.state.doc.length, insert: content },
-        });
+        if (content === editorView.state.doc.toString()) {
+          // Content identical (mtime changed but content didn't) — skip dispatch
+          originalContent = content;
+        } else {
+          // Save scroll position before replacing content
+          const scroller = editorView.scrollDOM;
+          const scrollTop = scroller.scrollTop;
+          const scrollLeft = scroller.scrollLeft;
+          originalContent = content;
+          editorView.dispatch({
+            changes: { from: 0, to: editorView.state.doc.length, insert: content },
+          });
+          // Restore scroll position after content swap
+          requestAnimationFrame(() => {
+            scroller.scrollTop = scrollTop;
+            scroller.scrollLeft = scrollLeft;
+          });
+          logInfo(`Auto-reloaded ${editorFile.remote_path ?? editorFile.file_path}`);
+        }
         dirty = false;
         setEditorDirty(tabId, false);
-        logInfo(`Auto-reloaded ${editorFile.remote_path ?? editorFile.file_path}`);
       } catch (e) {
         logError(`Auto-reload failed: ${e}`);
       }
@@ -977,6 +991,41 @@
                 requestAnimationFrame(() => {
                   update.view.dispatch({ effects: EditorView.scrollIntoView(sel, { y: 'center' }) });
                 });
+              },
+            };
+          }),
+          // Prevent scroll jump when focus returns from scrollbar interaction.
+          // When the user drags the native scrollbar, focus moves from cm-content
+          // to cm-scroller. On mouseup, focus returns to cm-content and CM's
+          // ensureCursorVisible() scrolls back to the cursor — undoing the scroll.
+          // Fix: save scroll position on scroller focusout, restore after focusin.
+          ViewPlugin.define((view) => {
+            let savedScrollTop: number | null = null;
+            const scroller = view.scrollDOM;
+
+            function onFocusOut(e: FocusEvent) {
+              const related = e.relatedTarget as Element | null;
+              if (related === scroller || scroller.contains(related as Node)) {
+                savedScrollTop = scroller.scrollTop;
+              }
+            }
+            function onFocusIn() {
+              if (savedScrollTop !== null) {
+                const restore = savedScrollTop;
+                savedScrollTop = null;
+                // Restore after CM's ensureCursorVisible runs in requestMeasure
+                requestAnimationFrame(() => {
+                  scroller.scrollTop = restore;
+                });
+              }
+            }
+
+            view.contentDOM.addEventListener('focusout', onFocusOut);
+            view.contentDOM.addEventListener('focusin', onFocusIn);
+            return {
+              destroy() {
+                view.contentDOM.removeEventListener('focusout', onFocusOut);
+                view.contentDOM.removeEventListener('focusin', onFocusIn);
               },
             };
           }),
@@ -1343,6 +1392,15 @@
 
   .editor-container :global(.cm-editor) {
     height: 100%;
+  }
+
+  /* Editor scrollbar — wider than global default so it's easy to grab,
+     with a visible track so it doesn't sit invisibly at the window edge */
+  .editor-container :global(.cm-scroller)::-webkit-scrollbar {
+    width: 12px;
+  }
+  .editor-container :global(.cm-scroller)::-webkit-scrollbar-track {
+    background: var(--bg-medium);
   }
 
   /* Search panel styling */
