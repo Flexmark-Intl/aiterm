@@ -404,11 +404,16 @@ pub fn spawn_pty(
                         }
                     }
 
-                    // Feed bytes to alacritty_terminal VTE parser
+                    // Feed bytes to alacritty_terminal VTE parser.
+                    // Temporarily move our external selection onto term.selection so
+                    // alacritty's scroll handlers rotate it correctly when new output
+                    // pushes content up. Read it back after processing.
                     {
                         let mut registry = state_reader.terminal_registry.write();
                         if let Some(handle) = registry.get_mut(&pty_id_clone) {
+                            handle.term.selection = handle.selection.take();
                             handle.processor.advance(&mut handle.term, data);
+                            handle.selection = handle.term.selection.take();
                         }
                     }
 
