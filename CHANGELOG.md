@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.9.1
+
+- Add Go to Line (Ctrl+G) and improve editor toolbar visibility
+- Add gitignore toggle, tooltips, and draggable palette to Quick Open
+- Fix terminal selection coordinates drifting during PTY output (scrollback rotation)
+- Fix editor scroll jump when using scrollbar and auto-reload scroll reset
+- Fix tab close returning to wrong tab when group-active-tabs is enabled
+- Fix new terminal tabs flashing into suspended group before PTY registers
+
 ## v1.9.0
 
 - Add Quick Open file search palette (double-press Alt/Opt or Cmd+P) with fuzzy matching, glob patterns, and SSH remote support
