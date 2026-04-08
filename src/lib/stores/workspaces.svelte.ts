@@ -962,6 +962,7 @@ function createWorkspacesStore() {
           workspaceId, pane.id, tab.id,
           tab.auto_resume_cwd, tab.auto_resume_ssh_command,
           tab.auto_resume_remote_cwd, tab.auto_resume_command,
+          tab.auto_resume_pinned,
         );
       }
 
@@ -1200,6 +1201,7 @@ function createWorkspacesStore() {
           sourceTab.auto_resume_ssh_command,
           sourceTab.auto_resume_remote_cwd,
           sourceTab.auto_resume_command,
+          sourceTab.auto_resume_pinned,
         );
       }
 
@@ -1396,6 +1398,7 @@ function createWorkspacesStore() {
           sourceTab.auto_resume_ssh_command,
           sourceTab.auto_resume_remote_cwd,
           sourceTab.auto_resume_command,
+          sourceTab.auto_resume_pinned,
         );
       }
 
