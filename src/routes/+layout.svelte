@@ -559,6 +559,9 @@
         const ws = workspacesStore.activeWorkspace;
         const pane = workspacesStore.activePane;
         if (ws && pane && pane.tabs[index]) {
+          if (pane.active_tab_id) {
+            navHistoryStore.push({ workspaceId: ws.id, paneId: pane.id, tabId: pane.active_tab_id });
+          }
           navHistoryStore.push({ workspaceId: ws.id, paneId: pane.id, tabId: pane.tabs[index].id });
           workspacesStore.setActiveTab(ws.id, pane.id, pane.tabs[index].id);
           terminalsStore.focusTerminal(pane.tabs[index].id);
@@ -582,7 +585,7 @@
         return;
       }
 
-      // Cmd+Shift+[ - Previous tab
+      // Cmd+Shift+[ - Previous tab (no nav history push — tab bar cycling is separate from history)
       if (isMeta && e.shiftKey && (e.key === '[' || e.code === 'BracketLeft')) {
         e.preventDefault();
         e.stopPropagation();
@@ -591,14 +594,13 @@
         if (ws && pane && pane.tabs.length > 1) {
           const currentIndex = pane.tabs.findIndex(t => t.id === pane.active_tab_id);
           const prevIndex = currentIndex <= 0 ? pane.tabs.length - 1 : currentIndex - 1;
-          navHistoryStore.push({ workspaceId: ws.id, paneId: pane.id, tabId: pane.tabs[prevIndex].id });
           workspacesStore.setActiveTab(ws.id, pane.id, pane.tabs[prevIndex].id);
           terminalsStore.focusTerminal(pane.tabs[prevIndex].id);
         }
         return;
       }
 
-      // Cmd+Shift+] - Next tab
+      // Cmd+Shift+] - Next tab (no nav history push — tab bar cycling is separate from history)
       if (isMeta && e.shiftKey && (e.key === ']' || e.code === 'BracketRight')) {
         e.preventDefault();
         e.stopPropagation();
@@ -607,7 +609,6 @@
         if (ws && pane && pane.tabs.length > 1) {
           const currentIndex = pane.tabs.findIndex(t => t.id === pane.active_tab_id);
           const nextIndex = currentIndex >= pane.tabs.length - 1 ? 0 : currentIndex + 1;
-          navHistoryStore.push({ workspaceId: ws.id, paneId: pane.id, tabId: pane.tabs[nextIndex].id });
           workspacesStore.setActiveTab(ws.id, pane.id, pane.tabs[nextIndex].id);
           terminalsStore.focusTerminal(pane.tabs[nextIndex].id);
         }

@@ -103,10 +103,11 @@ function createNavHistoryStore() {
       }
     },
 
-    /** Return the most recent history entry before the current cursor that isn't the tab being closed, or null. */
-    peekBackForClose(tabId: string): NavEntry | null {
+    /** Return the most recent history entry before the current cursor that isn't the tab being closed and passes the optional filter, or null. */
+    peekBackForClose(tabId: string, isValid?: (entry: NavEntry) => boolean): NavEntry | null {
       for (let i = cursor - 1; i >= 0; i--) {
-        if (history[i].tabId !== tabId) return history[i];
+        const entry = history[i];
+        if (entry.tabId !== tabId && (!isValid || isValid(entry))) return entry;
       }
       return null;
     },

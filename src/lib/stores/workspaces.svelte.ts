@@ -781,8 +781,14 @@ function createWorkspacesStore() {
           ? paneForTab.tabs.findIndex(t => t.id === afterTabId) + 1
           : paneForTab.tabs.length;
         paneForTab.tabs.splice(insertIdx >= 0 ? insertIdx : paneForTab.tabs.length, 0, tab);
+        const { navHistoryStore } = await import('$lib/stores/navHistory.svelte');
+        // Push the source tab before switching, so back/forward works correctly
+        if (paneForTab.active_tab_id) {
+          navHistoryStore.push({ workspaceId, paneId, tabId: paneForTab.active_tab_id });
+        }
         paneForTab.active_tab_id = tab.id;
         terminalsStore.markSpawning(tab.id);
+        navHistoryStore.push({ workspaceId, paneId, tabId: tab.id });
       }
       return tab;
     },
@@ -863,9 +869,8 @@ function createWorkspacesStore() {
         if (paneForDelete.active_tab_id === tabId) {
           // Prefer nav history: go back to the tab you came from
           const { navHistoryStore } = await import('$lib/stores/navHistory.svelte');
-          const prev = navHistoryStore.peekBackForClose(tabId);
-          const prevInPane = prev && paneForDelete.tabs.find(t => t.id === prev.tabId);
-          const newActiveId = prevInPane ? prev.tabId : pickNextActiveTab(paneForDelete.tabs, oldIndex);
+          const prev = navHistoryStore.peekBackForClose(tabId, e => !!paneForDelete.tabs.find(t => t.id === e.tabId));
+          const newActiveId = prev ? prev.tabId : pickNextActiveTab(paneForDelete.tabs, oldIndex);
           // If the next active tab is a suspended terminal, gate it behind resume prompt
           if (newActiveId && newActiveId !== paneForDelete.active_tab_id) {
             const nextTab = paneForDelete.tabs.find(t => t.id === newActiveId);
@@ -937,9 +942,8 @@ function createWorkspacesStore() {
         archivePane.tabs.splice(oldIndex, 1);
         if (archivePane.active_tab_id === tabId) {
           const { navHistoryStore } = await import('$lib/stores/navHistory.svelte');
-          const prev = navHistoryStore.peekBackForClose(tabId);
-          const prevInPane = prev && archivePane.tabs.find(t => t.id === prev.tabId);
-          archivePane.active_tab_id = prevInPane ? prev.tabId : pickNextActiveTab(archivePane.tabs, oldIndex);
+          const prev = navHistoryStore.peekBackForClose(tabId, e => !!archivePane.tabs.find(t => t.id === e.tabId));
+          archivePane.active_tab_id = prev ? prev.tabId : pickNextActiveTab(archivePane.tabs, oldIndex);
         }
       }
     },
@@ -982,11 +986,15 @@ function createWorkspacesStore() {
         : -1;
       const insertIdx = activeIdx >= 0 ? activeIdx + 1 : 0;
       pane.tabs.splice(insertIdx, 0, tab);
+      const prevActiveId = pane.active_tab_id;
       pane.active_tab_id = tab.id;
       terminalsStore.markSpawning(tab.id);
-      import('$lib/stores/navHistory.svelte').then(m =>
-        m.navHistoryStore.push({ workspaceId, paneId: pane.id, tabId })
-      );
+      import('$lib/stores/navHistory.svelte').then(m => {
+        if (prevActiveId) {
+          m.navHistoryStore.push({ workspaceId, paneId: pane.id, tabId: prevActiveId });
+        }
+        m.navHistoryStore.push({ workspaceId, paneId: pane.id, tabId });
+      });
     },
 
     async deleteArchivedTab(workspaceId: string, tabId: string) {
@@ -1620,6 +1628,12 @@ export const workspacesStore = createWorkspacesStore();
  */
 export async function navigateToTab(tabId: string): Promise<void> {
   const { navHistoryStore } = await import('$lib/stores/navHistory.svelte');
+  // Push current tab as source before navigating
+  const currentWs = workspacesStore.activeWorkspace;
+  const currentPane = currentWs?.panes.find(p => p.id === currentWs.active_pane_id);
+  if (currentWs && currentPane?.active_tab_id) {
+    navHistoryStore.push({ workspaceId: currentWs.id, paneId: currentPane.id, tabId: currentPane.active_tab_id });
+  }
   for (const ws of workspacesStore.workspaces) {
     for (const pane of ws.panes) {
       const tab = pane.tabs.find(t => t.id === tabId);
