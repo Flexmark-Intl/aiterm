@@ -798,8 +798,12 @@ function createWorkspacesStore() {
         const targetIdx = afterTabId ? paneForEditor.tabs.findIndex(t => t.id === afterTabId) : paneForEditor.tabs.findIndex(t => t.id === paneForEditor.active_tab_id);
         const insertIdx = targetIdx === -1 ? paneForEditor.tabs.length : targetIdx + 1;
         paneForEditor.tabs.splice(insertIdx, 0, tab);
-        paneForEditor.active_tab_id = tab.id;
         const { navHistoryStore } = await import('$lib/stores/navHistory.svelte');
+        // Push the source tab before switching, so closing the editor returns here
+        if (paneForEditor.active_tab_id) {
+          navHistoryStore.push({ workspaceId, paneId, tabId: paneForEditor.active_tab_id });
+        }
+        paneForEditor.active_tab_id = tab.id;
         navHistoryStore.push({ workspaceId, paneId, tabId: tab.id });
       }
       return tab;
@@ -813,8 +817,12 @@ function createWorkspacesStore() {
         const activeIdx = paneForDiffTab.tabs.findIndex(t => t.id === (afterTabId ?? paneForDiffTab.active_tab_id));
         const insertIdx = activeIdx === -1 ? paneForDiffTab.tabs.length : activeIdx + 1;
         paneForDiffTab.tabs.splice(insertIdx, 0, tab);
-        paneForDiffTab.active_tab_id = tab.id;
         const { navHistoryStore: navHistory } = await import('$lib/stores/navHistory.svelte');
+        // Push the source tab before switching, so closing the diff returns here
+        if (paneForDiffTab.active_tab_id) {
+          navHistory.push({ workspaceId, paneId, tabId: paneForDiffTab.active_tab_id });
+        }
+        paneForDiffTab.active_tab_id = tab.id;
         navHistory.push({ workspaceId, paneId, tabId: tab.id });
       }
       return tab;
