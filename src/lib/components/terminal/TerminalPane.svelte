@@ -475,16 +475,18 @@
       const { cmd, exit_code } = event.payload;
       if (cmd === 'A') {
         activityStore.setShellState(tabId, 'prompt');
-        // Shell prompt means Claude is no longer running — clear stuck busy indicator.
-        if (claudeStateStore.getState(tabId)) {
-          claudeStateStore.clearSession(tabId);
-        }
-        // Local shell prompt means SSH session ended — tear down bridge.
-        // But remote shells also emit OSC 133 A, so verify SSH is actually gone.
-        if (hasBridge(tabId)) {
+        // Remote shells also emit OSC 133 A, so verify SSH is actually gone
+        // before clearing Claude state or tearing down the bridge.
+        if (claudeStateStore.getState(tabId) || hasBridge(tabId)) {
           getPtyInfo(ptyId).then(info => {
             if (!info.foreground_command) {
-              disableBridge(tabId).catch(() => {});
+              // Local shell prompt — Claude/SSH session truly ended
+              if (claudeStateStore.getState(tabId)) {
+                claudeStateStore.clearSession(tabId);
+              }
+              if (hasBridge(tabId)) {
+                disableBridge(tabId).catch(() => {});
+              }
             }
           }).catch(() => {});
         }
@@ -918,6 +920,17 @@
               logError(`drag-drop SCP upload failed: ${e}`);
               toastStore.addToast('SCP Upload Failed', String(e), 'error');
             });
+          } else if (claudeStateStore.getState(tabId)) {
+            // Local Claude session — write absolute paths so Claude can reference files
+            const count = paths.length;
+            logInfo(`drag-drop local Claude: sending ${count} file path(s)`);
+            (async () => {
+              for (let i = 0; i < paths.length; i++) {
+                const bytes = Array.from(new TextEncoder().encode(paths[i] + ' '));
+                if (i > 0) await new Promise(r => setTimeout(r, 200));
+                await writeTerminal(ptyId, bytes);
+              }
+            })().catch(e => logError(`drag-drop local Claude write failed: ${e}`));
           } else {
             // Local session — paste escaped file paths
             const escaped = paths.map(escapePathForTerminal).join(' ');
@@ -1466,7 +1479,7 @@
 >
   {#if isDragOver}
     <div class="drop-overlay">
-      <span>{dragSshCommand ? (claudeStateStore.getState(tabId) ? 'Drop to send to Claude' : 'Drop to upload via SCP') : 'Drop to paste path'}</span>
+      <span>{claudeStateStore.getState(tabId) ? 'Drop to send to Claude' : dragSshCommand ? 'Drop to upload via SCP' : 'Drop to paste path'}</span>
     </div>
   {/if}
   {#if contextMenu}
@@ -1644,7 +1657,7 @@
   .drop-overlay {
     position: absolute;
     inset: 0;
-    background: rgba(122, 162, 247, 0.08);
+    background: rgba(122, 162, 247, 0.15);
     border: 2px dashed var(--accent);
     border-radius: 4px;
     display: flex;
@@ -1652,15 +1665,18 @@
     justify-content: center;
     pointer-events: none;
     z-index: 10;
+    backdrop-filter: blur(2px);
   }
 
   .drop-overlay span {
     background: var(--bg-medium);
-    padding: 8px 16px;
-    border-radius: 6px;
-    color: var(--accent);
-    font-size: 1rem;
-    font-weight: 500;
+    padding: 10px 20px;
+    border-radius: 8px;
+    color: var(--fg);
+    font-size: 1.1rem;
+    font-weight: 600;
+    border: 1px solid var(--accent);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   }
 
   .terminal-container.hidden {
