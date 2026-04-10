@@ -292,6 +292,11 @@
     await workspacesStore.duplicateTab(workspaceId, pane.id, tabId, { shallow: e.altKey });
   }
 
+  async function handleSuspendTab(tabId: string, e: MouseEvent) {
+    e.stopPropagation();
+    await workspacesStore.suspendTab(workspaceId, pane.id, tabId);
+  }
+
   async function handleCloseTab(tabId: string, e: MouseEvent) {
     e.stopPropagation();
     const ws = workspacesStore.activeWorkspace;
@@ -759,7 +764,8 @@
           }><span class="auto-resume-indicator"><Icon name="resume" size={12} /></span></Tooltip>
         {/if}
         <span class="tab-name">{displayName(tab)}</span>
-        <div class="tab-actions" class:always-visible={preferencesStore.tabButtonStyle === 'always'} class:modifier-only={preferencesStore.tabButtonStyle === 'modifier'} class:modifier-active={preferencesStore.tabButtonStyle === 'modifier' && modHeld} class:never-visible={preferencesStore.tabButtonStyle === 'never'} class:single-action={false} class:double-action={isEditor || isDiff} class:triple-action={!isEditor && !isDiff}>
+        {@const hasRunningPty = !isEditor && !isDiff && !!terminalsStore.get(tab.id)}
+        <div class="tab-actions" class:always-visible={preferencesStore.tabButtonStyle === 'always'} class:modifier-only={preferencesStore.tabButtonStyle === 'modifier'} class:modifier-active={preferencesStore.tabButtonStyle === 'modifier' && modHeld} class:never-visible={preferencesStore.tabButtonStyle === 'never'} class:single-action={false} class:double-action={isEditor || isDiff} class:triple-action={!isEditor && !isDiff && !hasRunningPty} class:quadruple-action={hasRunningPty}>
           <IconButton
             tooltip="Archive tab"
             style="width:22px;height:18px;border-radius:3px"
@@ -771,6 +777,13 @@
               style="width:22px;height:18px;border-radius:3px"
               onclick={(e) => handleDuplicateTab(tab.id, e)}
             ><Icon name="duplicate" size={11} /></IconButton>
+            {#if terminalsStore.get(tab.id)}
+              <IconButton
+                tooltip="Suspend tab"
+                style="width:22px;height:18px;border-radius:3px"
+                onclick={(e) => handleSuspendTab(tab.id, e)}
+              ><Icon name="pause" size={11} /></IconButton>
+            {/if}
           {/if}
           <IconButton
             tooltip="Close tab ({modLabel}+W)"
@@ -1082,6 +1095,10 @@
     width: 66px;
   }
 
+  .tab:hover .tab-actions.quadruple-action {
+    width: 88px;
+  }
+
   .tab:hover .tab-actions.double-action {
     width: 44px;
   }
@@ -1095,6 +1112,10 @@
 
   .tab-actions.always-visible.triple-action {
     width: 66px;
+  }
+
+  .tab-actions.always-visible.quadruple-action {
+    width: 88px;
   }
 
   /* modifier mode: suppress normal hover reveal */
@@ -1113,6 +1134,10 @@
 
   .tab:hover .tab-actions.modifier-active.triple-action {
     width: 66px;
+  }
+
+  .tab:hover .tab-actions.modifier-active.quadruple-action {
+    width: 88px;
   }
 
   .tab:hover .tab-actions.never-visible {

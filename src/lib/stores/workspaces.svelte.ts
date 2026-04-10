@@ -887,6 +887,53 @@ function createWorkspacesStore() {
       import('$lib/stores/navHistory.svelte').then(m => m.navHistoryStore.removeTab(tabId));
     },
 
+    async suspendTab(workspaceId: string, paneId: string, tabId: string) {
+      const ws = workspaces.find(w => w.id === workspaceId);
+      const pane = ws?.panes.find(p => p.id === paneId);
+      const tab = pane?.tabs.find(t => t.id === tabId);
+      if (!tab) return;
+
+      const instance = terminalsStore.get(tabId);
+      if (!instance) return; // Already suspended
+
+      // Gather context before killing
+      let cwd: string | null = null;
+      let sshCommand: string | null = null;
+      let remoteCwd: string | null = null;
+
+      try {
+        const info = await commands.getPtyInfo(instance.ptyId);
+        cwd = info.cwd;
+        sshCommand = info.foreground_command;
+      } catch { /* PTY may already be gone */ }
+
+      if (sshCommand) {
+        const oscState = terminalsStore.getOsc(tabId);
+        const osc7Cwd = oscState?.cwd ?? null;
+        const promptCwd = oscState?.promptCwd ?? null;
+        const isOsc7Stale = osc7Cwd === cwd;
+        const osc7RemoteCwd = (osc7Cwd && !isOsc7Stale) ? osc7Cwd : null;
+        remoteCwd = osc7RemoteCwd ?? promptCwd ?? null;
+      }
+
+      // Save scrollback, then kill PTY
+      try {
+        await commands.saveTerminalScrollback(instance.ptyId, tabId);
+      } catch { /* best effort */ }
+
+      await commands.killTerminal(instance.ptyId).catch(() => {});
+      terminalsStore.unregister(tabId);
+
+      // Clear pty_id and save restore context on backend
+      await commands.suspendTab(workspaceId, paneId, tabId, cwd, sshCommand, remoteCwd);
+
+      // Update local state
+      tab.pty_id = null;
+      tab.restore_cwd = cwd;
+      tab.restore_ssh_command = sshCommand;
+      tab.restore_remote_cwd = remoteCwd;
+    },
+
     async archiveTab(workspaceId: string, paneId: string, tabId: string, displayName: string) {
       const ws = workspaces.find(w => w.id === workspaceId);
       const pane = ws?.panes.find(p => p.id === paneId);

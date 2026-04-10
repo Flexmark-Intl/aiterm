@@ -384,6 +384,7 @@ pub fn run() {
             commands::workspace::set_active_pane,
             commands::workspace::set_active_tab,
             commands::workspace::set_tab_pty_id,
+            commands::workspace::suspend_tab,
             commands::workspace::set_sidebar_width,
             commands::workspace::set_sidebar_collapsed,
             commands::workspace::set_split_ratio,

@@ -267,6 +267,10 @@ export async function setTabPtyId(workspaceId: string, paneId: string, tabId: st
   return invoke('set_tab_pty_id', { workspaceId, paneId, tabId, ptyId });
 }
 
+export async function suspendTab(workspaceId: string, paneId: string, tabId: string, cwd: string | null, sshCommand: string | null, remoteCwd: string | null): Promise<void> {
+  return invoke('suspend_tab', { workspaceId, paneId, tabId, cwd, sshCommand, remoteCwd });
+}
+
 export async function setSidebarWidth(width: number): Promise<void> {
   return invoke('set_sidebar_width', { width });
 }

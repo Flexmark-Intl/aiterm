@@ -527,6 +527,40 @@ pub fn set_tab_pty_id(
 }
 
 #[tauri::command]
+pub fn suspend_tab(
+    window: tauri::Window,
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+    pane_id: String,
+    tab_id: String,
+    cwd: Option<String>,
+    ssh_command: Option<String>,
+    remote_cwd: Option<String>,
+) -> Result<(), String> {
+    let label = window.label().to_string();
+    let mut app_data = state.app_data.write();
+    let win = app_data.window_mut(&label).ok_or("Window not found")?;
+    let workspace = win.workspaces.iter_mut()
+        .find(|w| w.id == workspace_id)
+        .ok_or("Workspace not found")?;
+    let pane = workspace.panes.iter_mut()
+        .find(|p| p.id == pane_id)
+        .ok_or("Pane not found")?;
+    let tab = pane.tabs.iter_mut()
+        .find(|t| t.id == tab_id)
+        .ok_or("Tab not found")?;
+
+    tab.pty_id = None;
+    tab.restore_cwd = cwd;
+    tab.restore_ssh_command = ssh_command;
+    tab.restore_remote_cwd = remote_cwd;
+
+    let data_clone = app_data.clone();
+    drop(app_data);
+    save_state(&data_clone)
+}
+
+#[tauri::command]
 pub fn set_sidebar_width(window: tauri::Window, state: State<'_, Arc<AppState>>, width: u32) -> Result<(), String> {
     let label = window.label().to_string();
     let mut app_data = state.app_data.write();
