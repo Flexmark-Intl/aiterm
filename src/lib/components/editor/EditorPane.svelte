@@ -6,7 +6,7 @@
   import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
   import { foldGutter, indentOnInput, bracketMatching, foldKeymap } from '@codemirror/language';
   import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
-  import { search, searchKeymap, highlightSelectionMatches, getSearchQuery, gotoLine } from '@codemirror/search';
+  import { search, searchKeymap, highlightSelectionMatches, getSearchQuery } from '@codemirror/search';
   import { ViewPlugin } from '@codemirror/view';
   import type { EditorFileInfo } from '$lib/tauri/types';
   import { readFile, readFileBase64, writeFile, scpReadFile, scpReadFileBase64, scpWriteFile, watchFile, unwatchFile, getFileMtime, watchRemoteFile, unwatchRemoteFile, getRemoteFileMtime } from '$lib/tauri/commands';
@@ -77,6 +77,66 @@
   // Markdown preview state
   let markdownPreview = $state(false);
   let markdownHtml = $state('');
+
+  // Goto line modal state
+  let gotoOpen = $state(false);
+  let gotoValue = $state('');
+  let gotoError = $state('');
+  let gotoInputEl = $state<HTMLInputElement | null>(null);
+  let gotoMaxLine = $state(1);
+
+  function openGotoLine() {
+    if (!editorView) return false;
+    gotoMaxLine = editorView.state.doc.lines;
+    const cursor = editorView.state.selection.main.head;
+    const currentLine = editorView.state.doc.lineAt(cursor).number;
+    gotoValue = String(currentLine);
+    gotoError = '';
+    gotoOpen = true;
+    queueMicrotask(() => {
+      gotoInputEl?.focus();
+      gotoInputEl?.select();
+    });
+    return true;
+  }
+
+  function closeGotoLine() {
+    gotoOpen = false;
+    gotoError = '';
+    editorView?.focus();
+  }
+
+  function submitGotoLine() {
+    if (!editorView) return;
+    const raw = gotoValue.trim();
+    const m = raw.match(/^(\d+)(?::(\d+))?$/);
+    if (!m) {
+      gotoError = 'Enter a line number (or line:col)';
+      return;
+    }
+    const totalLines = editorView.state.doc.lines;
+    const line = Math.max(1, Math.min(totalLines, parseInt(m[1], 10)));
+    const col = m[2] ? Math.max(1, parseInt(m[2], 10)) : 1;
+    const info = editorView.state.doc.line(line);
+    const pos = Math.min(info.from + col - 1, info.to);
+    editorView.dispatch({
+      selection: EditorSelection.cursor(pos),
+      effects: EditorView.scrollIntoView(pos, { y: 'center' }),
+    });
+    gotoOpen = false;
+    gotoError = '';
+    editorView.focus();
+  }
+
+  function handleGotoKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      submitGotoLine();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      closeGotoLine();
+    }
+  }
   const isMarkdown = isMarkdownFile(editorFile.remote_path ?? editorFile.file_path);
 
   /** Resolve a potentially relative path against the directory of the current file. */
@@ -1030,7 +1090,7 @@
             };
           }),
           keymap.of([
-            { key: 'Ctrl-g', run: gotoLine, preventDefault: true },
+            { key: 'Ctrl-g', mac: 'Ctrl-g', run: () => openGotoLine(), preventDefault: true },
             ...closeBracketsKeymap,
             ...defaultKeymap,
             ...searchKeymap,
@@ -1377,6 +1437,34 @@
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div class="md-render" onclick={handleMarkdownClick}>{@html markdownHtml}</div>
     {/if}
+  {/if}
+  {#if gotoOpen}
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="goto-backdrop" onclick={(e) => { if (e.target === e.currentTarget) closeGotoLine(); }}>
+      <div class="goto-modal" role="dialog" aria-modal="true" aria-label="Go to line">
+        <div class="goto-title">Go to line</div>
+        <input
+          bind:this={gotoInputEl}
+          bind:value={gotoValue}
+          onkeydown={handleGotoKeydown}
+          type="text"
+          inputmode="numeric"
+          placeholder={`Line 1–${gotoMaxLine} (or line:col)`}
+          class="goto-input"
+          class:goto-input-error={!!gotoError}
+        />
+        {#if gotoError}
+          <div class="goto-error">{gotoError}</div>
+        {:else}
+          <div class="goto-hint">Press Enter to jump, Esc to cancel</div>
+        {/if}
+        <div class="goto-actions">
+          <Button variant="secondary" onclick={closeGotoLine} style="padding:4px 12px;border-radius:4px;font-size:0.923rem">Cancel</Button>
+          <Button variant="primary" onclick={submitGotoLine} style="padding:4px 12px;border-radius:4px;font-size:0.923rem">Go</Button>
+        </div>
+      </div>
+    </div>
   {/if}
 </div>
 
@@ -2024,4 +2112,61 @@
     margin-left: -1.5em;
   }
 
+  .goto-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.35);
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 15vh;
+    z-index: 20;
+  }
+  .goto-modal {
+    background: var(--bg-medium);
+    border: 1px solid var(--bg-light);
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+    padding: 14px 16px;
+    width: min(360px, 90%);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .goto-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--fg);
+  }
+  .goto-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px 8px;
+    font-size: 0.95rem;
+    color: var(--fg);
+    background: var(--bg-dark);
+    border: 1px solid var(--bg-light);
+    border-radius: 4px;
+    outline: none;
+  }
+  .goto-input:focus {
+    border-color: var(--accent);
+  }
+  .goto-input-error {
+    border-color: #f7768e;
+  }
+  .goto-hint {
+    font-size: 0.75rem;
+    color: var(--fg-dim);
+  }
+  .goto-error {
+    font-size: 0.75rem;
+    color: #f7768e;
+  }
+  .goto-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 2px;
+  }
 </style>
