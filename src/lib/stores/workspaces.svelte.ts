@@ -724,7 +724,14 @@ function createWorkspacesStore() {
             let ssh: string | null;
             let remoteCwd: string | null;
             let localCwd: string | null;
-            if (t.id === activeTabId && liveSsh) {
+            if (t.id === activeTabId && t.auto_resume_enabled && t.auto_resume_ssh_command) {
+              // Pinned auto-resume is the source of truth — live PTY state can
+              // be misleading (e.g. ssh → sudo -i changes foreground_command to
+              // something that won't reconnect correctly).
+              ssh = t.auto_resume_ssh_command;
+              remoteCwd = t.auto_resume_remote_cwd ?? null;
+              localCwd = liveCwd ?? t.last_cwd;
+            } else if (t.id === activeTabId && liveSsh) {
               ssh = liveSsh;
               // Get remote cwd from OSC state (promptCwd) since live PTY only gives local cwd
               const oscState = terminalsStore.getOsc(t.id);
@@ -749,7 +756,9 @@ function createWorkspacesStore() {
         const activeTab = activePane?.tabs.find(t => t.id === activeTabId);
         let activeKey: string | null = null;
         if (activeTab?.tab_type === 'terminal') {
-          if (liveSsh) {
+          if (activeTab.auto_resume_enabled && activeTab.auto_resume_ssh_command) {
+            activeKey = `ssh\0${activeTab.auto_resume_ssh_command}\0${activeTab.auto_resume_remote_cwd ?? ''}`;
+          } else if (liveSsh) {
             const oscState = terminalsStore.getOsc(activeTab.id);
             const remoteCwd = oscState?.promptCwd ?? activeTab.auto_resume_remote_cwd ?? activeTab.restore_remote_cwd ?? null;
             activeKey = `ssh\0${liveSsh}\0${remoteCwd ?? ''}`;
