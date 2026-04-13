@@ -45,6 +45,9 @@
         "installMode": "perMachine"
       }
     },
+    "macOS": {
+      "infoPlist": "Info.plist"
+    },
     "linux": {
       "deb": {
         "depends": [

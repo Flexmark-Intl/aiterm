@@ -7,11 +7,12 @@
   import ResizableTextarea from '$lib/components/ResizableTextarea.svelte';
   import Tooltip from '$lib/components/Tooltip.svelte';
   import Icon from '$lib/components/Icon.svelte';
-  import { modLabel, altLabel, isModKey } from '$lib/utils/platform';
-  import { getAllWorkspaces, getAllTabs, listSystemSounds, playSystemSound, detectWindowsShells, exportState, importState, pickBackupDirectory, backupFilename, previewImport } from '$lib/tauri/commands';
+  import { modLabel, altLabel, isModKey, isMac } from '$lib/utils/platform';
+  import { getAllWorkspaces, getAllTabs, listSystemSounds, playSystemSound, detectWindowsShells, exportState, importState, pickBackupDirectory, backupFilename, previewImport, checkFullDiskAccess, openFullDiskAccessSettings } from '$lib/tauri/commands';
   import type { ImportPreview } from '$lib/tauri/commands';
   import ImportPreviewModal from '$lib/components/ImportPreviewModal.svelte';
   import { open as dialogOpen, save as dialogSave } from '@tauri-apps/plugin-dialog';
+
   import { error as logError, info as logInfo } from '@tauri-apps/plugin-log';
   import type { ShellInfo } from '$lib/tauri/types';
   import { tick, onMount } from 'svelte';
@@ -78,7 +79,7 @@
     if (result) preferencesStore.setTriggers(result);
   }
 
-  const sectionIds = ['appearance', 'terminal', 'ui', 'tabs', 'workspace', 'notes', 'notifications', 'triggers', 'claude_code', 'backup', 'updates'] as const;
+  const sectionIds = ['appearance', 'terminal', 'ui', 'tabs', 'workspace', 'notes', 'notifications', 'triggers', 'claude_code', 'backup', 'updates', 'permissions'] as const;
   type SectionId = typeof sectionIds[number];
   const saved = localStorage.getItem('prefs-section');
   let activeSection = $state<SectionId>(
@@ -98,10 +99,16 @@
     { id: 'claude_code' as const, label: 'Claude Code' },
     { id: 'backup' as const, label: 'Backup' },
     { id: 'updates' as const, label: 'Updates' },
+    ...isMac() ? [{ id: 'permissions' as const, label: 'Permissions' }] : [],
   ];
 
   let appVersion = $state('');
   getVersion().then(v => { appVersion = v; });
+
+  let fdaGranted = $state<boolean | null>(null);
+  if (isMac()) {
+    checkFullDiskAccess().then(v => { fdaGranted = v; });
+  }
 
   let backupStatus = $state<string | null>(null);
   let importPreview = $state<ImportPreview | null>(null);
@@ -1819,6 +1826,53 @@
             <span class="toggle-knob"></span>
           </button>
         </div>
+      {:else if activeSection === 'permissions'}
+        <h3 class="section-heading">Full Disk Access</h3>
+
+        <div class="setting" style="align-items: flex-start;">
+          <div>
+            <label>Status</label>
+            <p class="setting-hint">
+              {#if fdaGranted === null}
+                Checking…
+              {:else if fdaGranted}
+                <span class="fda-status fda-granted">Granted</span>
+              {:else}
+                <span class="fda-status fda-not-granted">Not Granted</span>
+              {/if}
+            </p>
+          </div>
+          <button
+            class="backup-btn"
+            onclick={async () => {
+              await openFullDiskAccessSettings();
+              setTimeout(async () => { fdaGranted = await checkFullDiskAccess(); }, 2000);
+            }}
+          >
+            Open System Settings
+          </button>
+        </div>
+
+        <div class="setting" style="align-items: flex-start;">
+          <div>
+            <p class="setting-hint">
+              As a terminal emulator, aiTerm and its child processes (shells, CLI tools, Claude Code) need to read and write files across your system.
+              Without Full Disk Access, macOS will repeatedly prompt you to allow access to individual folders.
+            </p>
+          </div>
+        </div>
+
+        {#if !fdaGranted}
+          <div class="fda-instructions">
+            <p><strong>To enable:</strong></p>
+            <ol>
+              <li>Click "Open System Settings" above</li>
+              <li>Click the <strong>+</strong> button or toggle next to <strong>aiTerm</strong></li>
+              <li>If aiTerm isn't listed, click <strong>+</strong> and select it from Applications</li>
+              <li>Restart aiTerm for the change to take full effect</li>
+            </ol>
+          </div>
+        {/if}
       {/if}
     </div>
   </div>
@@ -2677,6 +2731,40 @@
   .backup-btn-warn:hover {
     border-color: var(--yellow, #e0af68);
     background: color-mix(in srgb, var(--yellow, #e0af68) 10%, var(--bg-dark));
+  }
+
+  .fda-status {
+    font-weight: 600;
+    font-size: 0.923rem;
+  }
+
+  .fda-granted {
+    color: var(--green, #9ece6a);
+  }
+
+  .fda-not-granted {
+    color: var(--yellow, #e0af68);
+  }
+
+  .fda-instructions {
+    margin-top: 8px;
+    padding: 12px 16px;
+    background: var(--bg-dark);
+    border: 1px solid var(--bg-light);
+    border-radius: 6px;
+    font-size: 0.923rem;
+    color: var(--fg-dim);
+  }
+
+  .fda-instructions p {
+    margin: 0 0 8px 0;
+    color: var(--fg);
+  }
+
+  .fda-instructions ol {
+    margin: 0;
+    padding-left: 20px;
+    line-height: 1.7;
   }
 
   .backup-status {

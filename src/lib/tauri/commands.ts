@@ -715,3 +715,11 @@ export async function getMcpAuth(): Promise<string | null> {
 export async function sshRunSetup(sshArgs: string, setupScript: string): Promise<void> {
   return invoke('ssh_run_setup', { sshArgs, setupScript });
 }
+
+export async function checkFullDiskAccess(): Promise<boolean> {
+  return invoke('check_full_disk_access');
+}
+
+export async function openFullDiskAccessSettings(): Promise<void> {
+  return invoke('open_full_disk_access_settings');
+}
