@@ -868,7 +868,9 @@ async fn process_message(
                 // ── Auto-inject tabId from connection affinity ──
                 // If the tool call doesn't include tabId but this connection has affinity, inject it.
                 // Falls back to claude_sessions when SSE reconnects cleared the connection affinity.
-                let mut has_affinity = connection_tabs.read().contains_key(connection_id);
+                // Snapshot the affinity tab once so the has-affinity check and the injection
+                // use the same value (no TOCTOU race with concurrent connection cleanup).
+                let mut affinity_tab: Option<String> = connection_tabs.read().get(connection_id).cloned();
 
                 // SSE reconnect recovery: if no connection affinity, check if there's
                 // an active claude session whose tab we can restore affinity from.
@@ -876,7 +878,7 @@ async fn process_message(
                 // connection_tabs (orphaned by SSE disconnect). If exactly one orphaned
                 // session exists, it's the one reconnecting. Falls back to the simpler
                 // "exactly 1 active session" heuristic if connection_ids aren't set.
-                if !has_affinity {
+                if affinity_tab.is_none() {
                     let sessions = state.claude_sessions.read();
                     let ct = connection_tabs.read();
 
@@ -919,18 +921,16 @@ async fn process_message(
                                 info.connection_id = Some(connection_id.to_string());
                             }
                         }
-                        has_affinity = true;
                         log::debug!("Restored connection affinity from orphaned session for {}",
                             &connection_id[..connection_id.len().min(11)]);
+                        affinity_tab = Some(tab_id);
                     }
                 }
 
-                if has_affinity {
+                if let Some(ref tab) = affinity_tab {
                     if arguments.get("tabId").and_then(|v| v.as_str()).map_or(true, |s| s.is_empty()) {
-                        if let Some(affinity_tab) = connection_tabs.read().get(connection_id).cloned() {
-                            if let Some(obj) = arguments.as_object_mut() {
-                                obj.insert("tabId".to_string(), Value::String(affinity_tab));
-                            }
+                        if let Some(obj) = arguments.as_object_mut() {
+                            obj.insert("tabId".to_string(), Value::String(tab.clone()));
                         }
                     }
                 } else {

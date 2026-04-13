@@ -635,24 +635,12 @@ function createClaudeCodeStore() {
   // --- Tab notes tools ---
 
   function handleGetTabNotes(args: { tabId?: string }) {
-    let tab: Tab | undefined;
-    let wsId: string | undefined;
-    let paneId: string | undefined;
-
-    if (args.tabId) {
-      const loc = findTabLocation(args.tabId);
-      if (!loc) return { error: `Tab not found: ${args.tabId}` };
-      tab = loc.tab;
-      wsId = loc.workspace.id;
-      paneId = loc.pane.id;
-    } else {
-      const ws = workspacesStore.activeWorkspace;
-      const pane = ws?.panes.find(p => p.id === ws.active_pane_id);
-      tab = pane?.tabs.find(t => t.id === pane.active_tab_id);
-      if (!ws || !pane || !tab) return { error: 'No active tab' };
-      wsId = ws.id;
-      paneId = pane.id;
+    if (!args.tabId) {
+      return { error: 'tabId is required. Call initSession first so the MCP server can auto-inject your session tab.' };
     }
+    const loc = findTabLocation(args.tabId);
+    if (!loc) return { error: `Tab not found: ${args.tabId}` };
+    const tab = loc.tab;
 
     return {
       tabId: tab.id,
@@ -663,24 +651,18 @@ function createClaudeCodeStore() {
   }
 
   async function handleSetTabNotes(args: { tabId?: string; notes: string | null; mode?: string }) {
-    let tab: Tab | undefined;
-    let wsId: string;
-    let paneId: string;
-
-    if (args.tabId) {
-      const loc = findTabLocation(args.tabId);
-      if (!loc) return { error: `Tab not found: ${args.tabId}` };
-      tab = loc.tab;
-      wsId = loc.workspace.id;
-      paneId = loc.pane.id;
-    } else {
-      const ws = workspacesStore.activeWorkspace;
-      const pane = ws?.panes.find(p => p.id === ws.active_pane_id);
-      tab = pane?.tabs.find(t => t.id === pane.active_tab_id);
-      if (!ws || !pane || !tab) return { error: 'No active tab' };
-      wsId = ws.id;
-      paneId = pane.id;
+    // tabId is auto-injected by the Rust MCP server from session affinity.
+    // If it's missing here, the caller never initialised a session — do NOT
+    // fall back to the currently-active tab, or a tab switch mid-call will
+    // silently misroute notes to the wrong tab.
+    if (!args.tabId) {
+      return { error: 'tabId is required. Call initSession first so the MCP server can auto-inject your session tab.' };
     }
+    const loc = findTabLocation(args.tabId);
+    if (!loc) return { error: `Tab not found: ${args.tabId}` };
+    const tab = loc.tab;
+    const wsId = loc.workspace.id;
+    const paneId = loc.pane.id;
 
     const notes = args.notes === '' ? null : args.notes;
     await workspacesStore.setTabNotes(wsId, paneId, tab.id, notes);
@@ -702,24 +684,14 @@ function createClaudeCodeStore() {
   }
 
   async function handleEditTabNotes(args: { tabId?: string; old_string?: string; new_string?: string; edits?: { old_string: string; new_string: string }[] }) {
-    let tab: Tab | undefined;
-    let wsId: string;
-    let paneId: string;
-
-    if (args.tabId) {
-      const loc = findTabLocation(args.tabId);
-      if (!loc) return { error: `Tab not found: ${args.tabId}` };
-      tab = loc.tab;
-      wsId = loc.workspace.id;
-      paneId = loc.pane.id;
-    } else {
-      const ws = workspacesStore.activeWorkspace;
-      const pane = ws?.panes.find(p => p.id === ws.active_pane_id);
-      tab = pane?.tabs.find(t => t.id === pane.active_tab_id);
-      if (!ws || !pane || !tab) return { error: 'No active tab' };
-      wsId = ws.id;
-      paneId = pane.id;
+    if (!args.tabId) {
+      return { error: 'tabId is required. Call initSession first so the MCP server can auto-inject your session tab.' };
     }
+    const loc = findTabLocation(args.tabId);
+    if (!loc) return { error: `Tab not found: ${args.tabId}` };
+    const tab = loc.tab;
+    const wsId = loc.workspace.id;
+    const paneId = loc.pane.id;
 
     let current = tab.notes ?? '';
     if (!current) return { error: 'Tab has no notes to edit. Use setTabNotes to create notes.' };
