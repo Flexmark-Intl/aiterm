@@ -526,6 +526,9 @@
       // Don't delete tabs when workspace is being suspended — PTYs are
       // killed intentionally and tabs must survive for resume.
       if (workspacesStore.isWorkspaceSuspending(workspaceId)) return;
+      // Don't delete tabs when being intentionally suspended via the tab's
+      // suspend button — the tab must remain visible for later resume.
+      if (workspacesStore.isTabSuspending(tabId)) return;
 
       const ws = workspacesStore.workspaces.find(w => w.id === workspaceId);
       const pane = ws?.panes.find(p => p.id === paneId);

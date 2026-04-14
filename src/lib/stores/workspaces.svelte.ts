@@ -122,6 +122,8 @@ function createWorkspacesStore() {
   let notesVisible = $state<Set<string>>(new Set());
   // Workspace IDs currently being suspended — guards pty-close from deleting tabs
   const suspendingWorkspaceIds = new Set<string>();
+  // Tab IDs currently being suspended — guards pty-close from deleting the tab
+  const suspendingTabIds = new Set<string>();
   // Tick counter to force re-evaluation of recentWorkspaces when entries expire
   let _recentTick = $state(0);
   let _recentTimer: ReturnType<typeof setInterval> | null = null;
@@ -174,6 +176,9 @@ function createWorkspacesStore() {
 
     /** True while a workspace is being suspended (PTYs being killed). */
     isWorkspaceSuspending(workspaceId: string) { return suspendingWorkspaceIds.has(workspaceId); },
+
+    /** True while a tab is being suspended (PTY being killed intentionally). */
+    isTabSuspending(tabId: string) { return suspendingTabIds.has(tabId); },
 
     reset() {
       workspaces = [];
@@ -930,7 +935,14 @@ function createWorkspacesStore() {
         await commands.saveTerminalScrollback(instance.ptyId, tabId);
       } catch { /* best effort */ }
 
-      await commands.killTerminal(instance.ptyId).catch(() => {});
+      // Guard the pty-close listener from deleting this tab
+      suspendingTabIds.add(tabId);
+      try {
+        await commands.killTerminal(instance.ptyId).catch(() => {});
+      } finally {
+        // Clear after a short delay to let the pty-close event fire and be ignored
+        setTimeout(() => suspendingTabIds.delete(tabId), 2000);
+      }
       terminalsStore.unregister(tabId);
 
       // Clear pty_id and save restore context on backend
@@ -941,6 +953,11 @@ function createWorkspacesStore() {
       tab.restore_cwd = cwd;
       tab.restore_ssh_command = sshCommand;
       tab.restore_remote_cwd = remoteCwd;
+
+      // Show resume prompt in the pane, and destroy the TerminalPane component
+      // so it re-mounts (and re-spawns the PTY) when the user clicks Resume.
+      pendingResumePanes.add(paneId);
+      window.dispatchEvent(new CustomEvent<string[]>('deactivate-tabs', { detail: [tabId] }));
     },
 
     async archiveTab(workspaceId: string, paneId: string, tabId: string, displayName: string) {
