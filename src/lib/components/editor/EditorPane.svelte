@@ -1163,6 +1163,7 @@
         }
         if (visible) {
           (async () => { await startWatching(); })();
+          requestAnimationFrame(() => { editorView?.focus(); });
         }
 
         // Apply pending selection from Claude Code openFile
