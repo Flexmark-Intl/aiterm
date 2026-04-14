@@ -796,10 +796,6 @@ function createWorkspacesStore() {
           : paneForTab.tabs.length;
         paneForTab.tabs.splice(insertIdx >= 0 ? insertIdx : paneForTab.tabs.length, 0, tab);
         const { navHistoryStore } = await import('$lib/stores/navHistory.svelte');
-        // Push the source tab before switching, so back/forward works correctly
-        if (paneForTab.active_tab_id) {
-          navHistoryStore.push({ workspaceId, paneId, tabId: paneForTab.active_tab_id });
-        }
         paneForTab.active_tab_id = tab.id;
         terminalsStore.markSpawning(tab.id);
         navHistoryStore.push({ workspaceId, paneId, tabId: tab.id });
@@ -819,10 +815,6 @@ function createWorkspacesStore() {
         const insertIdx = targetIdx === -1 ? paneForEditor.tabs.length : targetIdx + 1;
         paneForEditor.tabs.splice(insertIdx, 0, tab);
         const { navHistoryStore } = await import('$lib/stores/navHistory.svelte');
-        // Push the source tab before switching, so closing the editor returns here
-        if (paneForEditor.active_tab_id) {
-          navHistoryStore.push({ workspaceId, paneId, tabId: paneForEditor.active_tab_id });
-        }
         paneForEditor.active_tab_id = tab.id;
         navHistoryStore.push({ workspaceId, paneId, tabId: tab.id });
       }
@@ -838,10 +830,6 @@ function createWorkspacesStore() {
         const insertIdx = activeIdx === -1 ? paneForDiffTab.tabs.length : activeIdx + 1;
         paneForDiffTab.tabs.splice(insertIdx, 0, tab);
         const { navHistoryStore: navHistory } = await import('$lib/stores/navHistory.svelte');
-        // Push the source tab before switching, so closing the diff returns here
-        if (paneForDiffTab.active_tab_id) {
-          navHistory.push({ workspaceId, paneId, tabId: paneForDiffTab.active_tab_id });
-        }
         paneForDiffTab.active_tab_id = tab.id;
         navHistory.push({ workspaceId, paneId, tabId: tab.id });
       }
@@ -1059,13 +1047,9 @@ function createWorkspacesStore() {
         : -1;
       const insertIdx = activeIdx >= 0 ? activeIdx + 1 : 0;
       pane.tabs.splice(insertIdx, 0, tab);
-      const prevActiveId = pane.active_tab_id;
       pane.active_tab_id = tab.id;
       terminalsStore.markSpawning(tab.id);
       import('$lib/stores/navHistory.svelte').then(m => {
-        if (prevActiveId) {
-          m.navHistoryStore.push({ workspaceId, paneId: pane.id, tabId: prevActiveId });
-        }
         m.navHistoryStore.push({ workspaceId, paneId: pane.id, tabId });
       });
     },
@@ -1505,6 +1489,8 @@ function createWorkspacesStore() {
 
       // 10. Switch to the new tab
       await commands.setActiveTab(workspaceId, paneId, newTab.id);
+      const { navHistoryStore: navHistorySplit } = await import('$lib/stores/navHistory.svelte');
+      navHistorySplit.push({ workspaceId, paneId, tabId: newTab.id });
 
       // 11. Reload workspace state
       const data = await commands.getWindowData();
@@ -1701,12 +1687,6 @@ export const workspacesStore = createWorkspacesStore();
  */
 export async function navigateToTab(tabId: string): Promise<void> {
   const { navHistoryStore } = await import('$lib/stores/navHistory.svelte');
-  // Push current tab as source before navigating
-  const currentWs = workspacesStore.activeWorkspace;
-  const currentPane = currentWs?.panes.find(p => p.id === currentWs.active_pane_id);
-  if (currentWs && currentPane?.active_tab_id) {
-    navHistoryStore.push({ workspaceId: currentWs.id, paneId: currentPane.id, tabId: currentPane.active_tab_id });
-  }
   for (const ws of workspacesStore.workspaces) {
     for (const pane of ws.panes) {
       const tab = pane.tabs.find(t => t.id === tabId);

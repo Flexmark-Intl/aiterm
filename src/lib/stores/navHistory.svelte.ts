@@ -11,8 +11,12 @@ interface NavEntry {
 const MAX_HISTORY = 50;
 
 function createNavHistoryStore() {
+  // MRU-ordered list. Front (index 0) is the most recently activated tab.
+  // Entries are unique by tabId.
   let history = $state<NavEntry[]>([]);
-  let cursor = $state(-1);
+  // Pointer into `history` during a Cmd+[/] walk. 0 = on current tab.
+  // The list itself stays stable during a walk so back/forward don't oscillate.
+  let walkIndex = $state(0);
   let navigating = false;
 
   function findTab(entry: NavEntry): boolean {
@@ -22,7 +26,6 @@ function createNavHistoryStore() {
     if (!pane) return false;
     const tab = pane.tabs.find(t => t.id === entry.tabId);
     if (!tab) return false;
-    // Skip terminal tabs that haven't been activated this session (no live PTY)
     const isTerminal = tab.tab_type === 'terminal' || !tab.tab_type;
     if (isTerminal && !terminalsStore.get(entry.tabId)) return false;
     return true;
@@ -47,35 +50,43 @@ function createNavHistoryStore() {
   }
 
   return {
-    get canGoBack() { return cursor > 0; },
-    get canGoForward() { return cursor < history.length - 1; },
+    get canGoBack() { return walkIndex < history.length - 1; },
+    get canGoForward() { return walkIndex > 0; },
 
     push(entry: NavEntry) {
       if (navigating) return;
-      // Dedup: skip if same as current entry
-      if (cursor >= 0 && history[cursor]?.tabId === entry.tabId) return;
-      // Truncate forward stack
-      history = history.slice(0, cursor + 1);
-      history.push(entry);
-      cursor = history.length - 1;
-      // Cap size
-      if (history.length > MAX_HISTORY) {
-        history = history.slice(history.length - MAX_HISTORY);
-        cursor = history.length - 1;
+
+      // If the user had walked back and is now doing a real navigation,
+      // commit the walked-to tab by promoting it to the front before
+      // processing this push. This preserves the walked-to tab in MRU order.
+      if (walkIndex > 0 && walkIndex < history.length) {
+        const walked = history[walkIndex];
+        // If the new entry is the walked-to tab itself, treat the whole
+        // thing as a commit-in-place (remove+unshift below handles it).
+        if (walked.tabId !== entry.tabId) {
+          history = [walked, ...history.slice(0, walkIndex), ...history.slice(walkIndex + 1)];
+        }
       }
+      walkIndex = 0;
+
+      // Dedup: remove any existing entry for this tab, then unshift to front.
+      const filtered = history.filter(e => e.tabId !== entry.tabId);
+      filtered.unshift(entry);
+      if (filtered.length > MAX_HISTORY) filtered.length = MAX_HISTORY;
+      history = filtered;
     },
 
     async goBack() {
-      if (cursor <= 0) { playBellSound(); return; }
+      if (walkIndex >= history.length - 1) { playBellSound(); return; }
       navigating = true;
       try {
-        let target = cursor - 1;
-        while (target >= 0 && !findTab(history[target])) {
-          target--;
+        let target = walkIndex + 1;
+        while (target < history.length && !findTab(history[target])) {
+          target++;
         }
-        if (target >= 0) {
-          cursor = target;
-          await navigateToEntry(history[cursor]);
+        if (target < history.length) {
+          walkIndex = target;
+          await navigateToEntry(history[walkIndex]);
         } else {
           playBellSound();
         }
@@ -85,53 +96,51 @@ function createNavHistoryStore() {
     },
 
     async goForward() {
-      if (cursor >= history.length - 1) { playBellSound(); return; }
+      if (walkIndex <= 0) { playBellSound(); return; }
       navigating = true;
       try {
-        let target = cursor + 1;
-        while (target < history.length && !findTab(history[target])) {
-          target++;
+        let target = walkIndex - 1;
+        while (target > 0 && !findTab(history[target])) {
+          target--;
         }
-        if (target < history.length) {
-          cursor = target;
-          await navigateToEntry(history[cursor]);
-        } else {
-          playBellSound();
-        }
+        walkIndex = target;
+        await navigateToEntry(history[walkIndex]);
       } finally {
         navigating = false;
       }
     },
 
-    /** Return the most recent history entry before the current cursor that isn't the tab being closed and passes the optional filter, or null. */
+    /** Return the best MRU entry to land on after closing `tabId`, or null. */
     peekBackForClose(tabId: string, isValid?: (entry: NavEntry) => boolean): NavEntry | null {
-      for (let i = cursor - 1; i >= 0; i--) {
+      for (let i = 0; i < history.length; i++) {
         const entry = history[i];
-        if (entry.tabId !== tabId && (!isValid || isValid(entry))) return entry;
+        if (entry.tabId === tabId) continue;
+        if (isValid && !isValid(entry)) continue;
+        return entry;
       }
       return null;
     },
 
     removeTab(tabId: string) {
-      const currentId = cursor >= 0 ? history[cursor]?.tabId : null;
+      const currentId = history[walkIndex]?.tabId ?? null;
       history = history.filter(e => e.tabId !== tabId);
-      // Recompute cursor
-      if (currentId) {
+      if (currentId && currentId !== tabId) {
         const newIdx = history.findIndex(e => e.tabId === currentId);
-        cursor = newIdx >= 0 ? newIdx : Math.min(cursor, history.length - 1);
+        walkIndex = newIdx >= 0 ? newIdx : 0;
       } else {
-        cursor = Math.min(cursor, history.length - 1);
+        walkIndex = 0;
       }
     },
 
     removeWorkspace(workspaceId: string) {
-      const currentId = cursor >= 0 ? history[cursor]?.tabId : null;
+      const currentId = history[walkIndex]?.tabId ?? null;
+      const currentWs = history[walkIndex]?.workspaceId ?? null;
       history = history.filter(e => e.workspaceId !== workspaceId);
-      if (currentId) {
+      if (currentId && currentWs !== workspaceId) {
         const newIdx = history.findIndex(e => e.tabId === currentId);
-        cursor = newIdx >= 0 ? newIdx : Math.min(cursor, history.length - 1);
+        walkIndex = newIdx >= 0 ? newIdx : 0;
       } else {
-        cursor = Math.min(cursor, history.length - 1);
+        walkIndex = 0;
       }
     },
   };

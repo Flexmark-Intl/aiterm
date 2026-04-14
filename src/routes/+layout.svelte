@@ -559,9 +559,6 @@
         const ws = workspacesStore.activeWorkspace;
         const pane = workspacesStore.activePane;
         if (ws && pane && pane.tabs[index]) {
-          if (pane.active_tab_id) {
-            navHistoryStore.push({ workspaceId: ws.id, paneId: pane.id, tabId: pane.active_tab_id });
-          }
           navHistoryStore.push({ workspaceId: ws.id, paneId: pane.id, tabId: pane.tabs[index].id });
           workspacesStore.setActiveTab(ws.id, pane.id, pane.tabs[index].id);
           terminalsStore.focusTerminal(pane.tabs[index].id);

@@ -368,6 +368,8 @@ function createClaudeCodeStore() {
           if (tab) {
             await workspacesStore.updateEditorTabFile(targetTabId, fileName, fileInfo);
             window.dispatchEvent(new CustomEvent('editor-replace-file', { detail: { tabId: targetTabId } }));
+            const { navHistoryStore } = await import('$lib/stores/navHistory.svelte');
+            navHistoryStore.push({ workspaceId: ws.id, paneId: pane.id, tabId: targetTabId });
             await workspacesStore.setActiveTab(ws.id, pane.id, targetTabId);
             found = true;
             break;
@@ -400,6 +402,8 @@ function createClaudeCodeStore() {
     }
 
     if (existingTabId && existingWorkspaceId && existingPaneId) {
+      const { navHistoryStore } = await import('$lib/stores/navHistory.svelte');
+      navHistoryStore.push({ workspaceId: existingWorkspaceId, paneId: existingPaneId, tabId: existingTabId });
       await workspacesStore.setActiveTab(existingWorkspaceId, existingPaneId, existingTabId);
       if (startLine !== undefined || startText) {
         pendingSelections.set(existingTabId, { startLine, endLine, startText, endText });

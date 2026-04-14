@@ -312,9 +312,6 @@
   }
 
   async function handleTabClick(tabId: string) {
-    if (pane.active_tab_id && pane.active_tab_id !== tabId) {
-      navHistoryStore.push({ workspaceId, paneId: pane.id, tabId: pane.active_tab_id });
-    }
     navHistoryStore.push({ workspaceId, paneId: pane.id, tabId });
     await workspacesStore.setActiveTab(workspaceId, pane.id, tabId);
     scrollTabIntoView(tabId);

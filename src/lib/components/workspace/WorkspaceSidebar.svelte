@@ -377,12 +377,6 @@
       didDrag = false;
       return;
     }
-    // Push current tab to history before switching workspace
-    const currentWs = workspacesStore.activeWorkspace;
-    const currentPane = workspacesStore.activePane;
-    if (currentWs && currentPane?.active_tab_id) {
-      navHistoryStore.push({ workspaceId: currentWs.id, paneId: currentPane.id, tabId: currentPane.active_tab_id });
-    }
     const ws = workspacesStore.workspaces.find(w => w.id === workspaceId);
     if (ws?.suspended) {
       await workspacesStore.resumeWorkspace(workspaceId);
