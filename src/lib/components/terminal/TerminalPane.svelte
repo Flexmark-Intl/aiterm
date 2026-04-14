@@ -98,6 +98,7 @@
   let claudeSetupModal = $state(false);
   let autoResumeTextarea = $state<{ focus: () => void } | undefined>();
   let autoResumeHeightBeforeMouse = 0;
+  let sessionIdCopied = $state(false);
 
   // --- Selection state (Rust-managed via alacritty_terminal) ---
   let selectionActive = false; // mouse is down and dragging
@@ -1494,6 +1495,7 @@
     />
   {/if}
   {#if autoResumePrompt}
+    {@const claudeSessionIdValue = getVariables(tabId)?.get('claudeSessionId')}
     <div class="auto-resume-prompt-backdrop">
     <div class="auto-resume-prompt">
       <div class="auto-resume-context-info">
@@ -1535,6 +1537,17 @@
         onkeydown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submitAutoResumePrompt(); if (e.key === 'Escape') cancelAutoResumePrompt(); }}
       />
       <div class="auto-resume-prompt-hint">{autoResumePrompt.sshCmd ? 'Leave empty for SSH + cwd only' : 'Leave empty for cwd only'} &middot; Each line sent as a separate command &middot; {modSymbol}Enter to save</div>
+      {#if claudeSessionIdValue}
+        <div class="auto-resume-session-id-row">
+          <span class="auto-resume-session-id-label">%claudeSessionId</span>
+          <code class="auto-resume-session-id" title="Current tab's captured Claude session ID">{claudeSessionIdValue}</code>
+          <button type="button" class="auto-resume-session-id-copy" title="Copy session ID" onclick={async () => {
+            await clipboardWriteText(claudeSessionIdValue);
+            sessionIdCopied = true;
+            setTimeout(() => { sessionIdCopied = false; }, 1200);
+          }}>{sessionIdCopied ? 'Copied' : 'Copy'}</button>
+        </div>
+      {/if}
       <div class="auto-resume-prompt-actions">
         <div class="auto-resume-presets">
           <span class="auto-resume-presets-label">Presets</span>
@@ -1848,6 +1861,47 @@
   .auto-resume-pin-hint {
     color: var(--fg-dim);
     opacity: 0.7;
+  }
+
+  .auto-resume-session-id-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+  }
+
+  .auto-resume-session-id-label {
+    color: var(--fg-dim);
+    font-size: 0.846rem;
+  }
+
+  .auto-resume-session-id-copy {
+    color: var(--fg-dim);
+    font-size: 0.846rem;
+    background: var(--bg-dark);
+    border: 1px solid var(--bg-light);
+    border-radius: 3px;
+    padding: 2px 8px;
+    cursor: pointer;
+  }
+
+  .auto-resume-session-id-copy:hover {
+    color: var(--fg);
+    border-color: var(--accent);
+  }
+
+  .auto-resume-session-id {
+    color: var(--fg);
+    font-size: 0.846rem;
+    font-family: var(--font-mono, monospace);
+    background: var(--bg-dark);
+    border: 1px solid var(--bg-light);
+    border-radius: 3px;
+    padding: 2px 6px;
+    user-select: all;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .auto-resume-context-input,
