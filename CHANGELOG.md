@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.10.0
+
+- Add suspend tab button that kills PTY while keeping tab + scrollback visible
+- Add macOS Full Disk Access detection and Permissions section in Preferences
+- Rewrite nav history as unique-per-tab MRU with separation from tab cycling
+- Replace goto-line footer with centered modal (line or line:col)
+- Show %claudeSessionId with copy button in auto-resume edit modal
+- Focus editor view when editor tab becomes visible
+- Skip suspended tabs when cycling with keyboard shortcuts
+- Fix MCP tab-notes handlers misrouting on tab switch mid-call
+- Fix new-tab inheritance using stale PTY state over pinned auto-resume
+- Fix drag-drop not detecting Claude over SSH, improve drop overlay visibility
+- Fix auto-resume pinned settings lost on tab reload, restore, and copy
+- Fix suspend-tab deleting the tab instead of showing resume prompt
+- Fix new workspace showing resume prompt on first tab
+- Fix closing editor/diff tab navigating to wrong tab on first open
+
 ## v1.9.1
 
 - Add Go to Line (Ctrl+G) and improve editor toolbar visibility
