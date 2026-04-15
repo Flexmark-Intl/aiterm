@@ -15,12 +15,13 @@
   import { attachConsole } from '@tauri-apps/plugin-log';
   import { onAction as onNotificationAction } from '@tauri-apps/plugin-notification';
   import * as commands from '$lib/tauri/commands';
-  import type { ClaudeCodeToolRequest, Preferences } from '$lib/tauri/types';
+  import type { ClaudeCodeToolRequest, Preferences, Tab } from '$lib/tauri/types';
   import type { ImportPreview } from '$lib/tauri/commands';
   import { claudeCodeStore } from '$lib/stores/claudeCode.svelte';
   import { claudeStateStore } from '$lib/stores/claudeState.svelte';
   import { toastStore } from '$lib/stores/toasts.svelte';
   import { navHistoryStore } from '$lib/stores/navHistory.svelte';
+  import { pendingResumePanes } from '$lib/stores/resumeGate.svelte';
   import { isModKey, isMac } from '$lib/utils/platform';
   import { open as dialogOpen, save as dialogSave } from '@tauri-apps/plugin-dialog';
   import { openFileFromTerminal } from '$lib/utils/openFile';
@@ -319,6 +320,35 @@
       });
     })();
 
+    function isSuspendedTerminal(tab: Tab): boolean {
+      const isTerminal = tab.tab_type === 'terminal' || !tab.tab_type;
+      return isTerminal && !terminalsStore.get(tab.id) && !terminalsStore.isSpawning(tab.id);
+    }
+
+    function tabCycleList(tabs: Tab[]): Tab[] {
+      if (!preferencesStore.groupActiveTabs) return tabs;
+      return tabs.filter(t => !isSuspendedTerminal(t));
+    }
+
+    function cycleActiveTab(dir: 1 | -1) {
+      const ws = workspacesStore.activeWorkspace;
+      const pane = workspacesStore.activePane;
+      if (!ws || !pane) return;
+      const list = tabCycleList(pane.tabs);
+      if (list.length < 2) return;
+      const currentIndex = list.findIndex(t => t.id === pane.active_tab_id);
+      let nextIndex: number;
+      if (currentIndex === -1) {
+        nextIndex = dir === 1 ? 0 : list.length - 1;
+      } else {
+        nextIndex = (currentIndex + dir + list.length) % list.length;
+      }
+      const target = list[nextIndex];
+      if (isSuspendedTerminal(target)) pendingResumePanes.add(pane.id);
+      workspacesStore.setActiveTab(ws.id, pane.id, target.id);
+      terminalsStore.focusTerminal(target.id);
+    }
+
     function handleKeydown(e: KeyboardEvent) {
       const isMeta = isModKey(e);
       const activeTabIsEditor = workspacesStore.activeTab?.tab_type === 'editor';
@@ -558,10 +588,15 @@
         const index = parseInt(e.key) - 1;
         const ws = workspacesStore.activeWorkspace;
         const pane = workspacesStore.activePane;
-        if (ws && pane && pane.tabs[index]) {
-          navHistoryStore.push({ workspaceId: ws.id, paneId: pane.id, tabId: pane.tabs[index].id });
-          workspacesStore.setActiveTab(ws.id, pane.id, pane.tabs[index].id);
-          terminalsStore.focusTerminal(pane.tabs[index].id);
+        if (ws && pane) {
+          const list = tabCycleList(pane.tabs);
+          const target = list[index];
+          if (target) {
+            navHistoryStore.push({ workspaceId: ws.id, paneId: pane.id, tabId: target.id });
+            if (isSuspendedTerminal(target)) pendingResumePanes.add(pane.id);
+            workspacesStore.setActiveTab(ws.id, pane.id, target.id);
+            terminalsStore.focusTerminal(target.id);
+          }
         }
         return;
       }
@@ -586,14 +621,7 @@
       if (isMeta && e.shiftKey && (e.key === '[' || e.code === 'BracketLeft')) {
         e.preventDefault();
         e.stopPropagation();
-        const ws = workspacesStore.activeWorkspace;
-        const pane = workspacesStore.activePane;
-        if (ws && pane && pane.tabs.length > 1) {
-          const currentIndex = pane.tabs.findIndex(t => t.id === pane.active_tab_id);
-          const prevIndex = currentIndex <= 0 ? pane.tabs.length - 1 : currentIndex - 1;
-          workspacesStore.setActiveTab(ws.id, pane.id, pane.tabs[prevIndex].id);
-          terminalsStore.focusTerminal(pane.tabs[prevIndex].id);
-        }
+        cycleActiveTab(-1);
         return;
       }
 
@@ -601,14 +629,7 @@
       if (isMeta && e.shiftKey && (e.key === ']' || e.code === 'BracketRight')) {
         e.preventDefault();
         e.stopPropagation();
-        const ws = workspacesStore.activeWorkspace;
-        const pane = workspacesStore.activePane;
-        if (ws && pane && pane.tabs.length > 1) {
-          const currentIndex = pane.tabs.findIndex(t => t.id === pane.active_tab_id);
-          const nextIndex = currentIndex >= pane.tabs.length - 1 ? 0 : currentIndex + 1;
-          workspacesStore.setActiveTab(ws.id, pane.id, pane.tabs[nextIndex].id);
-          terminalsStore.focusTerminal(pane.tabs[nextIndex].id);
-        }
+        cycleActiveTab(1);
         return;
       }
 
