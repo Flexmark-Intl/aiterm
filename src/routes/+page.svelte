@@ -77,7 +77,9 @@
         if (!tabId) continue;
         const tab = paneSnap.tabs.find(t => t.id === tabId);
         const isTerminal = tab && (tab.tab_type === 'terminal' || !tab.tab_type);
-        const isSuspended = isTerminal && !terminalsStore.get(tabId) && !activatedTabIds.has(tabId);
+        // Only treat as suspended if the tab previously had a PTY (pty_id set but no live instance).
+        // Brand-new tabs have pty_id === null and should activate immediately.
+        const isSuspended = isTerminal && !!tab?.pty_id && !terminalsStore.get(tabId) && !activatedTabIds.has(tabId);
 
         if (initialActivationDone && workspaceSwitched && isSuspended) {
           // Workspace switch landed on a suspended tab — show resume prompt
