@@ -29,7 +29,7 @@
   import { CLAUDE_RESUME_COMMAND } from '$lib/triggers/defaults';
   import { createFilePathLinkProvider } from '$lib/utils/filePathDetector';
   import { openFileFromTerminal } from '$lib/utils/openFile';
-  import { enableBridge, disableBridge, hasBridge, getBridgeInfo, buildUserSetupScript } from '$lib/stores/sshMcpBridge.svelte';
+  import { enableBridge, disableBridge, hasBridge, getBridgeInfo, buildUserSetupScript, isInteractiveSshSession } from '$lib/stores/sshMcpBridge.svelte';
   import { claudeStateStore } from '$lib/stores/claudeState.svelte';
   import Icon from '$lib/components/Icon.svelte';
   import Button from '$lib/components/ui/Button.svelte';
@@ -452,11 +452,16 @@
       }
       // Title changes when SSH starts or exits — manage bridge accordingly.
       // Filter out non-interactive SSH (git, scp, rsync) which use SSH internally
-      // but don't provide a remote shell to bridge into.
+      // but don't provide a remote shell to bridge into, and one-shot remote
+      // commands (`ssh host 'cmd'`) which exit before the tunnel is ready —
+      // their env-var injection would land in the local shell.
       if (preferencesStore.claudeCodeIde && preferencesStore.claudeCodeIdeSsh) {
         getPtyInfo(ptyId).then(info => {
           const cmd = info.foreground_command;
-          const isInteractiveSsh = cmd && !cmd.includes('git@') && !cmd.includes('BatchMode=yes');
+          const isInteractiveSsh = cmd
+            && !cmd.includes('git@')
+            && !cmd.includes('BatchMode=yes')
+            && isInteractiveSshSession(cmd);
           if (isInteractiveSsh && !hasBridge(tabId)) {
             enableBridge(tabId, cmd, ptyId).catch(() => {});
           } else if (!cmd && hasBridge(tabId)) {

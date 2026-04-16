@@ -74,6 +74,48 @@ function extractHostKey(sshArgs: string): string {
 }
 
 /**
+ * SSH short flags that take a following argument.
+ * See `man ssh` OPTIONS section.
+ */
+const SSH_FLAGS_WITH_ARG = new Set([
+  '-b', '-c', '-D', '-E', '-e', '-F', '-I', '-i', '-J', '-L',
+  '-l', '-m', '-O', '-o', '-p', '-Q', '-R', '-S', '-W', '-w',
+]);
+
+/**
+ * Detect whether an ssh process is running an interactive shell or a one-shot remote command.
+ *
+ * One-shot commands (e.g. `ssh host 'some-cmd'` from Claude Code's Bash tool) must NOT
+ * trigger the MCP bridge: by the time the tunnel is set up (~1-2s), the one-shot ssh has
+ * already exited, so the env-var injection lands in the LOCAL shell instead of the remote.
+ *
+ * Returns true when:
+ *   - ssh has no trailing remote command (pure interactive), OR
+ *   - trailing command contains `exec $SHELL` (aiTerm's split/restore reconnect pattern)
+ */
+export function isInteractiveSshSession(cmd: string): boolean {
+  const tokens = cmd.replace(/^ssh\s+/, '').split(/\s+/).filter(Boolean);
+  let i = 0;
+  let sawHost = false;
+  while (i < tokens.length) {
+    const t = tokens[i];
+    if (t.startsWith('-')) {
+      // Known flag+arg pair, unless written as -oKey=Value (combined).
+      if (SSH_FLAGS_WITH_ARG.has(t) && t.length === 2) i += 2;
+      else i += 1;
+    } else if (!sawHost) {
+      sawHost = true;
+      i += 1;
+    } else {
+      // Trailing remote command — interactive only if it keeps a login shell alive.
+      const remote = tokens.slice(i).join(' ');
+      return /\bexec\s+\$?SHELL\b/.test(remote);
+    }
+  }
+  return true;
+}
+
+/**
  * Build a shell script for background SSH execution.
  * This runs as a non-interactive command, not through the user's PTY.
  * Sets up: lockfile, MCP entry in ~/.claude.json, hooks in ~/.claude/settings.json.
@@ -301,12 +343,21 @@ export async function enableBridge(tabId: string, sshArgs: string, ptyId?: strin
 
     // Inject AITERM_TAB_ID and AITERM_PORT into the remote shell so hooks can read them.
     // Leading space suppresses shell history (bash HISTCONTROL=ignorespace, zsh HIST_IGNORE_SPACE).
+    // Re-check the foreground process right before writing: tunnel setup is async
+    // (~1-2s), and the ssh process may have exited in the meantime (quick user
+    // disconnect, one-shot command that slipped past the filter, etc.). Writing to a
+    // PTY whose foreground is no longer ssh dumps the export into the local shell.
     if (ptyId) {
       try {
-        const envCmd = " export AITERM_TAB_ID=" + tabId + " AITERM_PORT=" + tunnelInfo.remote_port + "\n";
-        const bytes = Array.from(new TextEncoder().encode(envCmd));
-        await commands.writeTerminal(ptyId, bytes);
-        logInfo("SSH MCP bridge: injected env vars into remote shell for tab " + tabId);
+        const info = await commands.getPtyInfo(ptyId);
+        if (!info.foreground_command || !isInteractiveSshSession(info.foreground_command)) {
+          logInfo("SSH MCP bridge: skipping env-var injection — ssh no longer foreground for tab " + tabId);
+        } else {
+          const envCmd = " export AITERM_TAB_ID=" + tabId + " AITERM_PORT=" + tunnelInfo.remote_port + "\n";
+          const bytes = Array.from(new TextEncoder().encode(envCmd));
+          await commands.writeTerminal(ptyId, bytes);
+          logInfo("SSH MCP bridge: injected env vars into remote shell for tab " + tabId);
+        }
       } catch (e) {
         logError("SSH MCP bridge: failed to inject env vars: " + e);
       }
