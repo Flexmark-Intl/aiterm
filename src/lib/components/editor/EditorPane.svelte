@@ -4,7 +4,7 @@
   import { EditorState, Compartment } from '@codemirror/state';
   import { MergeView } from '@codemirror/merge';
   import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
-  import { foldGutter, indentOnInput, bracketMatching, foldKeymap } from '@codemirror/language';
+  import { foldGutter, indentOnInput, bracketMatching, foldKeymap, foldAll, unfoldAll } from '@codemirror/language';
   import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
   import { search, searchKeymap, highlightSelectionMatches, getSearchQuery } from '@codemirror/search';
   import { ViewPlugin } from '@codemirror/view';
@@ -555,6 +555,8 @@
               ...searchKeymap,
               ...historyKeymap,
               ...foldKeymap,
+              { key: 'Mod-Shift--', run: foldAll },
+              { key: 'Mod-Shift-=', run: unfoldAll },
               indentWithTab,
             ]),
             ...buildEditorExtension(getTheme(preferencesStore.theme, preferencesStore.customThemes)),
@@ -1096,6 +1098,8 @@
             ...searchKeymap,
             ...historyKeymap,
             ...foldKeymap,
+            { key: 'Mod-Shift--', run: foldAll },
+            { key: 'Mod-Shift-=', run: unfoldAll },
             indentWithTab,
           ]),
           ...buildEditorExtension(getTheme(preferencesStore.theme, preferencesStore.customThemes)),
