@@ -121,6 +121,17 @@ function createNavHistoryStore() {
       return null;
     },
 
+    /** Return the most recent MRU entry pointing at a live tab, or null. */
+    peekMostRecent(isValid?: (entry: NavEntry) => boolean): NavEntry | null {
+      for (let i = 0; i < history.length; i++) {
+        const entry = history[i];
+        if (isValid && !isValid(entry)) continue;
+        if (!findTab(entry)) continue;
+        return entry;
+      }
+      return null;
+    },
+
     removeTab(tabId: string) {
       const currentId = history[walkIndex]?.tabId ?? null;
       history = history.filter(e => e.tabId !== tabId);

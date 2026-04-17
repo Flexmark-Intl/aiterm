@@ -387,15 +387,27 @@ function createWorkspacesStore() {
       suspendingWorkspaceIds.delete(workspaceId);
       const wsToSuspend = workspaces.find(w => w.id === workspaceId);
       if (wsToSuspend) wsToSuspend.suspended = true;
-      import('$lib/stores/navHistory.svelte').then(m => m.navHistoryStore.removeWorkspace(workspaceId));
+      const { navHistoryStore } = await import('$lib/stores/navHistory.svelte');
+      navHistoryStore.removeWorkspace(workspaceId);
 
-      // 4. If this was the active workspace, switch to next non-suspended
+      // 4. If this was the active workspace, prefer back-history; fall back to first non-suspended
       if (activeWorkspaceId === workspaceId) {
-        const next = workspaces.find(w => !w.suspended && w.id !== workspaceId);
-        if (next) {
-          await this.setActiveWorkspace(next.id);
+        const backEntry = navHistoryStore.peekMostRecent(e => {
+          const w = workspaces.find(ww => ww.id === e.workspaceId);
+          return !!w && !w.suspended;
+        });
+        if (backEntry) {
+          await this.setActiveWorkspace(backEntry.workspaceId);
+          await this.setActivePane(backEntry.workspaceId, backEntry.paneId);
+          await this.setActiveTab(backEntry.workspaceId, backEntry.paneId, backEntry.tabId);
+          terminalsStore.focusTerminal(backEntry.tabId);
         } else {
-          activeWorkspaceId = null;
+          const next = workspaces.find(w => !w.suspended && w.id !== workspaceId);
+          if (next) {
+            await this.setActiveWorkspace(next.id);
+          } else {
+            activeWorkspaceId = null;
+          }
         }
       }
     },
