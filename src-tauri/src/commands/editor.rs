@@ -271,7 +271,7 @@ pub async fn save_clipboard_image(data_base64: String) -> Result<String, String>
         .map_err(|e| format!("Invalid base64: {}", e))?;
 
     let temp_dir = std::env::temp_dir();
-    let filename = format!("aiterm-clipboard-{}.jpg", uuid::Uuid::new_v4());
+    let filename = format!("aiterm-clipboard-{}.png", uuid::Uuid::new_v4());
     let path = temp_dir.join(&filename);
 
     std::fs::write(&path, &bytes).map_err(|e| format!("Cannot write temp file: {}", e))?;

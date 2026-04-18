@@ -223,12 +223,12 @@
 
   // Paste from clipboard using native Tauri APIs (bypasses WKWebView paste popup).
   // Checks for file paths first (Finder copy), then falls back to text.
-  /** Convert clipboard RGBA image to JPEG via offscreen canvas, return base64. */
-  async function rgbaToJpegBase64(rgba: Uint8Array, width: number, height: number): Promise<string> {
+  /** Convert clipboard RGBA image to PNG via offscreen canvas, return base64. PNG preserves transparency. */
+  async function rgbaToPngBase64(rgba: Uint8Array, width: number, height: number): Promise<string> {
     const canvas = new OffscreenCanvas(width, height);
     const ctx = canvas.getContext('2d')!;
     ctx.putImageData(new ImageData(new Uint8ClampedArray(rgba), width, height), 0, 0);
-    const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.85 });
+    const blob = await canvas.convertToBlob({ type: 'image/png' });
     const buf = await blob.arrayBuffer();
     // Manual base64 encoding (no btoa needed for binary)
     const bytes = new Uint8Array(buf);
@@ -255,7 +255,7 @@
         const { width, height } = await image.size();
         if (width > 0 && height > 0) {
           const rgba = await image.rgba();
-          const base64 = await rgbaToJpegBase64(rgba, width, height);
+          const base64 = await rgbaToPngBase64(rgba, width, height);
           const localPath = await saveClipboardImage(base64);
 
           // Check if SSH session — need to SCP upload
