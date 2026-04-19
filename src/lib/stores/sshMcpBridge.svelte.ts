@@ -322,18 +322,12 @@ export async function enableBridge(tabId: string, sshArgs: string, ptyId?: strin
     const tunnelInfo = await commands.startSshTunnel(sshArgs, hostKey, tabId, localPort);
     logInfo(`SSH MCP bridge: tunnel to ${hostKey} on remote port ${tunnelInfo.remote_port}`);
 
-    // Write lockfile + MCP entry + hooks on remote via a separate background SSH connection
+    // Kick off remote setup (lockfile + MCP entry + hooks + skill) in parallel
+    // with env-var injection below. The injection only needs remote_port, which
+    // we already have — awaiting setup first delays the export landing in the
+    // remote shell by ~0.5-2s, which collides with the user's first keystrokes.
     const setupScript = buildSetupScript(tunnelInfo.remote_port, authToken, tabId);
-    await commands.sshRunSetup(sshArgs, setupScript);
-
-    bridgeStates = new Map(bridgeStates.set(tabId, {
-      hostKey,
-      remotePort: tunnelInfo.remote_port,
-      status: 'connected',
-    }));
-
-    // Listen for tunnel process death from Rust — clears indicator in real-time
-    listenForTunnelDown(tabId).catch(() => {});
+    const setupPromise = commands.sshRunSetup(sshArgs, setupScript);
 
     // Set trigger variables so auto-resume commands can interpolate them.
     // %aitermTabId, %aitermPort for individual values, %aitermExport for the full export command.
@@ -362,6 +356,19 @@ export async function enableBridge(tabId: string, sshArgs: string, ptyId?: strin
         logError("SSH MCP bridge: failed to inject env vars: " + e);
       }
     }
+
+    // Wait for remote setup to finish before flipping to 'connected'.
+    // If setup failed, this throws and the outer catch marks the bridge as failed.
+    await setupPromise;
+
+    bridgeStates = new Map(bridgeStates.set(tabId, {
+      hostKey,
+      remotePort: tunnelInfo.remote_port,
+      status: 'connected',
+    }));
+
+    // Listen for tunnel process death from Rust — clears indicator in real-time
+    listenForTunnelDown(tabId).catch(() => {});
 
     logInfo(`SSH MCP bridge enabled for tab ${tabId} → ${hostKey}:${tunnelInfo.remote_port}`);
     return true;
