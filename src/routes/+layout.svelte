@@ -592,7 +592,6 @@
           const list = tabCycleList(pane.tabs);
           const target = list[index];
           if (target) {
-            navHistoryStore.push({ workspaceId: ws.id, paneId: pane.id, tabId: target.id });
             if (isSuspendedTerminal(target)) pendingResumePanes.add(pane.id);
             workspacesStore.setActiveTab(ws.id, pane.id, target.id);
             terminalsStore.focusTerminal(target.id);

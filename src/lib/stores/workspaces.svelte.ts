@@ -895,6 +895,9 @@ function createWorkspacesStore() {
           }
           paneForDelete.active_tab_id = newActiveId;
           navHistoryStore.removeTab(tabId);
+          if (newActiveId) {
+            navHistoryStore.push({ workspaceId, paneId, tabId: newActiveId });
+          }
           return;
         }
       }
@@ -1016,7 +1019,12 @@ function createWorkspacesStore() {
         if (archivePane.active_tab_id === tabId) {
           const { navHistoryStore } = await import('$lib/stores/navHistory.svelte');
           const prev = navHistoryStore.peekBackForClose(tabId, e => !!archivePane.tabs.find(t => t.id === e.tabId));
-          archivePane.active_tab_id = prev ? prev.tabId : pickNextActiveTab(archivePane.tabs, oldIndex);
+          const newActiveId = prev ? prev.tabId : pickNextActiveTab(archivePane.tabs, oldIndex);
+          archivePane.active_tab_id = newActiveId;
+          navHistoryStore.removeTab(tabId);
+          if (newActiveId) {
+            navHistoryStore.push({ workspaceId, paneId, tabId: newActiveId });
+          }
         }
       }
     },
@@ -1115,6 +1123,10 @@ function createWorkspacesStore() {
       const { pane, tab } = findTab(workspaceId, paneId, tabId);
       if (pane) pane.active_tab_id = tabId;
       if (tab?.import_highlight) tab.import_highlight = false;
+      // Record in nav history. The store's `navigating` flag no-ops this
+      // during a Cmd+[ / Cmd+] walk, so walkIndex stays anchored.
+      const { navHistoryStore } = await import('$lib/stores/navHistory.svelte');
+      navHistoryStore.push({ workspaceId, paneId, tabId });
     },
 
     async setTabPtyId(workspaceId: string, paneId: string, tabId: string, ptyId: string) {
@@ -1698,17 +1710,18 @@ export const workspacesStore = createWorkspacesStore();
  * Used by toast clicks and OS notification deep-links.
  */
 export async function navigateToTab(tabId: string): Promise<void> {
-  const { navHistoryStore } = await import('$lib/stores/navHistory.svelte');
   for (const ws of workspacesStore.workspaces) {
     for (const pane of ws.panes) {
       const tab = pane.tabs.find(t => t.id === tabId);
       if (tab) {
-        navHistoryStore.push({ workspaceId: ws.id, paneId: pane.id, tabId });
         if (ws.id !== workspacesStore.activeWorkspaceId) {
           await workspacesStore.setActiveWorkspace(ws.id);
         }
         if (pane.active_tab_id !== tabId) {
           await workspacesStore.setActiveTab(ws.id, pane.id, tabId);
+        } else {
+          const { navHistoryStore } = await import('$lib/stores/navHistory.svelte');
+          navHistoryStore.push({ workspaceId: ws.id, paneId: pane.id, tabId });
         }
         return;
       }
