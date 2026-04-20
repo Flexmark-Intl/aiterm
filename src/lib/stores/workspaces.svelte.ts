@@ -894,9 +894,16 @@ function createWorkspacesStore() {
             }
           }
           paneForDelete.active_tab_id = newActiveId;
-          navHistoryStore.removeTab(tabId);
-          if (newActiveId) {
-            navHistoryStore.push({ workspaceId, paneId, tabId: newActiveId });
+          if (prev && newActiveId) {
+            // newActiveId is in nav history — pin walkIndex there so Cmd+[/]
+            // continues from this position instead of resetting to MRU front.
+            navHistoryStore.removeTab(tabId, newActiveId);
+          } else {
+            navHistoryStore.removeTab(tabId);
+            if (newActiveId) {
+              // Fallback active tab was never visited — record it at MRU front.
+              navHistoryStore.push({ workspaceId, paneId, tabId: newActiveId });
+            }
           }
           return;
         }
@@ -1021,9 +1028,13 @@ function createWorkspacesStore() {
           const prev = navHistoryStore.peekBackForClose(tabId, e => !!archivePane.tabs.find(t => t.id === e.tabId));
           const newActiveId = prev ? prev.tabId : pickNextActiveTab(archivePane.tabs, oldIndex);
           archivePane.active_tab_id = newActiveId;
-          navHistoryStore.removeTab(tabId);
-          if (newActiveId) {
-            navHistoryStore.push({ workspaceId, paneId, tabId: newActiveId });
+          if (prev && newActiveId) {
+            navHistoryStore.removeTab(tabId, newActiveId);
+          } else {
+            navHistoryStore.removeTab(tabId);
+            if (newActiveId) {
+              navHistoryStore.push({ workspaceId, paneId, tabId: newActiveId });
+            }
           }
         }
       }

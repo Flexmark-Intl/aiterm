@@ -110,13 +110,24 @@ function createNavHistoryStore() {
       }
     },
 
-    /** Return the best MRU entry to land on after closing `tabId`, or null. */
+    /**
+     * Return the best entry to land on after closing `tabId`.
+     * If the user is mid-walk on the closed tab, prefer continuing the walk
+     * (next-back, then next-forward) so Cmd+[/] still work from where they were.
+     * Otherwise fall back to MRU.
+     */
     peekBackForClose(tabId: string, isValid?: (entry: NavEntry) => boolean): NavEntry | null {
+      const matches = (e: NavEntry) => e.tabId !== tabId && (!isValid || isValid(e));
+      if (walkIndex > 0 && history[walkIndex]?.tabId === tabId) {
+        for (let i = walkIndex + 1; i < history.length; i++) {
+          if (matches(history[i])) return history[i];
+        }
+        for (let i = walkIndex - 1; i >= 0; i--) {
+          if (matches(history[i])) return history[i];
+        }
+      }
       for (let i = 0; i < history.length; i++) {
-        const entry = history[i];
-        if (entry.tabId === tabId) continue;
-        if (isValid && !isValid(entry)) continue;
-        return entry;
+        if (matches(history[i])) return history[i];
       }
       return null;
     },
@@ -132,8 +143,13 @@ function createNavHistoryStore() {
       return null;
     },
 
-    removeTab(tabId: string) {
-      const currentId = history[walkIndex]?.tabId ?? null;
+    /**
+     * Remove `tabId` from history. If `anchorTabId` is given, point walkIndex
+     * at that entry's new position so the walk continues from there. Otherwise
+     * keep walkIndex on the previously walked-to tab if still present, else 0.
+     */
+    removeTab(tabId: string, anchorTabId?: string) {
+      const currentId = anchorTabId ?? history[walkIndex]?.tabId ?? null;
       history = history.filter(e => e.tabId !== tabId);
       if (currentId && currentId !== tabId) {
         const newIdx = history.findIndex(e => e.tabId === currentId);
