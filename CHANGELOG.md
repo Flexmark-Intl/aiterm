@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.10.2
+
+- Require two presses for Cmd+W to close a tab (prevents accidental close with armed 2s overlay)
+- Prune orphan scrollback rows from SQLite DB on startup, close_window, reset_window, and import_state
+- Ref-count Claude Code IDE connection state to dampen SSE reconnect flap (reduces IPC churn)
+- Document editor fold shortcuts and two-press Cmd+W in help page
+
 ## v1.10.1
 
 - Add Cmd+Shift+- / Cmd+Shift+= to fold all / unfold all in editor
