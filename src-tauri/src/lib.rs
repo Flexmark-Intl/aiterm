@@ -53,6 +53,14 @@ pub fn run() {
         // Flush the cleaned JSON (scrollback stripped) to disk
         let _ = save_state(&data);
 
+        // Sweep scrollback DB for rows whose tab no longer exists in state —
+        // backstop for any path that drops tabs without deleting their row.
+        match app_state.scrollback_db.prune_orphans(&data.all_tab_ids()) {
+            Ok(n) if n > 0 => log::info!("Pruned {} orphan scrollback rows at startup", n),
+            Ok(_) => {}
+            Err(e) => log::warn!("Startup scrollback prune failed: {}", e),
+        }
+
         // Ensure at least one window exists (fresh install)
         if data.windows.is_empty() {
             let mut win = WindowData::new("main".to_string());

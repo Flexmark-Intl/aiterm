@@ -1,5 +1,6 @@
 use parking_lot::Mutex;
 use rusqlite::Connection;
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 pub struct ScrollbackDb {
@@ -66,5 +67,48 @@ impl ScrollbackDb {
             rusqlite::params![tab_id],
         ).map_err(|e| format!("Failed to delete scrollback: {}", e))?;
         Ok(())
+    }
+
+    pub fn delete_many(&self, tab_ids: &[String]) -> Result<(), String> {
+        if tab_ids.is_empty() {
+            return Ok(());
+        }
+        let mut conn = self.conn.lock();
+        let tx = conn.transaction().map_err(|e| format!("Failed to begin tx: {}", e))?;
+        for id in tab_ids {
+            tx.execute(
+                "DELETE FROM scrollback WHERE tab_id = ?1",
+                rusqlite::params![id],
+            ).map_err(|e| format!("Failed to delete scrollback: {}", e))?;
+        }
+        tx.commit().map_err(|e| format!("Failed to commit: {}", e))?;
+        Ok(())
+    }
+
+    /// Delete any rows whose tab_id is not in `live_tab_ids`, then VACUUM
+    /// so freed pages are returned to the OS. Returns count removed.
+    pub fn prune_orphans(&self, live_tab_ids: &HashSet<String>) -> Result<usize, String> {
+        let orphans: Vec<String> = {
+            let conn = self.conn.lock();
+            let mut stmt = conn
+                .prepare("SELECT tab_id FROM scrollback")
+                .map_err(|e| format!("Failed to prepare query: {}", e))?;
+            let rows = stmt
+                .query_map([], |row| row.get::<_, String>(0))
+                .map_err(|e| format!("Failed to query: {}", e))?;
+            rows.filter_map(|r| r.ok())
+                .filter(|id| !live_tab_ids.contains(id))
+                .collect()
+        };
+
+        if orphans.is_empty() {
+            return Ok(0);
+        }
+
+        self.delete_many(&orphans)?;
+
+        let conn = self.conn.lock();
+        let _ = conn.execute("VACUUM", []);
+        Ok(orphans.len())
     }
 }

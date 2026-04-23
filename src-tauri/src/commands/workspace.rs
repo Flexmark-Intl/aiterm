@@ -1808,12 +1808,21 @@ pub fn import_state(app: tauri::AppHandle, state: State<'_, Arc<AppState>>, path
     // Extract any scrollback from imported JSON into SQLite
     migrate_imported_scrollback(&mut imported, &state.scrollback_db);
 
+    let live_ids = imported.all_tab_ids();
+
     {
         let mut app_data = state.app_data.write();
         *app_data = imported;
     }
     let data_clone = state.app_data.read().clone();
     save_state(&data_clone)?;
+
+    // Drop any scrollback row that the import didn't claim.
+    match state.scrollback_db.prune_orphans(&live_ids) {
+        Ok(n) if n > 0 => log::info!("Pruned {} orphan scrollback rows after import", n),
+        Ok(_) => {}
+        Err(e) => log::warn!("Failed to prune scrollback after import: {}", e),
+    }
 
     log::info!("State imported from {}", path);
     let _ = app.emit("state-imported", ());

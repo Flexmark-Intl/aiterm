@@ -399,6 +399,25 @@ impl AppData {
     pub fn window_mut(&mut self, label: &str) -> Option<&mut WindowData> {
         self.windows.iter_mut().find(|w| w.label == label)
     }
+
+    /// Collect every tab ID across all windows (live + archived). Used to
+    /// identify orphan rows in side tables (e.g. scrollback DB).
+    pub fn all_tab_ids(&self) -> std::collections::HashSet<String> {
+        let mut ids = std::collections::HashSet::new();
+        for win in &self.windows {
+            for ws in &win.workspaces {
+                for pane in &ws.panes {
+                    for tab in &pane.tabs {
+                        ids.insert(tab.id.clone());
+                    }
+                }
+                for tab in &ws.archived_tabs {
+                    ids.insert(tab.id.clone());
+                }
+            }
+        }
+        ids
+    }
 }
 
 fn default_sidebar_width() -> u32 {

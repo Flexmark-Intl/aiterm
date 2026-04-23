@@ -123,11 +123,21 @@ pub fn duplicate_window(
 #[tauri::command]
 pub fn close_window(window: tauri::Window, state: State<'_, Arc<AppState>>) -> Result<(), String> {
     let label = window.label().to_string();
-    let data_clone = {
+    let (data_clone, orphan_ids) = {
         let mut app_data = state.app_data.write();
+        let orphan_ids: Vec<String> = app_data.windows.iter()
+            .filter(|w| w.label == label)
+            .flat_map(|w| {
+                w.workspaces.iter().flat_map(|ws| {
+                    ws.panes.iter().flat_map(|p| p.tabs.iter().map(|t| t.id.clone()))
+                        .chain(ws.archived_tabs.iter().map(|t| t.id.clone()))
+                })
+            })
+            .collect();
         app_data.windows.retain(|w| w.label != label);
-        app_data.clone()
+        (app_data.clone(), orphan_ids)
     };
+    let _ = state.scrollback_db.delete_many(&orphan_ids);
     save_state(&data_clone)?;
     Ok(())
 }
@@ -194,13 +204,20 @@ pub fn restore_window_geometry(window: tauri::Window, state: State<'_, Arc<AppSt
 #[tauri::command]
 pub fn reset_window(window: tauri::Window, state: State<'_, Arc<AppState>>) -> Result<(), String> {
     let label = window.label().to_string();
-    let data_clone = {
+    let (data_clone, orphan_ids) = {
         let mut app_data = state.app_data.write();
         let win = app_data.window_mut(&label).ok_or("Window not found")?;
+        let orphan_ids: Vec<String> = win.workspaces.iter()
+            .flat_map(|ws| {
+                ws.panes.iter().flat_map(|p| p.tabs.iter().map(|t| t.id.clone()))
+                    .chain(ws.archived_tabs.iter().map(|t| t.id.clone()))
+            })
+            .collect();
         win.workspaces.clear();
         win.active_workspace_id = None;
-        app_data.clone()
+        (app_data.clone(), orphan_ids)
     };
+    let _ = state.scrollback_db.delete_many(&orphan_ids);
     save_state(&data_clone)?;
     Ok(())
 }
