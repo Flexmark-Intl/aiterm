@@ -88,7 +88,7 @@
           <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>T</kbd> <span>New tab</span></div>
           <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>T</kbd> <span>Duplicate tab</span></div>
           <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>R</kbd> <span>Reload tab</span></div>
-          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>W</kbd> <span>Close tab</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>W</kbd> <span>Close tab (press twice within 2s)</span></div>
           <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>1-9</kbd> <span>Switch to tab</span></div>
           <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>[</kbd> <span>Previous tab</span></div>
           <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>]</kbd> <span>Next tab</span></div>
@@ -163,6 +163,19 @@
           <div class="shortcut"><kbd>Shift</kbd> + <kbd>Tab</kbd> <span>Outdent</span></div>
           <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Z</kbd> <span>Undo</span></div>
           <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>Z</kbd> <span>Redo</span></div>
+        </div>
+
+        <h3 class="section-heading">Folding</h3>
+        <div class="shortcut-group">
+          {#if isMac()}
+            <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>{altLabel}</kbd> + <kbd>[</kbd> <span>Fold at cursor</span></div>
+            <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>{altLabel}</kbd> + <kbd>]</kbd> <span>Unfold at cursor</span></div>
+          {:else}
+            <div class="shortcut"><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>[</kbd> <span>Fold at cursor</span></div>
+            <div class="shortcut"><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>]</kbd> <span>Unfold at cursor</span></div>
+          {/if}
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>-</kbd> <span>Fold all</span></div>
+          <div class="shortcut"><kbd>{modLabel}</kbd> + <kbd>Shift</kbd> + <kbd>=</kbd> <span>Unfold all</span></div>
         </div>
 
         <h3 class="section-heading">Search & Navigation</h3>
