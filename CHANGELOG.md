@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.10.1
+
+- Add Cmd+Shift+- / Cmd+Shift+= to fold all / unfold all in editor
+- Parallelize SSH MCP bridge env-var injection with remote setup (~0.5-2s faster)
+- Skip SSH MCP bridge for one-shot remote commands
+- Preserve transparency when pasting clipboard image into Claude session (PNG instead of JPEG)
+- Navigate to most recent non-suspended tab in nav history on workspace suspend
+- Fix nav history walk losing position when closing walked-to tab
+- Fix Cmd+Shift+[/] jumping to stale tabs by centralizing history push in setActiveTab
+
 ## v1.10.0
 
 - Add suspend tab button that kills PTY while keeping tab + scrollback visible
