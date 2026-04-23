@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -42,6 +43,11 @@ struct ServerState {
     sse_sessions: SseSessions,
     /// Maps connection IDs (SSE session, WS id, or "streamable-http") to tab IDs.
     connection_tabs: ConnectionTabMap,
+    /// Active transport connections (WS + SSE). Used to ref-count the connected
+    /// flag so flapping sessions don't emit spurious disconnect events while
+    /// another session is still alive. Also dampens log/event spam from the
+    /// documented SSE-over-SSH reconnect flap.
+    connection_count: Arc<AtomicUsize>,
 }
 
 pub async fn start_server(app_handle: AppHandle, state: Arc<AppState>) {
@@ -114,6 +120,7 @@ pub async fn start_server(app_handle: AppHandle, state: Arc<AppState>) {
         expected_auth: auth,
         sse_sessions,
         connection_tabs,
+        connection_count: Arc::new(AtomicUsize::new(0)),
     };
 
     let app = Router::new()
@@ -459,15 +466,34 @@ fn collect_workspace_folders(_state: &Arc<AppState>) -> Vec<String> {
     folders
 }
 
-fn set_connected(srv: &ServerState, connected: bool) {
+/// Emit a connection-state change to every terminal window.
+/// `app_handle.emit()` broadcasts globally and `listen()` catches both global +
+/// window events in Tauri 2, so we target each window individually.
+fn emit_connection_state(srv: &ServerState, connected: bool) {
     *srv.state.claude_code_connected.write() = connected;
-    // Emit to each known terminal window individually.
-    // app_handle.emit() broadcasts globally and listen() catches both global + window
-    // events in Tauri 2, causing duplicate callbacks per webview.
     let payload = serde_json::json!({ "connected": connected });
     let app_data = srv.state.app_data.read();
     for win in &app_data.windows {
         let _ = srv.app_handle.emit_to(&win.label, "claude-code-connection", payload.clone());
+    }
+}
+
+/// Increment the active-connection ref count. Emits `connected=true` only on
+/// the 0→1 transition so overlapping WS/SSE sessions don't log-spam.
+fn connection_inc(srv: &ServerState) {
+    if srv.connection_count.fetch_add(1, Ordering::SeqCst) == 0 {
+        emit_connection_state(srv, true);
+    }
+}
+
+/// Decrement the active-connection ref count. Emits `connected=false` only on
+/// the 1→0 transition. SSE-over-SSH flaps (documented) are absorbed as long as
+/// at least one transport session remains live.
+fn connection_dec(srv: &ServerState) {
+    let prev = srv.connection_count.fetch_sub(1, Ordering::SeqCst);
+    debug_assert!(prev > 0, "connection_dec called with zero count");
+    if prev == 1 {
+        emit_connection_state(srv, false);
     }
 }
 
@@ -495,7 +521,7 @@ async fn ws_upgrade_handler(
 async fn handle_ws_connection(socket: WebSocket, srv: ServerState) {
     let ws_connection_id = format!("ws-{}", uuid::Uuid::new_v4());
     log::debug!("Claude Code WS client connected ({})", &ws_connection_id[..11]);
-    set_connected(&srv, true);
+    connection_inc(&srv);
 
     // response_tx: handle_message sends raw JSON here; main loop writes to WS
     let (response_tx, mut response_rx) = mpsc::unbounded_channel::<String>();
@@ -541,9 +567,16 @@ async fn handle_ws_connection(socket: WebSocket, srv: ServerState) {
         }
     }
 
-    set_connected(&srv, false);
+    connection_dec(&srv);
     srv.connection_tabs.write().remove(&ws_connection_id);
-    *srv.state.claude_code_notify_tx.lock() = None;
+    // Only clear the global notify channel if we still own it — a newer
+    // transport session may have overwritten it while we were running.
+    {
+        let mut guard = srv.state.claude_code_notify_tx.lock();
+        if guard.as_ref().map(|tx| tx.same_channel(&response_tx)).unwrap_or(false) {
+            *guard = None;
+        }
+    }
     log::debug!("Claude Code WS connection cleaned up ({})", &ws_connection_id[..11]);
 }
 
@@ -621,9 +654,10 @@ async fn sse_get_handler(State(srv): State<ServerState>, headers: HeaderMap) -> 
             let _ = sse_tx_for_notify.send(json);
         }
     });
+    let notify_tx_owner = notify_tx.clone();
     *srv.state.claude_code_notify_tx.lock() = Some(notify_tx);
 
-    set_connected(&srv, true);
+    connection_inc(&srv);
     log::debug!("Claude Code SSE client connected (session {}...)", &session_id[..8]);
 
     // First SSE event: tell Claude where to POST messages
@@ -660,8 +694,15 @@ async fn sse_get_handler(State(srv): State<ServerState>, headers: HeaderMap) -> 
         }
         cleanup_srv.sse_sessions.write().remove(&cleanup_session_id);
         cleanup_srv.connection_tabs.write().remove(&format!("sse-{}", cleanup_session_id));
-        set_connected(&cleanup_srv, false);
-        *cleanup_srv.state.claude_code_notify_tx.lock() = None;
+        connection_dec(&cleanup_srv);
+        // Only clear the global notify channel if this session still owns it —
+        // a newer session may have overwritten it while we were running.
+        {
+            let mut guard = cleanup_srv.state.claude_code_notify_tx.lock();
+            if guard.as_ref().map(|tx| tx.same_channel(&notify_tx_owner)).unwrap_or(false) {
+                *guard = None;
+            }
+        }
         log::debug!("Claude Code SSE client disconnected");
     });
 

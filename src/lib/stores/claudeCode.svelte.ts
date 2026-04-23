@@ -1170,7 +1170,6 @@ function createClaudeCodeStore() {
 
   function setConnected(value: boolean) {
     connected = value;
-    logInfo(`Claude Code IDE ${value ? 'connected' : 'disconnected'}`);
   }
 
   function getPendingSelection(tabId: string): PendingSelection | undefined {
