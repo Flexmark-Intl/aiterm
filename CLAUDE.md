@@ -200,7 +200,7 @@ Controlled by `cfg!(debug_assertions)` in `state/persistence.rs` → `app_data_s
 | Shortcut | Action |
 |----------|--------|
 | Cmd+T | New tab |
-| Cmd+W | Close tab (or pane if last tab) |
+| Cmd+W | Close tab (or pane if last tab) — requires two presses within 2s |
 | Cmd+1-9 | Switch to tab |
 | Cmd+Shift+[ / ] | Previous / next tab |
 | Cmd+Shift+T | Duplicate tab |

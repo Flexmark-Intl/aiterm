@@ -22,7 +22,7 @@
   import { toastStore } from '$lib/stores/toasts.svelte';
   import { navHistoryStore } from '$lib/stores/navHistory.svelte';
   import { pendingResumePanes } from '$lib/stores/resumeGate.svelte';
-  import { isModKey, isMac } from '$lib/utils/platform';
+  import { isModKey, isMac, modSymbol } from '$lib/utils/platform';
   import { open as dialogOpen, save as dialogSave } from '@tauri-apps/plugin-dialog';
   import { openFileFromTerminal } from '$lib/utils/openFile';
   import QuickOpen from '$lib/components/QuickOpen.svelte';
@@ -42,6 +42,28 @@
   let importPreview = $state<ImportPreview | null>(null);
   let importFilePath = $state('');
   let showQuickOpen = $state(false);
+
+  // Cmd+W two-press confirmation: first press arms closeConfirmTabId for 2s,
+  // a second press while armed (on the same tab) actually closes.
+  let closeConfirmTabId = $state<string | null>(null);
+  let closeConfirmTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function clearCloseConfirm() {
+    if (closeConfirmTimer) {
+      clearTimeout(closeConfirmTimer);
+      closeConfirmTimer = null;
+    }
+    closeConfirmTabId = null;
+  }
+
+  function armCloseConfirm(tabId: string) {
+    if (closeConfirmTimer) clearTimeout(closeConfirmTimer);
+    closeConfirmTabId = tabId;
+    closeConfirmTimer = setTimeout(() => {
+      closeConfirmTabId = null;
+      closeConfirmTimer = null;
+    }, 2000);
+  }
 
   // Apply UI theme reactively (runs outside onMount so it reacts to changes)
   $effect(() => {
@@ -562,22 +584,27 @@
         return;
       }
 
-      // Cmd+W - Close current tab (or pane if last tab)
+      // Cmd+W - Close current tab (or pane if last tab). Requires two presses
+      // within 2s to prevent accidental close; first press shows an overlay hint.
       if (isMeta && e.key.toLowerCase() === 'w') {
         e.preventDefault();
         e.stopPropagation();
         const ws = workspacesStore.activeWorkspace;
         const pane = workspacesStore.activePane;
         const tab = workspacesStore.activeTab;
-        if (ws && pane && tab) {
-          if (pane.tabs.length > 1) {
-            workspacesStore.deleteTab(ws.id, pane.id, tab.id);
-          } else if (ws.panes.length > 1) {
-            workspacesStore.deletePane(ws.id, pane.id);
-          } else {
-            // Last tab in last pane — close tab, pane shows empty state
-            workspacesStore.deleteTab(ws.id, pane.id, tab.id);
-          }
+        if (!ws || !pane || !tab) return;
+        if (closeConfirmTabId !== tab.id) {
+          armCloseConfirm(tab.id);
+          return;
+        }
+        clearCloseConfirm();
+        if (pane.tabs.length > 1) {
+          workspacesStore.deleteTab(ws.id, pane.id, tab.id);
+        } else if (ws.panes.length > 1) {
+          workspacesStore.deletePane(ws.id, pane.id);
+        } else {
+          // Last tab in last pane — close tab, pane shows empty state
+          workspacesStore.deleteTab(ws.id, pane.id, tab.id);
         }
         return;
       }
@@ -765,6 +792,7 @@
       unlistenMove?.();
       clearTimeout(geometryTimer);
       clearInterval(monitorPollTimer);
+      if (closeConfirmTimer) clearTimeout(closeConfirmTimer);
       unlistenPrefs?.();
       detachConsole?.();
     };
@@ -804,3 +832,40 @@
   }}
 />
 <Toast />
+
+{#if closeConfirmTabId && closeConfirmTabId === workspacesStore.activeTab?.id}
+  <div class="close-confirm-overlay" role="status" aria-live="polite">
+    Press <kbd>{modSymbol}W</kbd> again to close this tab
+  </div>
+{/if}
+
+<style>
+  .close-confirm-overlay {
+    position: fixed;
+    bottom: 32px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg-medium);
+    color: var(--fg);
+    border: 1px solid var(--bg-light);
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-size: 0.9rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+    z-index: 10000;
+    pointer-events: none;
+    animation: close-confirm-fade 120ms ease-out;
+  }
+  .close-confirm-overlay kbd {
+    font-family: var(--font-family, monospace);
+    background: var(--bg-dark);
+    border: 1px solid var(--bg-light);
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-size: 0.85em;
+  }
+  @keyframes close-confirm-fade {
+    from { opacity: 0; transform: translate(-50%, 4px); }
+    to { opacity: 1; transform: translate(-50%, 0); }
+  }
+</style>
