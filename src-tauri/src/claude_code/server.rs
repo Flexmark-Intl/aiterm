@@ -689,32 +689,41 @@ async fn sse_get_handler(State(srv): State<ServerState>, headers: HeaderMap) -> 
     let endpoint_event =
         axum::body::Bytes::from(format!("event: endpoint\ndata: /message?sessionId={}\n\n", session_id));
 
-    // SSE stream: start with endpoint event, then stream raw JSON wrapped as SSE data events
+    // SSE stream: start with endpoint event, then stream raw JSON wrapped as
+    // SSE data events. When rx is idle for SSE_KEEPALIVE_INTERVAL, inject an
+    // SSE comment line (": keepalive\n\n") so the TCP connection isn't left
+    // silent — prevents SSH reverse tunnels / intermediate proxies / the
+    // client itself from declaring the stream dead on idle.
     let stream = futures_util::stream::once(futures_util::future::ready(Ok::<_, std::convert::Infallible>(endpoint_event)))
         .chain(futures_util::stream::unfold(sse_rx, |mut rx| async move {
-            rx.recv().await.map(|json| {
-                let event = axum::body::Bytes::from(format!("data: {}\n\n", json));
-                (Ok::<_, std::convert::Infallible>(event), rx)
-            })
+            match tokio::time::timeout(SSE_KEEPALIVE_INTERVAL, rx.recv()).await {
+                Ok(Some(json)) => {
+                    let event = axum::body::Bytes::from(format!("data: {}\n\n", json));
+                    Some((Ok::<_, std::convert::Infallible>(event), rx))
+                }
+                Ok(None) => None, // channel closed — end the stream
+                Err(_) => {
+                    let event = axum::body::Bytes::from(": keepalive\n\n");
+                    Some((Ok::<_, std::convert::Infallible>(event), rx))
+                }
+            }
         }));
 
-    // Background task: send SSE keepalives and detect client disconnect
+    // Background task: detect client disconnect + clean up per-session state.
+    // Keepalives are injected inline above; this task only polls for closure.
     let cleanup_srv = srv.clone();
     let cleanup_session_id = session_id.clone();
     tokio::spawn(async move {
         loop {
             tokio::time::sleep(SSE_KEEPALIVE_INTERVAL).await;
-            let tx = cleanup_srv.sse_sessions.read().get(&cleanup_session_id).cloned();
-            match tx {
-                Some(tx) => {
-                    // SSE comment (keepalive) — sent directly pre-formatted since the stream
-                    // expects raw JSON, but a keepalive isn't JSON. We detect disconnect via
-                    // send failure on the sse_tx (receiver dropped when body is dropped).
-                    if tx.is_closed() {
-                        break;
-                    }
-                }
-                None => break,
+            let closed = cleanup_srv
+                .sse_sessions
+                .read()
+                .get(&cleanup_session_id)
+                .map(|tx| tx.is_closed())
+                .unwrap_or(true);
+            if closed {
+                break;
             }
         }
         cleanup_srv.sse_sessions.write().remove(&cleanup_session_id);
