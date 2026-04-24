@@ -131,6 +131,11 @@ pub fn restore_scrollback<T: EventListener>(term: &mut Term<T>, scrollback: &str
     let cleaned = strip_orphaned_underlines(scrollback);
 
     let mut processor: vte::ansi::Processor = vte::ansi::Processor::new();
+    // RIS (ESC c) — clear any live shell output that arrived between spawn and
+    // restore. Without this, the saved scrollback gets appended on top of the
+    // live banner/prompt, and subsequent auto-saves persist the duplicated state,
+    // compounding across app restarts.
+    processor.advance(term, b"\x1bc");
     processor.advance(term, cleaned.as_bytes());
 
     // Reset DEC private modes that may have been set
