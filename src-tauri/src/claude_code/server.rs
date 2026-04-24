@@ -50,74 +50,97 @@ struct ServerState {
     connection_count: Arc<AtomicUsize>,
 }
 
-pub async fn start_server(app_handle: AppHandle, state: Arc<AppState>) {
+/// Result of the synchronous server preparation step. Holds the bound TCP
+/// listener (std form — converted to tokio inside `serve_server`) along with
+/// the port and auth token that were already written into `~/.claude.json`.
+pub struct ServerSetup {
+    pub std_listener: std::net::TcpListener,
+    pub port: u16,
+    pub auth: String,
+}
+
+/// Synchronous prep that must complete before the frontend is allowed to
+/// spawn PTYs: bind the TCP port, pick an auth token, and write the lockfile
+/// (which also updates `~/.claude.json` with our new port and installs
+/// hooks/skill). Returning here means `~/.claude.json` is current, so when a
+/// tab's auto-resume writes `claude --resume …` to its shell, the Claude Code
+/// CLI will read the correct port on its first load.
+///
+/// Returns `None` when the IDE integration is disabled in preferences or when
+/// we couldn't bind any port.
+pub fn prepare_server(state: &Arc<AppState>) -> Option<ServerSetup> {
     cleanup_stale_lockfiles();
 
-    {
-        let data = state.app_data.read();
-        if !data.preferences.claude_code_ide {
-            log::info!("Claude Code IDE integration disabled in preferences");
-            return;
-        }
+    if !state.app_data.read().preferences.claude_code_ide {
+        log::info!("Claude Code IDE integration disabled in preferences");
+        return None;
     }
 
-    let port_candidates: Vec<u16> = {
-        let mut rng = rand::thread_rng();
-        (0..100).map(|_| rng.gen_range(10000..65535u16)).collect()
-    };
-
-    let mut bound_listener = None;
-    for port in &port_candidates {
-        match tokio::net::TcpListener::bind(format!("127.0.0.1:{}", port)).await {
-            Ok(l) => {
-                bound_listener = Some(l);
-                break;
-            }
-            Err(_) => continue,
+    let mut rng = rand::thread_rng();
+    let mut bound = None;
+    for _ in 0..100 {
+        let port = rng.gen_range(10000..65535u16);
+        if let Ok(l) = std::net::TcpListener::bind(format!("127.0.0.1:{}", port)) {
+            bound = Some(l);
+            break;
         }
     }
-
-    let listener = match bound_listener {
+    let std_listener = match bound {
         Some(l) => l,
         None => {
             log::error!("Failed to bind Claude Code server on any port");
-            return;
+            return None;
         }
     };
+    let port = std_listener.local_addr().ok()?.port();
 
-    let port = listener.local_addr().unwrap().port();
-
-    let auth: String = {
-        let rng = rand::thread_rng();
-        rng.sample_iter(&rand::distributions::Alphanumeric)
-            .take(32)
-            .map(char::from)
-            .collect()
-    };
+    let auth: String = rng
+        .sample_iter(&rand::distributions::Alphanumeric)
+        .take(32)
+        .map(char::from)
+        .collect();
 
     *state.claude_code_port.write() = Some(port);
     *state.claude_code_auth.write() = Some(auth.clone());
 
-    let workspace_folders = collect_workspace_folders(&state);
+    let workspace_folders = collect_workspace_folders(state);
     let hooks_enabled = state.app_data.read().preferences.claude_code_hooks;
     if let Err(e) = write_lockfile(port, &auth, workspace_folders, hooks_enabled) {
         log::warn!("Failed to write Claude Code lock file: {}", e);
     }
 
-    log::info!("Claude Code IDE server listening on http://127.0.0.1:{}", port);
+    log::info!("Claude Code IDE server bound on http://127.0.0.1:{}", port);
+
+    Some(ServerSetup { std_listener, port, auth })
+}
+
+/// Start serving the axum router on the pre-bound listener. Runs forever
+/// (until the graceful-shutdown channel fires on app exit). Must be called
+/// from inside a tokio runtime context (i.e. via `tauri::async_runtime::spawn`).
+pub async fn serve_server(app_handle: AppHandle, state: Arc<AppState>, setup: ServerSetup) {
+    if let Err(e) = setup.std_listener.set_nonblocking(true) {
+        log::error!("Failed to set listener nonblocking: {}", e);
+        return;
+    }
+    let listener = match tokio::net::TcpListener::from_std(setup.std_listener) {
+        Ok(l) => l,
+        Err(e) => {
+            log::error!("Failed to adopt std listener into tokio: {}", e);
+            return;
+        }
+    };
 
     // Graceful shutdown signal — sender stored in AppState, triggered on app exit
     let (shutdown_tx, mut shutdown_rx) = tokio::sync::watch::channel(false);
     *state.claude_code_shutdown.lock() = Some(shutdown_tx);
 
     let sse_sessions: SseSessions = Arc::new(parking_lot::RwLock::new(HashMap::new()));
-
     let connection_tabs: ConnectionTabMap = Arc::new(parking_lot::RwLock::new(HashMap::new()));
 
     let server_state = ServerState {
         app_handle,
         state,
-        expected_auth: auth,
+        expected_auth: setup.auth,
         sse_sessions,
         connection_tabs,
         connection_count: Arc::new(AtomicUsize::new(0)),
@@ -134,6 +157,8 @@ pub async fn start_server(app_handle: AppHandle, state: Arc<AppState>) {
         // Claude Code hooks — lifecycle events from hook scripts
         .route("/hooks", post(hooks_handler))
         .with_state(server_state);
+
+    log::info!("Claude Code IDE server listening on http://127.0.0.1:{}", setup.port);
 
     if let Err(e) = axum::serve(listener, app)
         .with_graceful_shutdown(async move {

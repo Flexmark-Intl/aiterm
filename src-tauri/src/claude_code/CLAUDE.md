@@ -18,7 +18,7 @@ Claude Code CLI ←→ WebSocket/SSE ←→ axum server (Rust) ←→ Tauri even
 - Dispatches to tool handlers (getOpenEditors, openFile, openDiff, etc.)
 - Responds via `claude_code_respond` Tauri command
 
-**Enabled by**: `preferences.claude_code_ide` (default true). Server starts in `lib.rs` as a background tokio task.
+**Enabled by**: `preferences.claude_code_ide` (default true). Server startup is two-phase: `prepare_server()` runs synchronously inside Tauri's `setup()` (binds the TCP port, writes `~/.claude.json`, hooks, skill), then `serve_server()` runs as a background tokio task that adopts the pre-bound listener and runs `axum::serve`. The sync prep is load-bearing — frontend doesn't load (and no PTY can auto-resume `claude --resume …`) until `~/.claude.json` has the current port.
 
 ## Tools Exposed
 
