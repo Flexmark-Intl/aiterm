@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.10.3
+
+- Send SSE keepalives on the MCP stream to prevent SSH idle disconnects (30s–3min drops)
+- Register MCP port in ~/.claude.json before setup() returns (fixes auto-resume race)
+- Reset Term before feeding restored scrollback (fixes duplicated scrollback after restart)
+- Preserve nav forward history when diverting mid-walk
+- Make Cmd+W close hint more visible (centered card on dimmed/blurred backdrop)
+
 ## v1.10.2
 
 - Require two presses for Cmd+W to close a tab (prevents accidental close with armed 2s overlay)
