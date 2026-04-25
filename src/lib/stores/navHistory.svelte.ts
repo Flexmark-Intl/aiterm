@@ -56,24 +56,31 @@ function createNavHistoryStore() {
     push(entry: NavEntry) {
       if (navigating) return;
 
-      // If the user had walked back and is now doing a real navigation,
-      // commit the walked-to tab by promoting it to the front before
-      // processing this push. This preserves the walked-to tab in MRU order.
+      // Mid-walk: preserve the full forward/back chain instead of truncating.
       if (walkIndex > 0 && walkIndex < history.length) {
-        const walked = history[walkIndex];
-        // If the new entry is the walked-to tab itself, treat the whole
-        // thing as a commit-in-place (remove+unshift below handles it).
-        if (walked.tabId !== entry.tabId) {
-          history = [walked, ...history.slice(0, walkIndex), ...history.slice(walkIndex + 1)];
+        const existing = history.findIndex(e => e.tabId === entry.tabId);
+        if (existing >= 0) {
+          // Tab is already somewhere in the chain — just move the walk
+          // pointer there, leaving the rest of the chain intact.
+          walkIndex = existing;
+          return;
         }
+        // New tab: inject at walkIndex, pushing the walked-to tab (and
+        // everything behind it) one slot deeper into back-history.
+        const next = history.slice();
+        next.splice(walkIndex, 0, entry);
+        if (next.length > MAX_HISTORY) next.length = MAX_HISTORY;
+        history = next;
+        // walkIndex stays the same — it now points at the newly inserted entry.
+        return;
       }
-      walkIndex = 0;
 
-      // Dedup: remove any existing entry for this tab, then unshift to front.
+      // Not mid-walk: standard MRU dedup + unshift.
       const filtered = history.filter(e => e.tabId !== entry.tabId);
       filtered.unshift(entry);
       if (filtered.length > MAX_HISTORY) filtered.length = MAX_HISTORY;
       history = filtered;
+      walkIndex = 0;
     },
 
     async goBack() {
