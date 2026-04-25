@@ -834,38 +834,55 @@
 <Toast />
 
 {#if closeConfirmTabId && closeConfirmTabId === workspacesStore.activeTab?.id}
-  <div class="close-confirm-overlay" role="status" aria-live="polite">
-    Press <kbd>{modSymbol}W</kbd> again to close this tab
+  <div class="close-confirm-backdrop" role="status" aria-live="polite">
+    <div class="close-confirm-card">
+      Press <kbd>{modSymbol}W</kbd> again to close this tab
+    </div>
   </div>
 {/if}
 
 <style>
-  .close-confirm-overlay {
+  .close-confirm-backdrop {
     position: fixed;
-    bottom: 32px;
-    left: 50%;
-    transform: translateX(-50%);
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    z-index: 10000;
+    pointer-events: none;
+    animation: close-confirm-fade 140ms ease-out;
+  }
+  .close-confirm-card {
     background: var(--bg-medium);
     color: var(--fg);
     border: 1px solid var(--bg-light);
-    border-radius: 6px;
-    padding: 8px 14px;
-    font-size: 0.9rem;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
-    z-index: 10000;
-    pointer-events: none;
-    animation: close-confirm-fade 120ms ease-out;
+    border-radius: 8px;
+    padding: 16px 24px;
+    font-size: 0.95rem;
+    font-weight: 500;
+    line-height: 1.4;
+    text-align: center;
+    box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
+    animation: close-confirm-pop 160ms ease-out;
   }
-  .close-confirm-overlay kbd {
+  .close-confirm-card kbd {
     font-family: var(--font-family, monospace);
     background: var(--bg-dark);
     border: 1px solid var(--bg-light);
-    border-radius: 3px;
-    padding: 1px 5px;
-    font-size: 0.85em;
+    border-radius: 4px;
+    padding: 2px 7px;
+    font-size: 0.95em;
+    margin: 0 2px;
   }
   @keyframes close-confirm-fade {
-    from { opacity: 0; transform: translate(-50%, 4px); }
-    to { opacity: 1; transform: translate(-50%, 0); }
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes close-confirm-pop {
+    from { opacity: 0; transform: scale(0.94); }
+    to { opacity: 1; transform: scale(1); }
   }
 </style>
