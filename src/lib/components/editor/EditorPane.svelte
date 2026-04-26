@@ -21,7 +21,7 @@
   import { registerEditor, unregisterEditor, setEditorDirty } from '$lib/stores/editorRegistry.svelte';
   import { claudeCodeStore } from '$lib/stores/claudeCode.svelte';
   import { EditorSelection } from '@codemirror/state';
-  import { listen } from '@tauri-apps/api/event';
+  import { countedListen as listen } from '$lib/utils/listenCounter';
   import type { UnlistenFn } from '@tauri-apps/api/event';
   import { error as logError, info as logInfo } from '@tauri-apps/plugin-log';
   import IconButton from '$lib/components/ui/IconButton.svelte';

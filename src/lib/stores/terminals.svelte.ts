@@ -142,6 +142,19 @@ function createTerminalsStore() {
     /** Reactive version counter — read this in $derived to track register/unregister. */
     get instanceVersion() { return instanceVersion; },
 
+    /** Diagnostic snapshot of internal map/set sizes (for getDiagnostics). */
+    getInternalSizes() {
+      return {
+        instances: instances.size,
+        webgl_tabs: webglTabs.size,
+        spawning_tabs: spawningTabs.size,
+        split_contexts: splitContexts.size,
+        preserved_pty_ids: preservedPtyIds.size,
+        osc_listeners: oscListeners.size,
+        dirty_tabs: dirtyTabs.size,
+      };
+    },
+
     // --- OSC state ---
 
     updateOsc(tabId: string, patch: Partial<OscState>) {

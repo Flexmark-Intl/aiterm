@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy, untrack } from 'svelte';
-  import { listen } from '@tauri-apps/api/event';
+  import { countedListen as listen } from '$lib/utils/listenCounter';
   import type { UnlistenFn } from '@tauri-apps/api/event';
   import { getCurrentWebview } from '@tauri-apps/api/webview';
   import { Terminal } from '@xterm/xterm';

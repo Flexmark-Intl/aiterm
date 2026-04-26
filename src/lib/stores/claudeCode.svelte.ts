@@ -8,6 +8,11 @@ import { CLAUDE_RESUME_COMMAND } from '$lib/triggers/defaults';
 import { preferencesStore } from '$lib/stores/preferences.svelte';
 import { dispatch as dispatchNotification } from '$lib/stores/notificationDispatch';
 import { claudeStateStore } from '$lib/stores/claudeState.svelte';
+import { activityStore } from '$lib/stores/activity.svelte';
+import { toastStore } from '$lib/stores/toasts.svelte';
+import { navHistoryStore } from '$lib/stores/navHistory.svelte';
+import { getEditorRegistrySizes } from '$lib/stores/editorRegistry.svelte';
+import { getListenerStats } from '$lib/utils/listenCounter';
 import { error as logError, info as logInfo } from '@tauri-apps/plugin-log';
 
 export interface PendingSelection {
@@ -221,6 +226,20 @@ function createClaudeCodeStore() {
       requestAnimationFrame(tick);
     });
 
+    // Browser memory + DOM (WKWebView exposes performance.memory)
+    const perfMem = (performance as unknown as { memory?: { usedJSHeapSize: number; totalJSHeapSize: number; jsHeapSizeLimit: number } }).memory;
+    const domAll = document.getElementsByTagName('*').length;
+    const detachedSlots = (() => {
+      // Count any aiTerm portal slot divs whose parent isn't in the live DOM
+      // (would indicate detached subtrees still retained somewhere).
+      const slots = document.querySelectorAll('[data-terminal-slot]');
+      let detached = 0;
+      for (const s of slots) {
+        if (!document.body.contains(s)) detached++;
+      }
+      return { slots: slots.length, detached };
+    })();
+
     return {
       ...backend,
       frontend: {
@@ -229,6 +248,25 @@ function createClaudeCodeStore() {
         terminals: terminalDetails,
         trigger_engine: triggerStats,
         render_fps: fps,
+        js_heap: perfMem ? {
+          used_mb: Math.round(perfMem.usedJSHeapSize / 1048576),
+          total_mb: Math.round(perfMem.totalJSHeapSize / 1048576),
+          limit_mb: Math.round(perfMem.jsHeapSizeLimit / 1048576),
+        } : null,
+        dom: {
+          total_nodes: domAll,
+          terminal_slots: detachedSlots.slots,
+          detached_terminal_slots: detachedSlots.detached,
+        },
+        store_sizes: {
+          terminals: terminalsStore.getInternalSizes(),
+          activity: activityStore.getInternalSizes(),
+          claude_state: claudeStateStore.getInternalSizes(),
+          toasts: toastStore.getInternalSizes(),
+          nav_history: navHistoryStore.getInternalSizes(),
+          editor_registry: getEditorRegistrySizes(),
+        },
+        tauri_listeners: getListenerStats(),
       },
     };
   }

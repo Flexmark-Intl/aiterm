@@ -116,6 +116,17 @@ function createActivityStore() {
       }
       return hasQuestion ? 'question' : null;
     },
+
+    /** Diagnostic snapshot for getDiagnostics. */
+    getInternalSizes() {
+      return {
+        active_tabs: active.size,
+        shell_states: shellStates.size,
+        tab_states: tabStates.size,
+        command_start_listeners: commandStartListeners.size,
+        command_complete_listeners: commandCompleteListeners.size,
+      };
+    },
   };
 }
 

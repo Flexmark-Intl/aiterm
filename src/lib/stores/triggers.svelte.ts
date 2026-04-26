@@ -30,11 +30,37 @@ let triggerProcessTimeUs = 0;
 let triggerMatchCount = 0;
 
 export function getTriggerStats() {
+  let cooldownTotalEntries = 0;
+  for (const m of cooldowns.values()) cooldownTotalEntries += m.size;
+  let lastMatchTotalEntries = 0;
+  for (const m of lastMatches.values()) lastMatchTotalEntries += m.size;
+  let varsTotalEntries = 0;
+  for (const m of variableMap.values()) varsTotalEntries += m.size;
+  let varTransitionsTotalEntries = 0;
+  for (const m of variableTransitions.values()) varTransitionsTotalEntries += m.size;
+  let buffersTotalBytes = 0;
+  for (const b of buffers.values()) buffersTotalBytes += b.length;
+
   return {
     calls: triggerProcessCalls,
     total_time_us: triggerProcessTimeUs,
     avg_time_us: triggerProcessCalls > 0 ? Math.round(triggerProcessTimeUs / triggerProcessCalls) : 0,
     match_count: triggerMatchCount,
+    sizes: {
+      buffers_tabs: buffers.size,
+      buffers_total_bytes: buffersTotalBytes,
+      cooldowns_triggers: cooldowns.size,
+      cooldowns_total_entries: cooldownTotalEntries,
+      last_matches_triggers: lastMatches.size,
+      last_matches_total_entries: lastMatchTotalEntries,
+      regex_cache: regexCache.size,
+      variables_tabs: variableMap.size,
+      variables_total_entries: varsTotalEntries,
+      variable_transitions_triggers: variableTransitions.size,
+      variable_transitions_total_entries: varTransitionsTotalEntries,
+      suppressed_tabs: suppressedTabs.size,
+      var_change_listeners: varChangeListeners.size,
+    },
   };
 }
 

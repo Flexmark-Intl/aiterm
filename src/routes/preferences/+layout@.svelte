@@ -1,7 +1,7 @@
 <script lang="ts">
   import '../../app.css';
   import { onMount } from 'svelte';
-  import { listen } from '@tauri-apps/api/event';
+  import { countedListen as listen } from '$lib/utils/listenCounter';
   import { preferencesStore } from '$lib/stores/preferences.svelte';
   import { getTheme, applyUiTheme } from '$lib/themes';
   import { error as logError } from '@tauri-apps/plugin-log';

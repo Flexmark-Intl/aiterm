@@ -1,4 +1,4 @@
-import { listen } from '@tauri-apps/api/event';
+import { countedListen as listen } from '$lib/utils/listenCounter';
 import { info as logInfo } from '@tauri-apps/plugin-log';
 import { setVariable, handleEnableAutoResume } from './triggers.svelte';
 import { terminalsStore } from './terminals.svelte';
@@ -128,6 +128,15 @@ function createClaudeStateStore() {
   }
 
   return {
+    /** Diagnostic snapshot for getDiagnostics. */
+    getInternalSizes() {
+      return {
+        sessions: sessions.size,
+        stale_timers: staleTimers.size,
+        unlisteners: unlisteners.length,
+      };
+    },
+
     /** Get Claude state for a tab, if a Claude session is active there. */
     getState(tabId: string): ClaudeTabSession | undefined {
       return sessions.get(tabId);

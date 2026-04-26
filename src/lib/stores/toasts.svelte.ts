@@ -184,6 +184,15 @@ function createToastStore() {
     resumeToast,
     setWindowFocused,
     isActive,
+
+    /** Diagnostic snapshot for getDiagnostics. */
+    getInternalSizes() {
+      return {
+        toasts: toasts.length,
+        timers: timers.size,
+        hovered: hoveredIds.size,
+      };
+    },
   };
 }
 

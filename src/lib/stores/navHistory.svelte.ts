@@ -177,6 +177,15 @@ function createNavHistoryStore() {
         walkIndex = 0;
       }
     },
+
+    /** Diagnostic snapshot for getDiagnostics. */
+    getInternalSizes() {
+      return {
+        history_length: history.length,
+        walk_index: walkIndex,
+        max_history: MAX_HISTORY,
+      };
+    },
   };
 }
 

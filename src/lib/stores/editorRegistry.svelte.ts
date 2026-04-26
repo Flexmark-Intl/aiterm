@@ -48,3 +48,11 @@ export function getEditorByFilePath(filePath: string): { tabId: string; entry: E
   }
   return undefined;
 }
+
+/** Diagnostic snapshot for getDiagnostics. */
+export function getEditorRegistrySizes() {
+  return {
+    registered: registry.size,
+    dirty_tabs: dirtyTabs.size,
+  };
+}
