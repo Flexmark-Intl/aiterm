@@ -584,8 +584,9 @@
         return;
       }
 
-      // Cmd+W - Close current tab (or pane if last tab). Requires two presses
-      // within 2s to prevent accidental close; first press shows an overlay hint.
+      // Cmd+W - Close current tab (or pane if last tab). Terminal tabs require
+      // two presses within 2s to prevent accidental close; editor/diff tabs close
+      // on the first press since their state is recoverable from disk.
       if (isMeta && e.key.toLowerCase() === 'w') {
         e.preventDefault();
         e.stopPropagation();
@@ -593,7 +594,7 @@
         const pane = workspacesStore.activePane;
         const tab = workspacesStore.activeTab;
         if (!ws || !pane || !tab) return;
-        if (closeConfirmTabId !== tab.id) {
+        if (tab.tab_type === 'terminal' && closeConfirmTabId !== tab.id) {
           armCloseConfirm(tab.id);
           return;
         }
@@ -859,13 +860,13 @@
     background: var(--bg-medium);
     color: var(--fg);
     border: 1px solid var(--bg-light);
-    border-radius: 8px;
-    padding: 16px 24px;
-    font-size: 0.95rem;
+    border-radius: 10px;
+    padding: 19px 29px;
+    font-size: 1.14rem;
     font-weight: 500;
     line-height: 1.4;
     text-align: center;
-    box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
+    box-shadow: 0 12px 38px rgba(0, 0, 0, 0.45);
     animation: close-confirm-pop 160ms ease-out;
   }
   .close-confirm-card kbd {
