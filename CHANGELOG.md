@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.10.4
+
+- Guard state save against stale/zombie aiTerm processes overwriting newer data — disk mtime is checked before every save, and conflicting writes are preserved as `aiterm-state.conflict-<ms>.json` instead of clobbering the live state
+- Skip the Cmd+W two-press confirm for editor and diff tabs (only terminal tabs require the second press)
+- Expand getDiagnostics to expose JS heap, DOM node count, internal store map sizes, trigger engine buffers, and a per-event Tauri listener leak counter
+
 ## v1.10.3
 
 - Send SSE keepalives on the MCP stream to prevent SSH idle disconnects (30s–3min drops)
