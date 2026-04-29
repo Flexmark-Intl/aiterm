@@ -9,11 +9,40 @@ use super::workspace::{AppData, Layout, SplitDirection, SplitNode, WindowData};
 /// known-good backup from being clobbered by a default/empty state.
 static LOADED_SUCCESSFULLY: AtomicBool = AtomicBool::new(false);
 
+/// Last mtime we observed on the main state file (millis since epoch).
+/// Updated on successful load and after every successful save. Used by save_state()
+/// to detect when another process has written to the file since we last touched it
+/// (e.g. a stale/zombie aiTerm process), and abort rather than clobber newer data.
+/// Zero means "no baseline yet" — the guard is skipped on first save after a
+/// fresh launch with no existing state file.
+static LAST_KNOWN_DISK_MTIME: AtomicU64 = AtomicU64::new(0);
+
 // Save timing diagnostics (global atomics — no AppState dependency needed)
 static SAVE_COUNT: AtomicU64 = AtomicU64::new(0);
 static SAVE_LAST_DURATION_US: AtomicU64 = AtomicU64::new(0);
 static SAVE_TOTAL_DURATION_US: AtomicU64 = AtomicU64::new(0);
 static SAVE_LAST_BYTES: AtomicU64 = AtomicU64::new(0);
+
+fn file_mtime_ms(path: &PathBuf) -> Option<u64> {
+    fs::metadata(path)
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as u64)
+}
+
+fn record_disk_mtime(path: &PathBuf) {
+    if let Some(mt) = file_mtime_ms(path) {
+        LAST_KNOWN_DISK_MTIME.store(mt, Ordering::Relaxed);
+    }
+}
+
+fn get_conflict_path(timestamp_ms: u64) -> Option<PathBuf> {
+    dirs::data_dir().map(|p| {
+        p.join(app_data_slug())
+            .join(format!("aiterm-state.conflict-{}.json", timestamp_ms))
+    })
+}
 
 pub fn get_save_stats() -> (u64, u64, u64, u64) {
     (
@@ -92,16 +121,19 @@ pub fn load_state() -> AppData {
         Ok(contents) => match parse_state(&contents) {
             Ok(data) => {
                 LOADED_SUCCESSFULLY.store(true, Ordering::Relaxed);
+                record_disk_mtime(&path);
                 data
             }
             Err(e) => {
                 log::error!("Failed to parse state file: {}. Trying backup.", e);
                 preserve_corrupt(&path);
+                record_disk_mtime(&path);
                 load_from_backup()
             }
         },
         Err(e) => {
             log::error!("Failed to read state file: {}. Trying backup.", e);
+            record_disk_mtime(&path);
             load_from_backup()
         }
     }
@@ -220,6 +252,51 @@ pub fn save_state(data: &AppData) -> Result<(), String> {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
 
+    // Conflict guard: if the on-disk file's mtime is newer than what we last
+    // recorded, another process (e.g. a stale/zombie aiTerm) wrote since we
+    // loaded or last saved. Refuse to clobber it; instead persist our in-memory
+    // state to a timestamped conflict file so the user can investigate.
+    let known_mtime = LAST_KNOWN_DISK_MTIME.load(Ordering::Relaxed);
+    if known_mtime > 0 {
+        if let Some(disk_mtime) = file_mtime_ms(&path) {
+            if disk_mtime > known_mtime {
+                let now_ms = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis() as u64)
+                    .unwrap_or(0);
+                let conflict_path = get_conflict_path(now_ms)
+                    .ok_or("Could not determine conflict path")?;
+                let mut filtered = data.clone();
+                for win in &mut filtered.windows {
+                    for ws in &mut win.workspaces {
+                        for pane in &mut ws.panes {
+                            pane.tabs.retain(|t| t.tab_type != super::workspace::TabType::Diff);
+                            for tab in &mut pane.tabs {
+                                tab.scrollback = None;
+                            }
+                        }
+                        for tab in &mut ws.archived_tabs {
+                            tab.scrollback = None;
+                        }
+                    }
+                }
+                let json = serde_json::to_string_pretty(&filtered).map_err(|e| e.to_string())?;
+                fs::write(&conflict_path, &json)
+                    .map_err(|e| format!("Failed to write conflict file: {}", e))?;
+                log::error!(
+                    "State save aborted: disk mtime {} > known {}. Another aiTerm process likely wrote since this one loaded. In-memory state preserved at {:?}.",
+                    disk_mtime,
+                    known_mtime,
+                    conflict_path
+                );
+                return Err(format!(
+                    "State conflict detected — preserved in-memory copy at {:?}",
+                    conflict_path
+                ));
+            }
+        }
+    }
+
     // Clone and filter out ephemeral diff tabs before serializing
     let mut filtered = data.clone();
     for win in &mut filtered.windows {
@@ -259,6 +336,11 @@ pub fn save_state(data: &AppData) -> Result<(), String> {
 
     // Atomic rename temp -> real path
     fs::rename(&temp_path, &path).map_err(|e| format!("Failed to rename temp file: {}", e))?;
+
+    // Record the new on-disk mtime so subsequent saves from THIS process pass
+    // the conflict guard, while saves from any other (stale) process — which
+    // still hold the older mtime — get blocked.
+    record_disk_mtime(&path);
 
     // Record save timing
     let elapsed_us = save_start.elapsed().as_micros() as u64;
