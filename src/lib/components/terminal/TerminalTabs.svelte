@@ -318,15 +318,17 @@
   function scrollTabIntoView(tabId: string) {
     requestAnimationFrame(() => {
       const el = tabsBarEl?.querySelector<HTMLElement>(`[data-tab-id="${tabId}"]`);
-      if (!el || !tabsBarEl) return;
+      if (!el || !tabsBarEl || tabsBarEl.clientWidth === 0) return;
       const barRect = tabsBarEl.getBoundingClientRect();
       const tabRect = el.getBoundingClientRect();
       // If tab is fully visible, do nothing
       if (tabRect.left >= barRect.left && tabRect.right <= barRect.right) return;
-      // Scroll so the tab is roughly centered
-      const tabCenter = el.offsetLeft + el.offsetWidth / 2;
-      const barCenter = tabsBarEl.clientWidth / 2;
-      tabsBarEl.scrollTo({ left: tabCenter - barCenter, behavior: 'smooth' });
+      // el.offsetLeft is relative to the nearest positioned ancestor (BODY here, not the bar),
+      // so derive the tab's position within the bar's scrollable content from the rects.
+      const tabContentLeft = tabRect.left - barRect.left + tabsBarEl.scrollLeft;
+      const target = tabContentLeft + tabRect.width / 2 - tabsBarEl.clientWidth / 2;
+      const maxScroll = Math.max(0, tabsBarEl.scrollWidth - tabsBarEl.clientWidth);
+      tabsBarEl.scrollTo({ left: Math.max(0, Math.min(target, maxScroll)), behavior: 'smooth' });
     });
   }
 
