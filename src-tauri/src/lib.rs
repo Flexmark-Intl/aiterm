@@ -8,7 +8,7 @@ pub const APP_DISPLAY_NAME: &str = if cfg!(debug_assertions) { "aiTermDev" } els
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 use state::{load_state, save_state, AppState, WindowData, Workspace};
-use state::persistence::{load_memory_trend, migrate_app_data, migrate_scrollback_to_db};
+use state::persistence::{arm_running_marker, load_memory_trend, migrate_app_data, migrate_scrollback_to_db};
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
 use tauri::menu::{AboutMetadata, MenuBuilder, MenuItem, SubmenuBuilder};
@@ -42,6 +42,13 @@ fn build_log_plugin() -> tauri_plugin_log::Builder {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Arm crash marker BEFORE any other init. arm_running_marker() captures
+    // whether a marker file from the previous run still exists (= unclean
+    // exit) and then re-writes it for this run. The captured PreviousRunInfo
+    // is cached in the function's static so get_app_diagnostics can read it
+    // back without us having to thread it through AppState.
+    let _prev_run = arm_running_marker();
+
     let app_state = Arc::new(AppState::new());
 
     // Load persisted state and run migration

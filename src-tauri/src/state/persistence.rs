@@ -77,6 +77,91 @@ fn get_memory_trend_path() -> Option<PathBuf> {
     dirs::data_dir().map(|p| p.join(app_data_slug()).join("aiterm-memory-trend.json"))
 }
 
+fn get_crash_marker_path() -> Option<PathBuf> {
+    dirs::data_dir().map(|p| p.join(app_data_slug()).join("aiterm-running.marker"))
+}
+
+/// Snapshot of the previous run's exit state, captured at startup.
+#[derive(Clone, Default, serde::Serialize)]
+pub struct PreviousRunInfo {
+    /// True if the marker file existed at startup — meaning the previous run
+    /// did not call clear_running_marker() before exiting.
+    pub crashed: bool,
+    /// Marker file mtime (seconds since epoch). For a crashed run, this is
+    /// roughly the wall clock at last write — useful to correlate with
+    /// memory_trend's last sample and macOS DiagnosticReports timestamps.
+    pub marker_mtime_secs: Option<u64>,
+}
+
+use std::sync::OnceLock;
+static PREVIOUS_RUN: OnceLock<PreviousRunInfo> = OnceLock::new();
+
+/// Capture the previous run's state and arm the marker for this run.
+/// Call ONCE at startup before any other init that might crash.
+pub fn arm_running_marker() -> PreviousRunInfo {
+    let info = PREVIOUS_RUN.get_or_init(|| {
+        let Some(path) = get_crash_marker_path() else {
+            return PreviousRunInfo::default();
+        };
+        let crashed = path.exists();
+        let marker_mtime_secs = if crashed {
+            fs::metadata(&path)
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs())
+        } else {
+            None
+        };
+        if crashed {
+            log::warn!(
+                "Previous run did not exit cleanly (running marker found, mtime_secs={:?})",
+                marker_mtime_secs
+            );
+        }
+        PreviousRunInfo { crashed, marker_mtime_secs }
+    }).clone();
+
+    // (Re-)write the marker so this run is now tracked. Done AFTER capturing
+    // the previous-run state so we never erase evidence.
+    touch_running_marker();
+
+    info
+}
+
+/// Read the cached previous-run info captured by arm_running_marker(). Returns
+/// default (crashed=false) if arm_running_marker() was never called — should
+/// only happen if the diagnostics endpoint is hit before run() finishes init.
+pub fn previous_run_info() -> PreviousRunInfo {
+    PREVIOUS_RUN.get().cloned().unwrap_or_default()
+}
+
+/// Refresh the running-marker mtime so it stays close to "now" while the app
+/// is alive. Called by the memory sampler each tick — gives us a tighter
+/// upper bound on time-of-crash than just relying on app start time.
+pub fn touch_running_marker() {
+    let Some(path) = get_crash_marker_path() else { return };
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let now_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let _ = fs::write(&path, now_secs.to_string());
+}
+
+/// Delete the running marker. Call from the graceful-exit path so the next
+/// startup knows we shut down cleanly.
+pub fn clear_running_marker() {
+    let Some(path) = get_crash_marker_path() else { return };
+    if path.exists() {
+        if let Err(e) = fs::remove_file(&path) {
+            log::warn!("Failed to clear running marker: {}", e);
+        }
+    }
+}
+
 /// Load persisted memory samples from disk. Returns empty Vec on any failure
 /// (missing file, parse error) — trend data is purely advisory.
 pub fn load_memory_trend() -> Vec<super::app_state::MemorySample> {

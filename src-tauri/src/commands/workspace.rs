@@ -36,6 +36,10 @@ fn migrate_imported_scrollback(data: &mut crate::state::AppData, db: &Scrollback
 #[tauri::command]
 pub fn exit_app(app: tauri::AppHandle, state: State<'_, Arc<AppState>>) {
     log::info!("exit_app called — cleaning up and terminating process");
+    // Mark this run as having exited cleanly. If the process dies before
+    // reaching this line, the marker stays on disk and the next run flags
+    // previous_run_crashed=true in diagnostics.
+    crate::state::persistence::clear_running_marker();
     // Shut down the Claude Code MCP server gracefully (releases the port)
     if let Some(tx) = state.claude_code_shutdown.lock().take() {
         let _ = tx.send(true);
@@ -2013,6 +2017,11 @@ pub fn get_app_diagnostics(state: State<'_, Arc<AppState>>) -> serde_json::Value
     let memory_trend: Vec<crate::state::app_state::MemorySample> =
         state.memory_samples.read().clone();
 
+    // Crash forensics: did we exit cleanly last time? And what does macOS's
+    // DiagnosticReports directory have on us?
+    let prev_run = crate::state::persistence::previous_run_info();
+    let crash_reports = crate::commands::system::scan_crash_reports(20, 30);
+
     let ssh_mcp_tunnel_info: Vec<serde_json::Value> = {
         let tunnels = state.ssh_tunnels.read();
         tunnels.values().map(|t| {
@@ -2064,6 +2073,11 @@ pub fn get_app_diagnostics(state: State<'_, Arc<AppState>>) -> serde_json::Value
             "cpu_count": total_sys.cpus().len(),
         },
         "memory_trend": memory_trend,
+        "previous_run": {
+            "crashed": prev_run.crashed,
+            "marker_mtime_secs": prev_run.marker_mtime_secs,
+        },
+        "crash_reports": crash_reports,
     })
 }
 

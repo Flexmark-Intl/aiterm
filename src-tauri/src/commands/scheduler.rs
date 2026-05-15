@@ -15,7 +15,7 @@ use std::time::{Duration, SystemTime};
 use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
 
 use crate::state::app_state::{MemorySample, MEMORY_SAMPLE_CAP};
-use crate::state::persistence::save_memory_trend;
+use crate::state::persistence::{save_memory_trend, touch_running_marker};
 use crate::state::AppState;
 
 /// How often the backup scheduler wakes to check whether a backup is due.
@@ -164,6 +164,9 @@ pub fn spawn_memory_sampler(state: Arc<AppState>) {
             };
 
             save_memory_trend(&snapshot);
+            // Bump the running-marker mtime each tick so its timestamp is a
+            // tight upper bound on time-of-crash if this process dies.
+            touch_running_marker();
         }
     });
 }

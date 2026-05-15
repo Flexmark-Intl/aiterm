@@ -94,6 +94,39 @@
     let detachConsole: (() => void) | undefined;
     attachConsole().then(detach => { detachConsole = detach; });
 
+    // Global webview error capture — these route through tauri-plugin-log
+    // so they land in aiterm.log alongside Rust errors. Tagged [WEBVIEW_ERROR]
+    // for grep, since a JS error often immediately precedes a WebKit
+    // renderer crash and is otherwise invisible once the window dies.
+    function formatErrorPayload(label: string, detail: unknown, stack?: string): string {
+      let message: string;
+      if (detail instanceof Error) {
+        message = `${detail.name}: ${detail.message}`;
+        stack = stack ?? detail.stack;
+      } else if (typeof detail === 'string') {
+        message = detail;
+      } else {
+        try { message = JSON.stringify(detail); } catch { message = String(detail); }
+      }
+      const stackLine = stack ? `\n${stack}` : '';
+      return `[WEBVIEW_ERROR] ${label}: ${message}${stackLine}`;
+    }
+
+    const onWindowError = (e: ErrorEvent) => {
+      const where = e.filename ? ` @ ${e.filename}:${e.lineno}:${e.colno}` : '';
+      logError(formatErrorPayload(`onerror${where}`, e.error ?? e.message, e.error?.stack))
+        .catch(() => {});
+    };
+    const onUnhandledRejection = (e: PromiseRejectionEvent) => {
+      const reason = e.reason as unknown;
+      const stack = (reason && typeof reason === 'object' && 'stack' in reason)
+        ? String((reason as { stack?: unknown }).stack ?? '')
+        : undefined;
+      logError(formatErrorPayload('unhandledrejection', reason, stack)).catch(() => {});
+    };
+    window.addEventListener('error', onWindowError);
+    window.addEventListener('unhandledrejection', onUnhandledRejection);
+
     // Disable default browser context menu globally, except in notes panel
     // where native cut/copy/paste is useful.
     // To re-enable in dev for Inspect Element, change to: if (!import.meta.env.DEV)
@@ -124,6 +157,8 @@
     // Non-terminal windows (e.g. preferences) skip terminal lifecycle and shortcuts
     if (appWindow.label === 'preferences' || appWindow.label === 'help') {
       return () => {
+        window.removeEventListener('error', onWindowError);
+        window.removeEventListener('unhandledrejection', onUnhandledRejection);
         unlistenPrefs?.();
         detachConsole?.();
       };
@@ -767,6 +802,8 @@
       clearTimeout(geometryTimer);
       clearInterval(monitorPollTimer);
       if (closeConfirmTimer) clearTimeout(closeConfirmTimer);
+      window.removeEventListener('error', onWindowError);
+      window.removeEventListener('unhandledrejection', onUnhandledRejection);
       unlistenPrefs?.();
       detachConsole?.();
     };
