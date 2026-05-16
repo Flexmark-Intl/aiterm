@@ -9,6 +9,7 @@ import { error as logError } from '@tauri-apps/plugin-log';
 import { pendingResumePanes } from '$lib/stores/resumeGate.svelte';
 import { getVariables } from '$lib/stores/triggers.svelte';
 import { CLAUDE_RESUME_COMMAND } from '$lib/triggers/defaults';
+import { disableBridge } from '$lib/stores/sshMcpBridge.svelte';
 
 /**
  * Extract the remote cwd from the terminal prompt using user-configured patterns.
@@ -944,6 +945,10 @@ function createWorkspacesStore() {
       try {
         await commands.saveTerminalScrollback(instance.ptyId, tabId);
       } catch { /* best effort */ }
+
+      // Detach SSH MCP bridge — refcounted on the Rust side, so other tabs
+      // sharing the tunnel keep it alive; suspended tab is removed from tab_ids.
+      await disableBridge(tabId).catch(() => {});
 
       // Guard the pty-close listener from deleting this tab
       suspendingTabIds.add(tabId);
