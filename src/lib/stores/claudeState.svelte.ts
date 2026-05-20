@@ -165,6 +165,24 @@ function createClaudeStateStore() {
       return false;
     },
 
+    /** Highest-priority Claude state across the given tabs, or null.
+     *  Priority: permission > active > idle. Lets the workspace sidebar
+     *  mirror the per-tab indicators (blue = working, green = done). */
+    getWorkspaceClaudeState(tabIds: string[]): ClaudeState | null {
+      let hasActiveTab = false;
+      let hasIdleTab = false;
+      for (const id of tabIds) {
+        const s = sessions.get(id);
+        if (!s) continue;
+        if (s.state === 'permission') return 'permission';
+        if (s.state === 'active') hasActiveTab = true;
+        else if (s.state === 'idle') hasIdleTab = true;
+      }
+      if (hasActiveTab) return 'active';
+      if (hasIdleTab) return 'idle';
+      return null;
+    },
+
     async init() {
       const u1 = await listen<{ session_id: string; tab_id: string; source?: string }>('claude-hook-session-start', (e) => {
         const { session_id, tab_id, source } = e.payload;
