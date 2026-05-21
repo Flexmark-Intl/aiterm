@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.12.1
+
+- Fix recently-changed state being lost when you install an update. The auto-updater's "Install & Restart" relaunches the app by hard-killing the process, which skipped the normal shutdown save path — so anything not yet flushed to disk (most visibly a just-renamed tab, which would revert to its `%title`, plus scrollback and window geometry) was discarded. The updater now saves window geometry, scrollback, and workspace state before relaunching
+- Fix tab renames living only in memory until some later save happened to flush them — renaming a tab now persists immediately
+
 ## v1.12.0
 
 - Add a read/unread state to the Claude agent-done indicators. When an agent finishes, its tab shows a filled green dot (unread); once you view the tab it becomes a hollow green ring (seen). This is rolled up to the workspace sidebar too — the workspace dot stays a filled green dot until *every* finished agent in it has been seen, then goes hollow. Lets you tell at a glance which completed agents you still need to look at
