@@ -1060,38 +1060,62 @@
               },
             };
           }),
-          // Prevent scroll jump when focus returns from scrollbar interaction.
-          // When the user drags the native scrollbar, focus moves from cm-content
-          // to cm-scroller. On mouseup, focus returns to cm-content and CM's
-          // ensureCursorVisible() scrolls back to the cursor — undoing the scroll.
-          // Fix: save scroll position on scroller focusout, restore after focusin.
+          // Keep the viewport where the user left it when focus returns to the
+          // editor after a scrollbar interaction.
+          //
+          // Root cause: the browser natively scrolls a contenteditable's caret
+          // into view whenever it gains focus. If the user scrolled far from the
+          // caret with the scrollbar and then returns focus to cm-content, the
+          // browser yanks the view back to the old caret (~a screenful). Two
+          // symptoms, one cause:
+          //   1. Click-to-edit: on a real click the browser focuses cm-content
+          //      and caret-scrolls *before* CodeMirror maps the click, so the
+          //      view jumps and the click lands on the wrong line (often with a
+          //      stray selection). Fix: pre-focus the content with
+          //      {preventScroll:true} in the capture phase — before the browser's
+          //      default focus runs — so the viewport stays put and posAtCoords
+          //      resolves against the correct (un-jumped) viewport.
+          //   2. Releasing the scrollbar without clicking: focus returns from
+          //      cm-scroller to cm-content and the caret-scroll fires. focusin
+          //      runs while scrollTop is still the user's position (the jump
+          //      lands immediately after), so snapshot it there and restore on
+          //      the next frame.
+          // (The earlier version saved scrollTop on focusout — i.e. the instant
+          // the scrollbar was grabbed, before any scrolling — and so restored the
+          // pre-scroll position; it also never addressed the click mis-mapping.)
           ViewPlugin.define((view) => {
-            let savedScrollTop: number | null = null;
             const scroller = view.scrollDOM;
+            const content = view.contentDOM;
+            let cameFromScroller = false;
 
+            function onMouseDownCapture() {
+              if (!view.hasFocus) {
+                content.focus({ preventScroll: true });
+              }
+            }
             function onFocusOut(e: FocusEvent) {
               const related = e.relatedTarget as Element | null;
-              if (related === scroller || scroller.contains(related as Node)) {
-                savedScrollTop = scroller.scrollTop;
-              }
+              cameFromScroller = related === scroller || scroller.contains(related as Node);
             }
             function onFocusIn() {
-              if (savedScrollTop !== null) {
-                const restore = savedScrollTop;
-                savedScrollTop = null;
-                // Restore after CM's ensureCursorVisible runs in requestMeasure
-                requestAnimationFrame(() => {
-                  scroller.scrollTop = restore;
-                });
-              }
+              if (!cameFromScroller) return;
+              cameFromScroller = false;
+              // scrollTop here is still the user's position; the caret-scroll
+              // lands on a later tick, so restore on the next frame.
+              const restore = scroller.scrollTop;
+              requestAnimationFrame(() => {
+                scroller.scrollTop = restore;
+              });
             }
 
-            view.contentDOM.addEventListener('focusout', onFocusOut);
-            view.contentDOM.addEventListener('focusin', onFocusIn);
+            content.addEventListener('mousedown', onMouseDownCapture, true);
+            content.addEventListener('focusout', onFocusOut);
+            content.addEventListener('focusin', onFocusIn);
             return {
               destroy() {
-                view.contentDOM.removeEventListener('focusout', onFocusOut);
-                view.contentDOM.removeEventListener('focusin', onFocusIn);
+                content.removeEventListener('mousedown', onMouseDownCapture, true);
+                content.removeEventListener('focusout', onFocusOut);
+                content.removeEventListener('focusin', onFocusIn);
               },
             };
           }),
