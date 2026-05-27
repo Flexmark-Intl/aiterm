@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.12.3
+
+- Make the global Claude-agent footer dot cycle through agents. When more than one agent is in the dominant state (e.g. "3 agents working"), clicking the dot used to always jump to the same representative tab. It now advances to the next matching agent on each click — anchored on the tab you're currently viewing and wrapping around — so repeated clicks walk through every agent. The tooltip gains a "(click to cycle)" hint when more than one is listed
+- Fix the SSH MCP bridge being torn down when a terminal tab carrying a live PTY is moved between workspaces. Moving the tab preserves the PTY, but the bridge was being shut down anyway, breaking Claude Code's IDE integration on that session until reconnect
+- Allow selecting and copying text in the rendered (preview) notes view — previously only the raw markdown editor allowed selection
+- Trim trailing periods from detected file-path links so a path at the end of a sentence no longer swallows the period into the clickable link
+
 ## v1.12.2
 
 - Fix terminal glyph ghosting — stale, overlapping glyphs that showed up on Claude Code spinners, diffs, and bold text. The cause was the xterm.js WebGL renderer compositing redrawn cells *over* the previous frame (its backbuffer is alpha-blended even though the terminal is opaque) instead of opaquely replacing them, so only redrawn cells ghosted and a refit cleared it. Switched the renderer from WebGL to Canvas, which clears each cell opaquely before drawing and so can't ghost — WebGL's scroll-perf advantage never applied here since aiTerm renders a single bounded viewport (scrollback:0). Falls back to xterm's built-in DOM renderer if the Canvas addon throws
