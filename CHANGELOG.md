@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.12.5
+
+- Fix the global "X agents working" footer dot doing nothing when clicked if the dominant agent lived in a *different* window. The dot rolled up Claude sessions globally, but Claude-hook events broadcast to every window — so each window's session map held agents from all windows, while click-to-cycle only searches the current window's tabs and silently fell through when the target lived elsewhere. Every window also showed the same global count instead of its own agents. The rollup is now scoped to the current window's tabs, so each window's dot is independent and every cycle target is reachable
+
 ## v1.12.4
 
 - Fix Claude Code's IDE tools (notes, diagnostics, session tracking — the whole `aiterm` MCP toolset) silently breaking partway through a long session. aiTerm registers its MCP server in `~/.claude.json` at startup, but that file is co-owned by the `claude` CLI, which rewrites the whole file on its own events — a long-lived CLI session holding a stale in-memory copy could clobber aiTerm's entry, leaving Claude Code dialing a dead port for the rest of the session (MCP tool calls would hang, then error). aiTerm now re-asserts its entry on a 30s timer, so a clobber self-heals within one tick. The check is read-only and idempotent — it only rewrites the file when the entry has actually drifted, so there's no added disk churn. Also replaced a stale-tab-ID error that could bounce a session in circles between the dev and prod instances with a deterministic recovery path
