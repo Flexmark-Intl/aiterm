@@ -97,13 +97,21 @@ pub fn delete_lockfile(port: u16, auth: &str) {
     remove_aiterm_skill();
 }
 
-/// Write an `mcpServers.aiterm` entry into ~/.claude.json so Claude
-/// Code CLI exposes our full tool list (not filtered by IDE name).
-fn write_mcp_settings(port: u16, auth: &str) -> Result<(), String> {
-    let path = claude_settings_path().ok_or("Could not determine home directory")?;
+/// The expected `mcpServers.<key>` value pointing at our live server.
+fn expected_mcp_entry(port: u16, auth: &str) -> serde_json::Value {
+    serde_json::json!({
+        "type": "http",
+        "url": format!("http://127.0.0.1:{}/mcp", port),
+        "headers": {
+            "x-claude-code-ide-authorization": auth
+        }
+    })
+}
 
+/// Atomically set `mcpServers.<key>` to `entry`, preserving the rest of the file.
+fn put_mcp_entry(path: &PathBuf, entry: serde_json::Value) -> Result<(), String> {
     let mut settings: serde_json::Value = if path.exists() {
-        let raw = fs::read_to_string(&path).map_err(|e| format!("Cannot read settings.json: {}", e))?;
+        let raw = fs::read_to_string(path).map_err(|e| format!("Cannot read settings.json: {}", e))?;
         serde_json::from_str(&raw).unwrap_or(serde_json::json!({}))
     } else {
         serde_json::json!({})
@@ -115,25 +123,59 @@ fn write_mcp_settings(port: u16, auth: &str) -> Result<(), String> {
         .entry("mcpServers")
         .or_insert(serde_json::json!({}));
 
-    mcp_servers[mcp_server_key()] = serde_json::json!({
-        "type": "http",
-        "url": format!("http://127.0.0.1:{}/mcp", port),
-        "headers": {
-            "x-claude-code-ide-authorization": auth
-        }
-    });
+    mcp_servers[mcp_server_key()] = entry;
 
     let json = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
     // Atomic write
     let tmp = path.with_extension("json.aiterm-tmp");
     fs::write(&tmp, &json).map_err(|e| format!("Cannot write settings tmp: {}", e))?;
-    fs::rename(&tmp, &path).map_err(|e| {
+    fs::rename(&tmp, path).map_err(|e| {
         let _ = fs::remove_file(&tmp);
         format!("Cannot update settings.json: {}", e)
     })?;
+    Ok(())
+}
 
+/// Write an `mcpServers.aiterm` entry into ~/.claude.json so Claude
+/// Code CLI exposes our full tool list (not filtered by IDE name).
+fn write_mcp_settings(port: u16, auth: &str) -> Result<(), String> {
+    let path = claude_settings_path().ok_or("Could not determine home directory")?;
+    put_mcp_entry(&path, expected_mcp_entry(port, auth))?;
     log::info!("Registered {} MCP server in ~/.claude.json (port {})", mcp_server_key(), port);
     Ok(())
+}
+
+/// Re-assert `mcpServers.<key>` in ~/.claude.json *only if it has drifted* from
+/// the live port/transport/token. `~/.claude.json` is co-owned by the `claude`
+/// CLI, which rewrites the whole file on its own events — a long-lived session
+/// holding a stale in-memory copy can clobber our startup registration, leaving
+/// Claude Code dialing a dead port forever (we otherwise only write at startup).
+/// Called on a timer so a clobber self-heals within one tick. Returns `Ok(true)`
+/// when a repair was written, `Ok(false)` when the entry was already correct.
+pub fn ensure_mcp_settings(port: u16, auth: &str) -> Result<bool, String> {
+    let path = claude_settings_path().ok_or("Could not determine home directory")?;
+    let expected = expected_mcp_entry(port, auth);
+
+    // Cheap read-only check: skip the write (and its disk churn / file-watcher
+    // wakeups) when our entry already matches. Object equality is key-order
+    // independent, so transport/url/header reordering won't trigger a rewrite.
+    if path.exists() {
+        if let Ok(raw) = fs::read_to_string(&path) {
+            if let Ok(settings) = serde_json::from_str::<serde_json::Value>(&raw) {
+                if settings.get("mcpServers").and_then(|m| m.get(mcp_server_key())) == Some(&expected) {
+                    return Ok(false);
+                }
+            }
+        }
+    }
+
+    put_mcp_entry(&path, expected)?;
+    log::info!(
+        "Re-asserted {} MCP server in ~/.claude.json (port {}) — entry was missing or had drifted",
+        mcp_server_key(),
+        port
+    );
+    Ok(true)
 }
 
 /// Remove the MCP server entry from ~/.claude.json on shutdown.

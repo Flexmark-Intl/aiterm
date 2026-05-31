@@ -20,13 +20,17 @@ use serde_json::Value;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{mpsc, oneshot};
 
-use super::lockfile::{cleanup_stale_lockfiles, write_lockfile};
+use super::lockfile::{cleanup_stale_lockfiles, ensure_mcp_settings, write_lockfile};
 use super::protocol::{initialize_response, tool_list_response, JsonRpcRequest, JsonRpcResponse};
 use crate::state::AppState;
 
 const PING_INTERVAL: Duration = Duration::from_secs(30);
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(120);
 const SSE_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(15);
+/// How often to re-assert our `mcpServers.aiterm` entry in `~/.claude.json`.
+/// The file is co-owned by the `claude` CLI, which can clobber our entry; this
+/// heals any drift within one tick. Idempotent — only writes when it differs.
+const MCP_REASSERT_INTERVAL: Duration = Duration::from_secs(30);
 
 /// Per-SSE-session sender: receives raw JSON strings, which the SSE stream wraps as data events.
 type SseSessions = Arc<parking_lot::RwLock<HashMap<String, mpsc::UnboundedSender<String>>>>;
@@ -132,7 +136,33 @@ pub async fn serve_server(app_handle: AppHandle, state: Arc<AppState>, setup: Se
 
     // Graceful shutdown signal — sender stored in AppState, triggered on app exit
     let (shutdown_tx, mut shutdown_rx) = tokio::sync::watch::channel(false);
+    let mut reassert_shutdown = shutdown_tx.subscribe();
     *state.claude_code_shutdown.lock() = Some(shutdown_tx);
+
+    // Periodically re-assert our `~/.claude.json` entry so a clobber by the
+    // co-owning `claude` CLI self-heals instead of leaving Claude Code dialing a
+    // dead port until the next app restart. Runs until graceful shutdown.
+    let reassert_port = setup.port;
+    let reassert_auth = setup.auth.clone();
+    tauri::async_runtime::spawn(async move {
+        let mut ticker = tokio::time::interval(MCP_REASSERT_INTERVAL);
+        ticker.tick().await; // consume the immediate first tick
+        loop {
+            tokio::select! {
+                _ = ticker.tick() => {
+                    if let Err(e) = ensure_mcp_settings(reassert_port, &reassert_auth) {
+                        log::warn!("MCP settings re-assert failed: {}", e);
+                    }
+                }
+                res = reassert_shutdown.changed() => {
+                    if res.is_err() || *reassert_shutdown.borrow() {
+                        break;
+                    }
+                }
+            }
+        }
+        log::debug!("MCP settings re-assert loop stopped");
+    });
 
     let sse_sessions: SseSessions = Arc::new(parking_lot::RwLock::new(HashMap::new()));
     let connection_tabs: ConnectionTabMap = Arc::new(parking_lot::RwLock::new(HashMap::new()));
@@ -841,17 +871,29 @@ async fn process_message(
                         return Some(serde_json::to_string(&resp).unwrap());
                     }
 
-                    // Verify tab exists in this instance
+                    // Verify tab exists in this instance.
                     if find_window_for_tab(state, &tab_id).is_none() {
                         let this_server = if cfg!(debug_assertions) { "aiterm-dev" } else { "aiterm" };
                         let other_server = if cfg!(debug_assertions) { "aiterm" } else { "aiterm-dev" };
+                        // A tabId unknown to this instance is usually a *stale*
+                        // $AITERM_TAB_ID (the shell outlived the tab it was spawned
+                        // under), not a wrong-instance call. The old "use the other
+                        // server" message caused a circular bounce when the id was
+                        // stale in BOTH instances (each blamed the other). Give a
+                        // deterministic recovery path instead: getActiveTab → retry.
+                        let msg = format!(
+                            "Tab '{}' was not found in this aiTerm instance ({}). This almost always means your \
+                             $AITERM_TAB_ID is stale (the shell outlived the tab it was created under, or was \
+                             started under a different tab). To recover: call getActiveTab to get your real tab \
+                             ID, then call initSession again with that tabId. \
+                             Only if getActiveTab also fails should you assume you belong to the other instance \
+                             and use '{}' tools.",
+                            tab_id, this_server, other_server
+                        );
                         let resp = JsonRpcResponse::success(
                             id,
                             serde_json::json!({
-                                "content": [{ "type": "text", "text": format!(
-                                    "Tab '{}' not found in this aiTerm instance ({}). Use '{}' tools instead.",
-                                    tab_id, this_server, other_server
-                                ) }],
+                                "content": [{ "type": "text", "text": msg }],
                                 "isError": true
                             }),
                         );
