@@ -1060,18 +1060,24 @@
     }
   });
 
-  // Canvas (2D) renderer: load when visible, dispose when hidden. Falls back to
-  // xterm's built-in DOM renderer if the addon throws. We previously used the
-  // WebGL renderer, but its backbuffer is alpha-blended (alpha:true,
-  // premultipliedAlpha:true) even though the terminal is opaque — so redrawn
-  // cells composited over the previous frame instead of opaquely replacing it,
-  // leaving ghost glyphs on animated/styled text (Claude Code spinners, diffs).
-  // The canvas renderer clears each cell opaquely before drawing, so it can't
-  // ghost; aiTerm renders only one bounded viewport (scrollback:0), so WebGL's
-  // scroll-perf advantage didn't apply here anyway.
+  // Renderer selection (preference: terminal_renderer; default "dom").
+  //
+  // The DOM renderer is xterm's built-in default: no GPU/canvas backbuffer, so
+  // it can't ghost. Both the WebGL and Canvas addons leave stale cells under our
+  // workload — Rust streams a full-viewport repaint (\x1b[H\x1b[2J + content)
+  // ~60fps, and their alpha-blended / partial-clear backbuffers don't fully
+  // overwrite the previous frame, so diff backgrounds and rapid input redraws
+  // smear across rows until enough repaints accumulate (the red-stripe and
+  // staircased-input ghosting). The DOM renderer replaces each cell outright, so
+  // it's correct; aiTerm renders only one bounded viewport (scrollback:0), so the
+  // canvas/webgl throughput advantage never applied here anyway.
+  //
+  // Canvas stays available as an opt-in for side-by-side comparison. It loads
+  // only on the visible tab; disposing the addon reverts to the DOM renderer.
   $effect(() => {
     if (!initialized || !terminal) return;
-    if (visible) {
+    const useCanvas = preferencesStore.terminalRenderer === 'canvas';
+    if (visible && useCanvas) {
       if (!canvasAddon) {
         try {
           canvasAddon = new CanvasAddon();
@@ -1086,6 +1092,9 @@
         canvasAddon.dispose();
         canvasAddon = null;
         terminalsStore.canvasRendererUnloaded(tabId);
+        // Disposing reverts to the DOM renderer — force a full repaint so the
+        // switch shows immediately even on an idle tab (no streaming frames).
+        try { terminal.refresh(0, terminal.rows - 1); } catch { /* noop */ }
       }
     }
   });

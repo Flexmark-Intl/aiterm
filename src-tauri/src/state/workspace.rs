@@ -494,6 +494,14 @@ fn default_tab_button_style() -> String {
     "hover".to_string()
 }
 
+/// Terminal renderer: "dom" (default — xterm.js DOM renderer, no GPU/canvas
+/// compositing so it can't ghost) or "canvas" (legacy @xterm/addon-canvas).
+/// DOM is correct here because Rust owns scrollback and we render only one
+/// bounded viewport, so the canvas/webgl throughput advantage never applied.
+fn default_terminal_renderer() -> String {
+    "dom".to_string()
+}
+
 fn default_true() -> bool {
     true
 }
@@ -710,6 +718,9 @@ pub struct Preferences {
     pub show_workspace_tab_count: bool,
     #[serde(default = "default_tab_button_style")]
     pub tab_button_style: String,
+    /// Terminal renderer: "dom" (default) or "canvas".
+    #[serde(default = "default_terminal_renderer")]
+    pub terminal_renderer: String,
     #[serde(default)]
     pub triggers: Vec<Trigger>,
     /// Default trigger IDs the user has intentionally deleted (prevents re-seeding).
@@ -816,6 +827,7 @@ impl Default for Preferences {
             workspace_sort_order: String::new(),
             show_workspace_tab_count: false,
             tab_button_style: default_tab_button_style(),
+            terminal_renderer: default_terminal_renderer(),
             triggers: Vec::new(),
             hidden_default_triggers: Vec::new(),
             claude_triggers_prompted: false,

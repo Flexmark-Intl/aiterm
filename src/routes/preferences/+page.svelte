@@ -488,6 +488,29 @@
           </button>
         </div>
 
+        <h3 class="section-heading" style="margin-top: 20px;">Rendering</h3>
+
+        <div class="setting" style="align-items: flex-start;">
+          <div>
+            <label for="terminal-renderer">Renderer</label>
+            <p class="setting-hint">
+              <strong>DOM</strong> is the default and avoids the rendering artifacts
+              (red diff-stripes, smeared input while typing during heavy output) that
+              the GPU-accelerated <strong>Canvas</strong> renderer leaves on this
+              terminal. Canvas is kept for side-by-side comparison. Applies immediately
+              to visible terminals.
+            </p>
+          </div>
+          <select
+            id="terminal-renderer"
+            value={preferencesStore.terminalRenderer}
+            onchange={(e) => preferencesStore.setTerminalRenderer(e.currentTarget.value)}
+          >
+            <option value="dom">DOM (default)</option>
+            <option value="canvas">Canvas (GPU)</option>
+          </select>
+        </div>
+
         {#if windowsShells.length > 0}
           <h3 class="section-heading" style="margin-top: 20px;">Default Shell</h3>
           <p class="section-desc">

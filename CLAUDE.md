@@ -6,7 +6,7 @@ A Tauri-based terminal emulator with workspace organization, built with Svelte 5
 
 - **Frontend**: Svelte 5 (runes), SvelteKit, TypeScript, Vite
 - **Backend**: Rust, Tauri 2
-- **Terminal**: alacritty_terminal (Rust VTE parser + buffer) with xterm.js as thin renderer (scrollback=0, fit, web-links, webgl addons)
+- **Terminal**: alacritty_terminal (Rust VTE parser + buffer) with xterm.js as thin renderer (scrollback=0; DOM renderer by default — canvas/webgl ghost under full-frame streaming; fit, web-links addons)
 - **Editor**: CodeMirror 6 (+ MergeView for diffs)
 - **PTY**: portable-pty for cross-platform pseudo-terminal support
 - **State**: parking_lot RwLock for thread-safe Rust state

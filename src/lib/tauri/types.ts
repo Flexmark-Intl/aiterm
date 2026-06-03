@@ -168,6 +168,7 @@ export interface Preferences {
   workspace_sort_order: string;
   show_workspace_tab_count: boolean;
   tab_button_style: string;
+  terminal_renderer: string;
   triggers: Trigger[];
   hidden_default_triggers: string[];
   claude_triggers_prompted: boolean;
