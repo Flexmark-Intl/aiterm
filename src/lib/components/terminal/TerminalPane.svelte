@@ -780,11 +780,25 @@
 
     // Intercept mouse wheel for Rust-managed scrollback navigation.
     // In alternate screen mode (TUI apps), let xterm.js handle scrolling
-    // (sends arrow keys to the app, which is the expected behavior).
+    // (sends mouse events or arrow keys to the app, which is the expected behavior).
     // Uses velocity-sensitive scrolling: small movements = 1 line, fast flicks = many lines.
     let scrollAccumulator = 0;
     containerRef.addEventListener('wheel', (e) => {
-      if (lastFrameAlternateScreen) return;
+      if (lastFrameAlternateScreen) {
+        // Guard against an xterm.js freeze: its alt-screen wheel→arrow-key path
+        // (taken because we run scrollback:0) divides deltaY by the measured row
+        // height, then builds one arrow-key escape per scrolled line in an
+        // unbounded loop. During a monitor-change refit the terminal can have a
+        // 0 row height, making that division Infinity → an endless string build
+        // that pins the renderer at 100% CPU and OOMs the window. Swallow the
+        // event unless the terminal is actually laid out, so xterm never runs
+        // its wheel handler in that degenerate state.
+        if (!terminal.element?.clientHeight || !containerRef.clientHeight || !terminal.rows) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        return;
+      }
 
       e.preventDefault();
       e.stopPropagation();
