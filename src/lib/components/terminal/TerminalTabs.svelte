@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick, onDestroy } from 'svelte';
+  import { tick, onDestroy, untrack } from 'svelte';
   import type { Tab, Pane } from '$lib/tauri/types';
   import { workspacesStore } from '$lib/stores/workspaces.svelte';
   import { activityStore } from '$lib/stores/activity.svelte';
@@ -131,6 +131,44 @@
         workspacesStore.setActiveTab(workspaceId, pane.id, firstActive.id);
       }
     }
+  });
+
+  // When group-active-tabs is on, persist a tab's visual jump into the active
+  // group: the moment a previously-suspended tab goes live again, move it in
+  // storage to the end of the active group (just before the first suspended
+  // tab) — where it already shows. This keeps drag order meaningful and lets
+  // recently-used tabs settle at the front, so a later suspend-all leaves them
+  // where they were. Keyed on instanceVersion (bumps on register/unregister).
+  //
+  // `everLive` distinguishes a real resume (was live, suspended, now live) from
+  // the initial lazy-spawn on app load and from brand-new tabs (createTab keeps
+  // its own placement next to the active tab) — neither should be promoted.
+  const everLive = new Set<string>();
+  let prevLive = new Set<string>();
+  let liveSeeded = false;
+  $effect(() => {
+    void terminalsStore.instanceVersion;
+    const grouping = preferencesStore.groupActiveTabs;
+    untrack(() => {
+      const isTerminal = (t: Tab) => t.tab_type === 'terminal' || !t.tab_type;
+      const liveNow = new Set(
+        pane.tabs
+          .filter(t => isTerminal(t) && (terminalsStore.get(t.id) || terminalsStore.isSpawning(t.id)))
+          .map(t => t.id)
+      );
+      const resumed: string[] = [];
+      if (liveSeeded && grouping) {
+        for (const t of pane.tabs) {
+          if (isTerminal(t) && liveNow.has(t.id) && !prevLive.has(t.id) && everLive.has(t.id)) {
+            resumed.push(t.id);
+          }
+        }
+      }
+      for (const id of liveNow) everLive.add(id);
+      prevLive = liveNow;
+      liveSeeded = true;
+      for (const id of resumed) workspacesStore.promoteResumedTab(workspaceId, pane.id, id);
+    });
   });
 
   // Track trigger variable changes for reactive tab title updates

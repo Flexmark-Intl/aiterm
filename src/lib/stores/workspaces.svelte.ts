@@ -1140,6 +1140,42 @@ function createWorkspacesStore() {
       await commands.reorderTabs(workspaceId, paneId, tabIds);
     },
 
+    /**
+     * When group-active-tabs is enabled, a just-resumed tab visually jumps into
+     * the active group (which renders ahead of suspended tabs) but keeps its old
+     * storage position. Move it in storage too — to the end of the active group,
+     * i.e. just before the first still-suspended terminal tab — so the visible
+     * order is the real order. That makes drag-reordering within the active group
+     * meaningful and lets the most-recently-used tabs settle at the front, so
+     * once everything is suspended they stay where they were (front/left).
+     * No-op when grouping is off (storage order already equals display order).
+     */
+    promoteResumedTab(workspaceId: string, paneId: string, tabId: string) {
+      if (!preferencesStore.groupActiveTabs) return;
+      const ws = workspaces.find(w => w.id === workspaceId);
+      const pane = ws?.panes.find(p => p.id === paneId);
+      if (!pane) return;
+      const tab = pane.tabs.find(t => t.id === tabId);
+      const isTerminal = (t: Tab) => t.tab_type === 'terminal' || !t.tab_type;
+      if (!tab || !isTerminal(tab)) return;
+
+      // First still-suspended terminal tab marks the active/suspended boundary.
+      // (The resumed tab itself is excluded — it has just left the suspended group.)
+      const isSuspendedTerminal = (t: Tab) =>
+        isTerminal(t) && t.id !== tabId &&
+        !terminalsStore.get(t.id) && !terminalsStore.isSpawning(t.id);
+
+      const without = pane.tabs.filter(t => t.id !== tabId);
+      let boundary = without.findIndex(isSuspendedTerminal);
+      if (boundary === -1) boundary = without.length;
+      const reordered = [...without.slice(0, boundary), tab, ...without.slice(boundary)];
+
+      const curIds = pane.tabs.map(t => t.id);
+      const newIds = reordered.map(t => t.id);
+      if (newIds.every((id, i) => id === curIds[i])) return; // already at the boundary
+      this.reorderTabs(workspaceId, paneId, newIds);
+    },
+
     async renameTab(workspaceId: string, paneId: string, tabId: string, name: string, customName?: boolean) {
       await commands.renameTab(workspaceId, paneId, tabId, name, customName);
       const { tab } = findTab(workspaceId, paneId, tabId);
