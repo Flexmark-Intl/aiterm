@@ -733,23 +733,39 @@ pub async fn watch_file(
         return Err("File does not exist".to_string());
     }
 
+    // Canonicalize so our stored path matches what `notify` reports for directory
+    // events — this resolves symlinks (e.g. macOS /tmp -> /private/tmp) so the
+    // path-equality filter below holds.
+    let file_path = std::fs::canonicalize(&file_path)
+        .map_err(|e| format!("Cannot resolve file path: {}", e))?;
+    let parent = file_path
+        .parent()
+        .ok_or("Cannot determine parent directory")?
+        .to_path_buf();
+
     // Remove existing watcher for this tab if any
     state.file_watchers.write().remove(&tab_id);
 
     let event_tab_id = tab_id.clone();
+    let watch_target = file_path.clone();
+    // Watch the PARENT directory, not the file itself. Most editors and agents
+    // save via write-temp-then-rename (atomic write), which swaps the file's
+    // inode — a single-file watch stays bound to the old inode and goes silent
+    // after the first replace. Watching the directory and filtering for our
+    // file's path catches rename-into-place reliably.
     let debouncer = notify_debouncer_mini::new_debouncer(
         std::time::Duration::from_millis(500),
         move |res: Result<Vec<notify_debouncer_mini::DebouncedEvent>, notify::Error>| {
             if let Ok(events) = res {
-                let dominated_by_remove = events.iter().all(|e| {
-                    matches!(e.kind, notify_debouncer_mini::DebouncedEventKind::Any)
-                        && !e.path.exists()
-                });
-                if dominated_by_remove {
-                    let _ = window.emit(&format!("file-deleted-{}", event_tab_id), ());
+                // Ignore activity on other files in the directory.
+                if !events.iter().any(|e| e.path == watch_target) {
                     return;
                 }
-                let _ = window.emit(&format!("file-changed-{}", event_tab_id), ());
+                if watch_target.exists() {
+                    let _ = window.emit(&format!("file-changed-{}", event_tab_id), ());
+                } else {
+                    let _ = window.emit(&format!("file-deleted-{}", event_tab_id), ());
+                }
             }
         },
     )
@@ -758,8 +774,8 @@ pub async fn watch_file(
     let mut debouncer = debouncer;
     debouncer
         .watcher()
-        .watch(&file_path, notify::RecursiveMode::NonRecursive)
-        .map_err(|e| format!("Failed to watch file: {}", e))?;
+        .watch(&parent, notify::RecursiveMode::NonRecursive)
+        .map_err(|e| format!("Failed to watch directory: {}", e))?;
 
     state.file_watchers.write().insert(
         tab_id,
