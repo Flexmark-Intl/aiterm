@@ -1,0 +1,167 @@
+<script lang="ts">
+  import type { Snippet } from 'svelte';
+  import type { Tab } from '$lib/tauri/types';
+  import Icon from '$lib/components/Icon.svelte';
+  import Tooltip from '$lib/components/Tooltip.svelte';
+  import { isImageFile, isPdfFile } from '$lib/utils/languageDetect';
+
+  interface TabMenuItem {
+    tab: Tab;
+    label: string;
+    meta?: string | null;
+  }
+
+  interface Props {
+    items: TabMenuItem[];
+    /** Anchor position. Provide `left` to open right-aligned to the anchor, or `right` to open left-aligned. */
+    position: { top: number; left?: number; right?: number };
+    /** Called when an item's name is clicked. */
+    onActivate: (tab: Tab) => void;
+    /** Trailing action buttons rendered per row. */
+    actions: Snippet<[Tab]>;
+  }
+
+  let { items, position, onActivate, actions }: Props = $props();
+
+  // Group terminals and viewers (editors/diffs) into sections, matching the tab bar.
+  const shellItems = $derived(items.filter(i => i.tab.tab_type === 'terminal' || !i.tab.tab_type));
+  const viewerItems = $derived(items.filter(i => i.tab.tab_type === 'editor' || i.tab.tab_type === 'diff'));
+  const showHeaders = $derived(shellItems.length > 0 && viewerItems.length > 0);
+
+  const posStyle = $derived(
+    `top:${position.top}px;` +
+      (position.right != null ? `right:${position.right}px;` : `left:${position.left ?? 0}px;`)
+  );
+</script>
+
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="tab-menu" style={posStyle} onwheel={(e) => e.stopPropagation()}>
+  {#if showHeaders && shellItems.length > 0}
+    <div class="tab-menu-header">Shells</div>
+  {/if}
+  {#each shellItems as item (item.tab.id)}
+    {@render row(item)}
+  {/each}
+  {#if showHeaders && viewerItems.length > 0}
+    <div class="tab-menu-header">Viewers</div>
+  {/if}
+  {#each viewerItems as item (item.tab.id)}
+    {@render row(item)}
+  {/each}
+</div>
+
+{#snippet row(item: TabMenuItem)}
+  <div class="tab-menu-item">
+    {#if item.tab.tab_type === 'diff'}
+      <Tooltip text="Diff"><span class="tab-menu-icon"><Icon name="diff" size={12} /></span></Tooltip>
+    {:else if item.tab.tab_type === 'editor'}
+      {#if item.tab.editor_file && isPdfFile(item.tab.editor_file.file_path)}
+        <Tooltip text="PDF"><span class="tab-menu-icon"><Icon name="pdf" size={12} /></span></Tooltip>
+      {:else if item.tab.editor_file && isImageFile(item.tab.editor_file.file_path)}
+        <Tooltip text="Image"><span class="tab-menu-icon"><Icon name="image" size={12} /></span></Tooltip>
+      {:else}
+        <Tooltip text="Editor"><span class="tab-menu-icon"><Icon name="file" size={12} /></span></Tooltip>
+      {/if}
+    {:else}
+      <Tooltip text="Terminal"><span class="tab-menu-icon">&gt;_</span></Tooltip>
+    {/if}
+    <button class="tab-menu-name" onclick={() => onActivate(item.tab)}>
+      <span class="tab-menu-label">{item.label}</span>
+      {#if item.meta}
+        <span class="tab-menu-meta">{item.meta}</span>
+      {/if}
+    </button>
+    {@render actions(item.tab)}
+  </div>
+{/snippet}
+
+<style>
+  .tab-menu {
+    position: fixed;
+    z-index: 1000;
+    min-width: 200px;
+    max-width: 320px;
+    max-height: 300px;
+    overflow-y: auto;
+    background: var(--bg-medium);
+    border: 1px solid var(--bg-light);
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    padding: 4px;
+  }
+
+  .tab-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 6px;
+    border-radius: 4px;
+    transition: background 0.1s;
+  }
+
+  .tab-menu-item:hover {
+    background: var(--bg-light);
+  }
+
+  .tab-menu-name {
+    flex: 1;
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    overflow: hidden;
+    font-size: 0.923rem;
+    color: var(--fg);
+    text-align: left;
+    padding: 2px 0;
+    background: none;
+    border: none;
+    cursor: pointer;
+    min-width: 0;
+  }
+
+  .tab-menu-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 180px;
+  }
+
+  .tab-menu-meta {
+    flex-shrink: 0;
+    font-size: 0.769rem;
+    color: var(--fg-dim);
+    white-space: nowrap;
+  }
+
+  .tab-menu-header {
+    font-size: 0.769rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--fg-dim);
+    padding: 6px 6px 2px;
+  }
+
+  .tab-menu-header:not(:first-child) {
+    margin-top: 4px;
+    border-top: 1px solid var(--bg-light);
+    padding-top: 8px;
+  }
+
+  .tab-menu-icon {
+    flex-shrink: 0;
+    width: 14px;
+    height: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.769rem;
+    opacity: 0.6;
+    color: var(--fg-dim);
+  }
+
+  .tab-menu-icon :global(svg) {
+    width: 12px;
+    height: 12px;
+  }
+</style>

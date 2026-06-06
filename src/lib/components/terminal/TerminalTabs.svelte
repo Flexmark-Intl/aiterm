@@ -17,6 +17,7 @@
   import StatusDot from '$lib/components/ui/StatusDot.svelte';
   import IconButton from '$lib/components/ui/IconButton.svelte';
   import Tooltip from '$lib/components/Tooltip.svelte';
+  import TabListMenu from './TabListMenu.svelte';
 
   interface Props {
     workspaceId: string;
@@ -27,7 +28,7 @@
 
   let archiveDropdownOpen = $state(false);
   let archiveDropdownEl = $state<HTMLElement | null>(null);
-  let archiveDropdownPos = $state({ top: 0, left: 0 });
+  let archiveDropdownPos = $state<{ top: number; left?: number; right?: number }>({ top: 0, left: 0 });
   const archivedTabs = $derived(
     [...(workspacesStore.workspaces.find(w => w.id === workspaceId)?.archived_tabs ?? [])]
       .sort((a, b) => {
@@ -36,6 +37,19 @@
         return bTime - aTime; // most recent first
       })
   );
+  const archiveItems = $derived(
+    archivedTabs.map(t => ({
+      tab: t,
+      label: t.archived_name ?? t.name,
+      meta: t.archived_at ? relativeTime(t.archived_at) : null,
+    }))
+  );
+
+  // Overflow menu: tabs scrolled out of view in the bar (not fully visible).
+  let overflowDropdownOpen = $state(false);
+  let overflowDropdownEl = $state<HTMLElement | null>(null);
+  let overflowDropdownPos = $state<{ top: number; left?: number; right?: number }>({ top: 0 });
+  let overflowTabIds = $state<Set<string>>(new Set());
 
   let editingId = $state<string | null>(null);
   let editingName = $state('');
@@ -107,6 +121,10 @@
   });
   const displayTabs = $derived(groupedTabs.tabs);
   const activeGroupCount = $derived(groupedTabs.activeCount);
+
+  // Tabs scrolled out of view (not fully visible) in the bar, in display order.
+  const overflowTabs = $derived(displayTabs.filter(t => overflowTabIds.has(t.id)));
+  const overflowItems = $derived(overflowTabs.map(t => ({ tab: t, label: displayName(t) })));
 
   // When grouping first turns on, auto-switch away from a suspended tab to the first active one.
   // Only fires on the groupActiveTabs toggle, not on every active tab change.
@@ -324,6 +342,59 @@
     }
   });
 
+  // Recompute which tabs are scrolled out of view. Cheap geometry check against
+  // the scroll viewport; a tab counts as overflowed when either edge is clipped.
+  function computeOverflow() {
+    if (!tabsBarEl || tabsBarEl.clientWidth === 0) {
+      if (overflowTabIds.size) overflowTabIds = new Set();
+      return;
+    }
+    const barRect = tabsBarEl.getBoundingClientRect();
+    const next = new Set<string>();
+    for (const el of tabsBarEl.querySelectorAll<HTMLElement>('.tab[data-tab-id]')) {
+      const r = el.getBoundingClientRect();
+      if (r.left < barRect.left - 1 || r.right > barRect.right + 1) {
+        const id = el.dataset.tabId;
+        if (id) next.add(id);
+      }
+    }
+    if (next.size !== overflowTabIds.size || [...next].some(id => !overflowTabIds.has(id))) {
+      overflowTabIds = next;
+    }
+  }
+
+  async function handleOverflowActivate(tabId: string) {
+    await handleTabClick(tabId);
+    overflowDropdownOpen = false;
+  }
+
+  function handleOverflowDropdownClickOutside(e: MouseEvent) {
+    if (overflowDropdownEl && !overflowDropdownEl.contains(e.target as Node)) {
+      overflowDropdownOpen = false;
+    }
+  }
+
+  function handleOverflowDropdownKeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape') overflowDropdownOpen = false;
+  }
+
+  $effect(() => {
+    if (overflowDropdownOpen) {
+      document.addEventListener('click', handleOverflowDropdownClickOutside, true);
+      document.addEventListener('keydown', handleOverflowDropdownKeydown);
+      return () => {
+        document.removeEventListener('click', handleOverflowDropdownClickOutside, true);
+        document.removeEventListener('keydown', handleOverflowDropdownKeydown);
+      };
+    }
+  });
+
+  // Close the overflow menu once nothing is left hidden (e.g. after archiving
+  // or closing the last overflowed tab from within the menu).
+  $effect(() => {
+    if (overflowDropdownOpen && overflowTabs.length === 0) overflowDropdownOpen = false;
+  });
+
   async function handleDuplicateTab(tabId: string, e: MouseEvent) {
     e.stopPropagation();
     await workspacesStore.duplicateTab(workspaceId, pane.id, tabId, { shallow: e.altKey });
@@ -394,6 +465,24 @@
     const activeId = pane.active_tab_id;
     if (activeId && activeId !== prevActiveTabId) scrollTabIntoView(activeId);
     prevActiveTabId = activeId ?? null;
+  });
+
+  // Keep overflow state fresh when the bar resizes (window/sidebar/notes changes).
+  $effect(() => {
+    if (!tabsBarEl) return;
+    const ro = new ResizeObserver(() => computeOverflow());
+    ro.observe(tabsBarEl);
+    return () => ro.disconnect();
+  });
+
+  // Recompute overflow whenever the tab set, grouping, or active tab changes.
+  // rAF lets the DOM settle (widths/positions) before measuring.
+  $effect(() => {
+    void displayTabs;
+    void activeGroupCount;
+    void pane.active_tab_id;
+    const raf = requestAnimationFrame(computeOverflow);
+    return () => cancelAnimationFrame(raf);
   });
 
   function handlePointerDown(e: PointerEvent, tabId: string) {
@@ -606,11 +695,10 @@
 </script>
 
 <div class="tabs-bar" data-tauri-drag-region>
-    <div class="archive-list-wrapper" bind:this={archiveDropdownEl}>
+    <div class="tabbar-menu-wrapper" bind:this={archiveDropdownEl}>
       <Tooltip text={archivedTabs.length > 0 ? `Archived tabs (${archivedTabs.length})` : 'No archived tabs'}>
         <button
-          class="archive-list-btn"
-          class:archive-empty={archivedTabs.length === 0}
+          class="tabbar-menu-btn"
           disabled={archivedTabs.length === 0}
           onclick={(e) => {
             e.stopPropagation();
@@ -625,77 +713,22 @@
         </button>
       </Tooltip>
       {#if archiveDropdownOpen}
-        {@const shellTabs = archivedTabs.filter(t => t.tab_type === 'terminal' || !t.tab_type)}
-        {@const viewerTabs = archivedTabs.filter(t => t.tab_type === 'editor' || t.tab_type === 'diff')}
-        {@const showHeaders = shellTabs.length > 0 && viewerTabs.length > 0}
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="archive-dropdown" style="top: {archiveDropdownPos.top}px; left: {archiveDropdownPos.left}px;" onwheel={(e) => e.stopPropagation()}>
-          {#if showHeaders && shellTabs.length > 0}
-            <div class="archive-section-header">Shells</div>
-          {/if}
-          {#each shellTabs as archivedTab (archivedTab.id)}
-            <div class="archive-item">
-              <Tooltip text="Terminal"><span class="archive-item-icon">&gt;_</span></Tooltip>
-              <button
-                class="archive-item-name"
-                onclick={() => handleRestoreArchivedTab(archivedTab.id)}
-              >
-                <span class="archive-item-label">{archivedTab.archived_name ?? archivedTab.name}</span>
-                {#if archivedTab.archived_at}
-                  <span class="archive-item-date">{relativeTime(archivedTab.archived_at)}</span>
-                {/if}
-              </button>
-              <IconButton
-                tooltip="Restore"
-                onclick={() => handleRestoreArchivedTab(archivedTab.id)}
-              ><Icon name="restore" size={12} /></IconButton>
-              <IconButton
-                tooltip="Delete permanently"
-                danger
-                onclick={(e) => handleDeleteArchivedTab(archivedTab.id, e)}
-              ><Icon name="close" size={12} /></IconButton>
-            </div>
-          {/each}
-          {#if showHeaders && viewerTabs.length > 0}
-            <div class="archive-section-header">Viewers</div>
-          {/if}
-          {#each viewerTabs as archivedTab (archivedTab.id)}
-            <div class="archive-item">
-              {#if archivedTab.tab_type === 'diff'}
-                <Tooltip text="Diff"><span class="archive-item-icon"><Icon name="diff" size={12} /></span></Tooltip>
-              {:else if archivedTab.editor_file && isPdfFile(archivedTab.editor_file.file_path)}
-                <Tooltip text="PDF"><span class="archive-item-icon"><Icon name="pdf" size={12} /></span></Tooltip>
-              {:else if archivedTab.editor_file && isImageFile(archivedTab.editor_file.file_path)}
-                <Tooltip text="Image"><span class="archive-item-icon"><Icon name="image" size={12} /></span></Tooltip>
-              {:else}
-                <Tooltip text="Editor"><span class="archive-item-icon"><Icon name="file" size={12} /></span></Tooltip>
-              {/if}
-              <button
-                class="archive-item-name"
-                onclick={() => handleRestoreArchivedTab(archivedTab.id)}
-              >
-                <span class="archive-item-label">{archivedTab.archived_name ?? archivedTab.name}</span>
-                {#if archivedTab.archived_at}
-                  <span class="archive-item-date">{relativeTime(archivedTab.archived_at)}</span>
-                {/if}
-              </button>
-              <IconButton
-                tooltip="Restore"
-                onclick={() => handleRestoreArchivedTab(archivedTab.id)}
-              ><Icon name="restore" size={12} /></IconButton>
-              <IconButton
-                tooltip="Delete permanently"
-                danger
-                onclick={(e) => handleDeleteArchivedTab(archivedTab.id, e)}
-              ><Icon name="close" size={12} /></IconButton>
-            </div>
-          {/each}
-        </div>
+        <TabListMenu
+          items={archiveItems}
+          position={archiveDropdownPos}
+          onActivate={(t) => handleRestoreArchivedTab(t.id)}
+        >
+          {#snippet actions(t)}
+            <IconButton tooltip="Restore" onclick={() => handleRestoreArchivedTab(t.id)}><Icon name="restore" size={12} /></IconButton>
+            <IconButton tooltip="Delete permanently" danger onclick={(e) => handleDeleteArchivedTab(t.id, e)}><Icon name="close" size={12} /></IconButton>
+          {/snippet}
+        </TabListMenu>
       {/if}
     </div>
 
   <div class="tabs-scroll" bind:this={tabsBarEl}
     onwheel={(e) => { if (tabsBarEl) { e.preventDefault(); tabsBarEl.scrollLeft += e.deltaY || e.deltaX; } }}
+    onscroll={computeOverflow}
   >
   {#each displayTabs as tab, index (tab.id)}
     {#if activeGroupCount > 0 && index === activeGroupCount}
@@ -836,6 +869,38 @@
   <Tooltip text="New tab ({modLabel}+T)"><button class="new-tab-btn" onclick={handleNewTab}>
     <Icon name="plus" size={14} />
   </button></Tooltip>
+
+  <div class="tabbar-menu-wrapper" bind:this={overflowDropdownEl}>
+    <Tooltip text={overflowTabs.length > 0 ? `Hidden tabs (${overflowTabs.length})` : 'No hidden tabs'}>
+      <button
+        class="tabbar-menu-btn"
+        disabled={overflowTabs.length === 0}
+        onclick={(e) => {
+          e.stopPropagation();
+          if (!overflowDropdownOpen) {
+            computeOverflow();
+            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+            overflowDropdownPos = { top: rect.bottom + 2, right: window.innerWidth - rect.right };
+          }
+          overflowDropdownOpen = !overflowDropdownOpen;
+        }}
+      >
+        <Icon name="list" size={14} />{#if overflowTabs.length > 0} {overflowTabs.length}{/if}
+      </button>
+    </Tooltip>
+    {#if overflowDropdownOpen}
+      <TabListMenu
+        items={overflowItems}
+        position={overflowDropdownPos}
+        onActivate={(t) => handleOverflowActivate(t.id)}
+      >
+        {#snippet actions(t)}
+          <IconButton tooltip="Archive tab" onclick={(e) => handleArchiveTab(t.id, e)}><Icon name="archive" size={12} /></IconButton>
+          <IconButton tooltip="Close tab" danger onclick={(e) => handleCloseTab(t.id, e)}><Icon name="close" size={12} /></IconButton>
+        {/snippet}
+      </TabListMenu>
+    {/if}
+  </div>
 
   {#if pane.active_tab_id}
     <IconButton
@@ -1230,13 +1295,14 @@
     color: var(--fg);
   }
 
-  .archive-list-wrapper {
+  /* Shared tab-bar menu trigger buttons (archived tabs, hidden/overflow tabs). */
+  .tabbar-menu-wrapper {
     position: relative;
     flex-shrink: 0;
     -webkit-app-region: no-drag;
   }
 
-  .archive-list-btn {
+  .tabbar-menu-btn {
     display: flex;
     align-items: center;
     gap: 3px;
@@ -1249,103 +1315,14 @@
     -webkit-app-region: no-drag;
   }
 
-  .archive-list-btn.archive-empty {
+  .tabbar-menu-btn:disabled {
     opacity: 0.4;
     cursor: default;
   }
 
-  .archive-list-btn:hover:not(:disabled) {
+  .tabbar-menu-btn:hover:not(:disabled) {
     background: var(--bg-light);
     color: var(--fg);
-  }
-
-  .archive-dropdown {
-    position: fixed;
-    z-index: 1000;
-    min-width: 200px;
-    max-width: 320px;
-    max-height: 300px;
-    overflow-y: auto;
-    background: var(--bg-medium);
-    border: 1px solid var(--bg-light);
-    border-radius: 6px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-    padding: 4px;
-  }
-
-  .archive-item {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 6px;
-    border-radius: 4px;
-    transition: background 0.1s;
-  }
-
-  .archive-item:hover {
-    background: var(--bg-light);
-  }
-
-  .archive-item-name {
-    flex: 1;
-    display: flex;
-    align-items: baseline;
-    gap: 6px;
-    overflow: hidden;
-    font-size: 0.923rem;
-    color: var(--fg);
-    text-align: left;
-    padding: 2px 0;
-    background: none;
-    border: none;
-    cursor: pointer;
-    min-width: 0;
-  }
-
-  .archive-item-label {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: 180px;
-  }
-
-  .archive-item-date {
-    flex-shrink: 0;
-    font-size: 0.769rem;
-    color: var(--fg-dim);
-    white-space: nowrap;
-  }
-
-  .archive-section-header {
-    font-size: 0.769rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--fg-dim);
-    padding: 6px 6px 2px;
-  }
-
-  .archive-section-header:not(:first-child) {
-    margin-top: 4px;
-    border-top: 1px solid var(--bg-light);
-    padding-top: 8px;
-  }
-
-  .archive-item-icon {
-    flex-shrink: 0;
-    width: 14px;
-    height: 14px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.769rem;
-    opacity: 0.6;
-    color: var(--fg-dim);
-  }
-
-  .archive-item-icon :global(svg) {
-    width: 12px;
-    height: 12px;
   }
 
 </style>
