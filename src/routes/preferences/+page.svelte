@@ -559,9 +559,10 @@
 
         <div class="setting" style="align-items: flex-start;">
           <div>
-            <label for="shell-integration">Command Completion</label>
+            <label for="shell-integration">Command Tracking</label>
             <p class="setting-hint">
-              Detect when commands start and finish. Shows completion indicators on inactive tabs.
+              Detect when commands start, finish, and their exit status. Powers completion
+              indicators on inactive tabs and detection of dropped SSH sessions.
               Applies to new terminals only.
             </p>
           </div>

@@ -673,8 +673,13 @@ pub struct Preferences {
     pub theme: String,
     #[serde(default)]
     pub shell_title_integration: bool,
-    #[serde(default)]
+    #[serde(default = "default_true")]
     pub shell_integration: bool,
+    /// One-time marker for the "shell_integration default-on" migration. Once
+    /// set, the migration never re-flips it, so a user who deliberately turns
+    /// Command Completion off stays off across launches.
+    #[serde(default)]
+    pub shell_integration_default_migrated: bool,
     #[serde(default)]
     pub custom_themes: Vec<serde_json::Value>,
     #[serde(default)]
@@ -806,7 +811,8 @@ impl Default for Preferences {
             number_duplicated_tabs: true,
             theme: default_theme(),
             shell_title_integration: false,
-            shell_integration: false,
+            shell_integration: true,
+            shell_integration_default_migrated: true,
             custom_themes: Vec::new(),
             restore_session: false,
             notify_on_completion: false,

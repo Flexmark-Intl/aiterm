@@ -720,9 +720,14 @@ pub fn get_preferences(state: State<'_, Arc<AppState>>) -> Preferences {
 }
 
 #[tauri::command]
-pub fn set_preferences(app: tauri::AppHandle, state: State<'_, Arc<AppState>>, preferences: Preferences) -> Result<(), String> {
+pub fn set_preferences(app: tauri::AppHandle, state: State<'_, Arc<AppState>>, mut preferences: Preferences) -> Result<(), String> {
     let data_clone = {
         let mut app_data = state.app_data.write();
+        // The marker is backend-owned — the client payload omits it, which would
+        // reset it to false (serde default) and re-fire the one-time migration on
+        // next launch, undoing a deliberate opt-out. Preserve the stored value.
+        preferences.shell_integration_default_migrated =
+            app_data.preferences.shell_integration_default_migrated;
         app_data.preferences = preferences.clone();
         app_data.clone()
     };

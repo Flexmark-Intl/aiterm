@@ -12,6 +12,7 @@
   import { isEditorDirty } from '$lib/stores/editorRegistry.svelte';
   import { getBridgeStatus } from '$lib/stores/sshMcpBridge.svelte';
   import { claudeStateStore } from '$lib/stores/claudeState.svelte';
+  import { sshDisconnectStore } from '$lib/stores/sshDisconnect.svelte';
   import { isImageFile, isPdfFile } from '$lib/utils/languageDetect';
   import Icon from '$lib/components/Icon.svelte';
   import StatusDot from '$lib/components/ui/StatusDot.svelte';
@@ -289,6 +290,12 @@
   async function handleNewTab() {
     const count = pane.tabs.length + 1;
     await workspacesStore.createTab(workspaceId, pane.id, `Terminal ${count}`, { append: true });
+  }
+
+  function handleReconnect(tabId: string, e: MouseEvent) {
+    e.stopPropagation();
+    handleTabClick(tabId);
+    window.dispatchEvent(new CustomEvent('ssh-reconnect', { detail: { tabId } }));
   }
 
   async function handleArchiveTab(tabId: string, e: MouseEvent) {
@@ -742,6 +749,7 @@
     {@const hasActivity = !isEditor && tab.id !== pane.active_tab_id && activityStore.hasActivity(tab.id)}
     {@const tabState = !isEditor && tab.id !== pane.active_tab_id ? activityStore.getTabState(tab.id) : undefined}
     {@const claudeState = !isEditor ? claudeStateStore.getState(tab.id) : undefined}
+    {@const sshDropped = !isEditor ? sshDisconnectStore.isDisconnected(tab.id) : false}
     <div
       class="tab"
       class:tab-suspended={isSuspendedTab}
@@ -798,6 +806,8 @@
           {:else}
             <Tooltip text={isEditorDirty(tab.id) ? 'Unsaved changes' : 'Editor'}><span class="editor-icon" class:editor-dirty={isEditorDirty(tab.id)}><Icon name="file" size={12} /></span></Tooltip>
           {/if}
+        {:else if sshDropped}
+          <Tooltip text={`SSH disconnected${sshDisconnectStore.getInfo(tab.id)?.host ? ' from ' + sshDisconnectStore.getInfo(tab.id)?.host : ''} — click to reconnect`}><button class="indicator ssh-disconnected" onclick={(e) => handleReconnect(tab.id, e)} aria-label="Reconnect SSH"><Icon name="restore" size={11} /></button></Tooltip>
         {:else if tabState === 'alert'}
           <span class="indicator alert-indicator"><Icon name="warning" size={11} /></span>
         {:else if tabState === 'question'}
@@ -1160,6 +1170,27 @@
 
   .claude-permission {
     color: var(--yellow, #e0af68);
+  }
+
+  /* Reset button chrome — this indicator is a clickable reconnect affordance */
+  button.indicator.ssh-disconnected {
+    appearance: none;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    color: var(--red, #f7768e);
+    animation: ssh-disconnected-pulse 1.8s ease-in-out infinite;
+  }
+
+  button.indicator.ssh-disconnected:hover {
+    color: var(--yellow, #e0af68);
+    animation: none;
+  }
+
+  @keyframes ssh-disconnected-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
   }
 
   @keyframes claude-pulse {

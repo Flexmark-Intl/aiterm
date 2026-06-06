@@ -293,6 +293,15 @@ fn load_from_backup() -> AppData {
 }
 
 pub fn migrate_app_data(data: &mut AppData) {
+    // One-time default-on flip for shell integration (Command Completion).
+    // Powers the SSH-drop exit-code detection and the completed/failed tab
+    // indicators. Runs once per profile; honors a later manual opt-out.
+    if !data.preferences.shell_integration_default_migrated {
+        data.preferences.shell_integration = true;
+        data.preferences.shell_integration_default_migrated = true;
+        log::info!("Migration: enabled shell_integration (Command Completion) by default");
+    }
+
     // Migrate from old single-window format to multi-window format
     if data.windows.is_empty() {
         if let Some(old_workspaces) = data.workspaces.take() {

@@ -128,9 +128,13 @@ pub fn spawn_pty(
                     } else { "" };
                     let prompt_cmd = format!(
                         concat!(
+                            // Capture the just-finished command's exit code FIRST.
+                            // l_fn_prefix's `[[ -z "$__aiterm_l" ]] && …` guard runs
+                            // every prompt and, once seeded, fails the test (exit 1),
+                            // which would clobber $? before we read it.
+                            r#"__aiterm_ec=$?; "#,
                             "{}",
-                            r#"__aiterm_ec=$?;"#,
-                            r#" [[ -z "$__aiterm_trap" ]] && __aiterm_trap=1 &&"#,
+                            r#"[[ -z "$__aiterm_trap" ]] && __aiterm_trap=1 &&"#,
                             r#" trap '[[ "$__aiterm_at_prompt" == 1 ]] && __aiterm_at_prompt= && printf "\033]133;B\007"' DEBUG;"#,
                             r#" printf '\033]133;D;%d\007' "$__aiterm_ec"; printf '\033]133;A\007';"#,
                             r#"{}"#,
