@@ -91,6 +91,8 @@ pub struct AppState {
     pub app_data: RwLock<AppData>,
     // File watchers keyed by tab ID
     pub file_watchers: RwLock<HashMap<String, FileWatcherHandle>>,
+    // In-flight SCP uploads: upload_id → cooperative cancel flag
+    pub scp_uploads: RwLock<HashMap<String, std::sync::Arc<std::sync::atomic::AtomicBool>>>,
     // Claude Code IDE integration
     pub claude_code_port: RwLock<Option<u16>>,
     pub claude_code_auth: RwLock<Option<String>>,
@@ -128,6 +130,7 @@ impl AppState {
             tab_pty_map: RwLock::new(HashMap::new()),
             app_data: RwLock::new(AppData::default()),
             file_watchers: RwLock::new(HashMap::new()),
+            scp_uploads: RwLock::new(HashMap::new()),
             claude_code_port: RwLock::new(None),
             claude_code_auth: RwLock::new(None),
             claude_code_pending: RwLock::new(HashMap::new()),

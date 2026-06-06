@@ -508,8 +508,12 @@ export async function saveClipboardImage(dataBase64: string): Promise<string> {
   return invoke('save_clipboard_image', { dataBase64 });
 }
 
-export async function scpUploadFiles(sshCommand: string, localPaths: string[], remoteDir: string): Promise<void> {
-  return invoke('scp_upload_files', { sshCommand, localPaths, remoteDir });
+export async function scpUploadFiles(sshCommand: string, localPaths: string[], remoteDir: string, uploadId: string): Promise<void> {
+  return invoke('scp_upload_files', { sshCommand, localPaths, remoteDir, uploadId });
+}
+
+export async function cancelScpUpload(uploadId: string): Promise<void> {
+  return invoke('cancel_scp_upload', { uploadId });
 }
 
 export async function isDirectory(path: string): Promise<boolean> {

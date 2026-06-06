@@ -254,3 +254,15 @@ export interface ClaudeCodeToolRequest {
   tool: string;
   arguments: Record<string, unknown>;
 }
+
+// Live SCP upload progress, emitted as `scp-progress-{upload_id}`
+export interface ScpProgress {
+  upload_id: string;
+  bytes_sent: number;
+  total_bytes: number;
+  percent: number;
+  rate_bps: number;
+  files_total: number;
+  done: boolean;
+  indeterminate: boolean;
+}

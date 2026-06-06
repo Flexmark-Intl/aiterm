@@ -8,8 +8,9 @@
   import { WebLinksAddon } from '@xterm/addon-web-links';
   import { CanvasAddon } from '@xterm/addon-canvas';
   import '@xterm/xterm/css/xterm.css';
-  import { spawnTerminal, writeTerminal, resizeTerminal, killTerminal, setTabScrollback, getPtyInfo, setTabRestoreContext, cleanSshCommand, normalizeSshInput, buildSshCommand, shellEscapePath, readClipboardFilePaths, serializeTerminal, restoreTerminalScrollback, resizeTerminalGrid, scrollTerminal, scrollTerminalTo, saveTerminalScrollback, restoreTerminalFromSaved, hasSavedScrollback, scpUploadFiles, playBellSound, saveClipboardImage, startSelection, updateSelection, clearSelection, copySelection, selectAll, scrollSelection } from '$lib/tauri/commands';
+  import { spawnTerminal, writeTerminal, resizeTerminal, killTerminal, setTabScrollback, getPtyInfo, setTabRestoreContext, cleanSshCommand, normalizeSshInput, buildSshCommand, shellEscapePath, readClipboardFilePaths, serializeTerminal, restoreTerminalScrollback, resizeTerminalGrid, scrollTerminal, scrollTerminalTo, saveTerminalScrollback, restoreTerminalFromSaved, hasSavedScrollback, playBellSound, saveClipboardImage, startSelection, updateSelection, clearSelection, copySelection, selectAll, scrollSelection } from '$lib/tauri/commands';
   import type { TerminalFrame, OscCwdEvent, OscShellEvent } from '$lib/tauri/types';
+  import { uploadWithProgress } from '$lib/utils/scpUpload';
   import { readText as clipboardReadText, writeText as clipboardWriteText, readImage as clipboardReadImage } from '@tauri-apps/plugin-clipboard-manager';
   import { terminalsStore } from '$lib/stores/terminals.svelte';
   import { workspacesStore } from '$lib/stores/workspaces.svelte';
@@ -261,13 +262,16 @@
           // Check if SSH session — need to SCP upload
           const info = await getPtyInfo(ptyId);
           if (info.foreground_command) {
-            toastStore.addToast('Screenshot', 'Uploading screenshot…', 'info');
-            await scpUploadFiles(info.foreground_command, [localPath], '/tmp/aiterm-uploads');
-            const basename = localPath.split('/').pop() ?? localPath;
-            const remotePath = `/tmp/aiterm-uploads/${basename}`;
-            const bytes = Array.from(new TextEncoder().encode(remotePath));
-            await writeTerminal(ptyId, bytes);
-            toastStore.addToast('Screenshot', 'Screenshot uploaded', 'success');
+            const outcome = await uploadWithProgress(info.foreground_command, [localPath], '/tmp/aiterm-uploads', { titlePrefix: 'Screenshot' });
+            if (outcome.status === 'done') {
+              const basename = localPath.split('/').pop() ?? localPath;
+              const remotePath = `/tmp/aiterm-uploads/${basename}`;
+              const bytes = Array.from(new TextEncoder().encode(remotePath));
+              await writeTerminal(ptyId, bytes);
+              toastStore.addToast('Screenshot', 'Screenshot uploaded', 'success');
+            } else if (outcome.status === 'error') {
+              toastStore.addToast('Screenshot Upload Failed', outcome.error ?? 'Upload failed', 'error');
+            }
           } else {
             // Local Claude session — paste local temp path
             const bytes = Array.from(new TextEncoder().encode(localPath));
@@ -912,37 +916,39 @@
             const count = paths.length;
             logInfo(`drag-drop SSH: uploading ${count} file(s) to ${remoteDir} via ${sshCommand} (claude=${isClaudeSession})`);
             logInfo(`drag-drop SSH: paths=${JSON.stringify(paths)}`);
-            toastStore.addToast('SCP Upload', `Uploading ${count} file${count > 1 ? 's' : ''}…`, 'info');
-            scpUploadFiles(sshCommand, paths, remoteDir).then(async () => {
-              const basenames = paths.map(p => p.split('/').pop() ?? p);
-              if (isClaudeSession) {
-                // Write each path separately so Claude Code detects each as a file reference
-                for (let i = 0; i < basenames.length; i++) {
-                  const path = `/tmp/aiterm-uploads/${basenames[i]}`;
-                  const bytes = Array.from(new TextEncoder().encode(path + ' '));
-                  if (i > 0) await new Promise(r => setTimeout(r, 200));
-                  await writeTerminal(ptyId, bytes);
+            void (async () => {
+              const outcome = await uploadWithProgress(sshCommand, paths, remoteDir);
+              if (outcome.status === 'done') {
+                const basenames = paths.map(p => p.split('/').pop() ?? p);
+                if (isClaudeSession) {
+                  // Write each path separately so Claude Code detects each as a file reference
+                  for (let i = 0; i < basenames.length; i++) {
+                    const path = `/tmp/aiterm-uploads/${basenames[i]}`;
+                    const bytes = Array.from(new TextEncoder().encode(path + ' '));
+                    if (i > 0) await new Promise(r => setTimeout(r, 200));
+                    await writeTerminal(ptyId, bytes);
+                  }
+                  toastStore.addToast('SCP Upload', `${count} file${count > 1 ? 's' : ''} uploaded`, 'success');
+                } else {
+                  // Non-Claude: clickable toast to list uploaded files (no echo to prompt)
+                  const lCmd = `l ${basenames.map(escapePathForTerminal).join(' ')}\n`;
+                  toastStore.addToast(
+                    'SCP Upload',
+                    `${count} file${count > 1 ? 's' : ''} uploaded — click to list`,
+                    'success',
+                    undefined,
+                    undefined,
+                    () => {
+                      const bytes = Array.from(new TextEncoder().encode(lCmd));
+                      writeTerminal(ptyId, bytes).catch(e => logError(String(e)));
+                    },
+                  );
                 }
-                toastStore.addToast('SCP Upload', `${count} file${count > 1 ? 's' : ''} uploaded`, 'success');
-              } else {
-                // Non-Claude: clickable toast to list uploaded files (no echo to prompt)
-                const lCmd = `l ${basenames.map(escapePathForTerminal).join(' ')}\n`;
-                toastStore.addToast(
-                  'SCP Upload',
-                  `${count} file${count > 1 ? 's' : ''} uploaded — click to list`,
-                  'success',
-                  undefined,
-                  undefined,
-                  () => {
-                    const bytes = Array.from(new TextEncoder().encode(lCmd));
-                    writeTerminal(ptyId, bytes).catch(e => logError(String(e)));
-                  },
-                );
+              } else if (outcome.status === 'error') {
+                logError(`drag-drop SCP upload failed: ${outcome.error}`);
+                toastStore.addToast('SCP Upload Failed', outcome.error ?? 'Upload failed', 'error');
               }
-            }).catch(e => {
-              logError(`drag-drop SCP upload failed: ${e}`);
-              toastStore.addToast('SCP Upload Failed', String(e), 'error');
-            });
+            })();
           } else if (claudeStateStore.getState(tabId)) {
             // Local Claude session — write absolute paths so Claude can reference files
             const count = paths.length;

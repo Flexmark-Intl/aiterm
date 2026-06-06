@@ -34,12 +34,28 @@
             <div class="toast-body">{toast.body}</div>
           {/if}
         </div>
-        <button
-          class="toast-close"
-          onclick={(e) => { e.stopPropagation(); toastStore.removeToast(toast.id); }}
-          aria-label="Dismiss notification"
-        >&times;</button>
-        <div class="toast-progress" style:animation-duration="{toast.duration}ms" style:animation-play-state={toastStore.isActive(toast.id) ? 'running' : 'paused'}></div>
+        {#if toast.onCancel}
+          <button
+            class="toast-cancel"
+            onclick={(e) => { e.stopPropagation(); toast.onCancel?.(); }}
+            aria-label="Cancel upload"
+          >Cancel</button>
+        {:else}
+          <button
+            class="toast-close"
+            onclick={(e) => { e.stopPropagation(); toastStore.removeToast(toast.id); }}
+            aria-label="Dismiss notification"
+          >&times;</button>
+        {/if}
+        {#if toast.sticky}
+          {#if toast.indeterminate}
+            <div class="toast-progress indeterminate"></div>
+          {:else}
+            <div class="toast-progress determinate" style:width="{toast.progress ?? 0}%"></div>
+          {/if}
+        {:else}
+          <div class="toast-progress" style:animation-duration="{toast.duration}ms" style:animation-play-state={toastStore.isActive(toast.id) ? 'running' : 'paused'}></div>
+        {/if}
       </div>
     {/each}
   </div>
@@ -130,6 +146,28 @@
     color: var(--fg);
   }
 
+  .toast-cancel {
+    flex-shrink: 0;
+    height: 22px;
+    padding: 0 10px;
+    display: flex;
+    align-items: center;
+    font-size: 0.85em;
+    font-weight: 500;
+    color: var(--fg);
+    background: var(--bg-light);
+    border: 1px solid var(--bg-light);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+  }
+
+  .toast-cancel:hover {
+    color: var(--red, #f7768e);
+    border-color: var(--red, #f7768e);
+    background: color-mix(in srgb, var(--red, #f7768e) 12%, var(--bg-light));
+  }
+
   .toast-progress {
     position: absolute;
     bottom: 0;
@@ -141,8 +179,27 @@
     /* duration set via inline style */
   }
 
+  /* Determinate upload progress — width set inline from toast.progress. */
+  .toast-progress.determinate {
+    animation: none;
+    opacity: 0.9;
+    transition: width 0.3s linear;
+  }
+
+  /* Indeterminate upload progress — sliding marquee. */
+  .toast-progress.indeterminate {
+    animation: toast-marquee 1.2s ease-in-out infinite;
+    opacity: 0.9;
+    width: 35%;
+  }
+
   @keyframes toast-timer {
     from { width: 100%; }
     to { width: 0%; }
+  }
+
+  @keyframes toast-marquee {
+    0% { left: -35%; }
+    100% { left: 100%; }
   }
 </style>

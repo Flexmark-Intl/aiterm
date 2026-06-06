@@ -4,7 +4,7 @@ use base64::Engine;
 use std::io::Read;
 use std::path::Path;
 use std::sync::Arc;
-use tauri::{command, Emitter, State, Window};
+use tauri::{command, AppHandle, Emitter, State, Window};
 
 fn expand_tilde(path: &str) -> String {
     if path == "~" {
@@ -280,66 +280,363 @@ pub async fn save_clipboard_image(data_base64: String) -> Result<String, String>
     Ok(path.to_string_lossy().to_string())
 }
 
+/// Progress frame emitted as `scp-progress-{upload_id}` during an upload.
+#[derive(Clone, serde::Serialize)]
+struct ScpProgress {
+    upload_id: String,
+    bytes_sent: u64,
+    total_bytes: u64,
+    percent: f64,
+    rate_bps: f64,
+    files_total: usize,
+    done: bool,
+    /// True when we can't poll the remote size (e.g. non-GNU `du`) — the UI
+    /// should show an indeterminate spinner instead of a percentage.
+    indeterminate: bool,
+}
+
+/// Sum the byte size of a local path, recursing into directories.
+fn local_path_size(p: &Path) -> u64 {
+    match std::fs::metadata(p) {
+        Ok(m) if m.is_dir() => {
+            let mut total = 0u64;
+            if let Ok(entries) = std::fs::read_dir(p) {
+                for entry in entries.flatten() {
+                    total += local_path_size(&entry.path());
+                }
+            }
+            total
+        }
+        Ok(m) => m.len(),
+        Err(_) => 0,
+    }
+}
+
+/// Total apparent byte size of the specific destination paths via `du -scb`
+/// (GNU coreutils). We measure only the files/dirs being uploaded — never the
+/// whole destination directory, which could be the user's (potentially huge)
+/// CWD. Reuses the upload's ControlMaster connection when available so each poll
+/// is a cheap multiplexed round-trip rather than a fresh SSH login. Returns None
+/// when the remote lacks `du -scb` (e.g. BSD/macOS) — the caller then falls back
+/// to an indeterminate progress display. Missing targets (not yet transferred)
+/// count as 0, so this grows from 0 to the upload total.
+fn remote_targets_size(user_host: &str, control_path: Option<&str>, targets: &[String]) -> Option<u64> {
+    if targets.is_empty() {
+        return Some(0);
+    }
+    let quoted: Vec<String> = targets.iter().map(|t| shell_quote(t)).collect();
+    let mut cmd = std::process::Command::new("ssh");
+    cmd.arg("-o").arg("BatchMode=yes").arg("-o").arg("ConnectTimeout=10");
+    if let Some(sock) = control_path {
+        cmd.arg("-o").arg(format!("ControlPath={}", sock));
+    }
+    cmd.arg(user_host);
+    // `-s` summarize, `-c` grand total (last line), `-b` apparent bytes.
+    cmd.arg(format!("du -scb -- {} 2>/dev/null | tail -1 | cut -f1", quoted.join(" ")));
+    let output = cmd.output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .lines()
+        .last()?
+        .trim()
+        .parse::<u64>()
+        .ok()
+}
+
+/// Upload local files/dirs to a remote directory over SCP, emitting live
+/// progress and honouring a cooperative cancel flag.
+///
+/// Runs `scp` as a tracked child process (not blocking `.output()`), so we can
+/// (a) poll the growing remote file size and emit `scp-progress-{upload_id}`
+/// events, and (b) kill the transfer when the user clicks Cancel. A dedicated
+/// SSH ControlMaster is opened for the duration so the mkdir, the scp, and every
+/// size poll all share one authenticated connection.
 #[command]
 pub async fn scp_upload_files(
+    state: State<'_, Arc<AppState>>,
+    app: AppHandle,
     ssh_command: String,
     local_paths: Vec<String>,
     remote_dir: String,
+    upload_id: String,
 ) -> Result<(), String> {
-    let remote_dir = remote_dir.trim().to_string();
-    log::info!("scp_upload_files: ssh_command={:?}, local_paths={:?}, remote_dir={:?}", ssh_command, local_paths, remote_dir);
+    let cancel_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    state
+        .scp_uploads
+        .write()
+        .insert(upload_id.clone(), cancel_flag.clone());
+    let app_state = state.inner().clone();
 
-    let user_host = extract_user_host(&ssh_command)?;
-    let remote_dir = expand_remote_tilde(&user_host, &remote_dir);
-    log::info!("scp_upload_files: user_host={:?}, expanded_remote_dir={:?}", user_host, remote_dir);
+    // The transfer is long-running and blocking; run it off the async executor.
+    tauri::async_runtime::spawn_blocking(move || {
+        run_scp_upload(
+            &app,
+            &app_state,
+            &upload_id,
+            &ssh_command,
+            &local_paths,
+            &remote_dir,
+            &cancel_flag,
+        )
+    })
+    .await
+    .map_err(|e| format!("Upload task failed to run: {}", e))?
+}
 
-    // Ensure remote directory exists
-    let mkdir_output = std::process::Command::new("ssh")
-        .arg("-o").arg("BatchMode=yes")
-        .arg("-o").arg("ConnectTimeout=10")
-        .arg(&user_host)
-        .arg(format!("mkdir -p {}", shell_quote(&remote_dir)))
-        .output()
-        .map_err(|e| format!("Failed to run ssh mkdir: {}", e))?;
-
-    if !mkdir_output.status.success() {
-        let stderr = String::from_utf8_lossy(&mkdir_output.stderr);
-        log::warn!("scp_upload_files: mkdir -p failed (may already exist): {}", stderr.trim());
+/// Request cancellation of an in-flight upload. Sets the cooperative cancel flag;
+/// the upload loop notices within one poll interval and kills the `scp` child.
+#[command]
+pub async fn cancel_scp_upload(
+    state: State<'_, Arc<AppState>>,
+    upload_id: String,
+) -> Result<(), String> {
+    if let Some(flag) = state.scp_uploads.read().get(&upload_id) {
+        flag.store(true, std::sync::atomic::Ordering::SeqCst);
+        log::info!("cancel_scp_upload: requested cancel for {}", upload_id);
+    } else {
+        log::warn!("cancel_scp_upload: no active upload {}", upload_id);
     }
-
-    // Check if any path is a directory (needs -r flag)
-    let needs_recursive = local_paths.iter().any(|p| {
-        std::fs::metadata(p).map(|m| m.is_dir()).unwrap_or(false)
-    });
-
-    let mut cmd = std::process::Command::new("scp");
-    if needs_recursive {
-        cmd.arg("-r");
-    }
-    cmd.arg("-o").arg("BatchMode=yes")
-       .arg("-o").arg("ConnectTimeout=30");
-
-    for path in &local_paths {
-        cmd.arg(path);
-    }
-    // Don't shell_quote the remote dir — scp parses the user@host:path format itself
-    // and passes the path to the remote side. Quoting here would create literal quote chars.
-    let dest = format!("{}:{}/", user_host, remote_dir);
-    log::info!("scp_upload_files: dest={:?}, recursive={}", dest, needs_recursive);
-    cmd.arg(&dest);
-
-    let output = cmd.output()
-        .map_err(|e| format!("Failed to run scp: {}", e))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        log::error!("scp_upload_files failed: stderr={}, stdout={}", stderr.trim(), stdout.trim());
-        return Err(format!("SCP upload failed: {}", stderr.trim()));
-    }
-
-    log::info!("scp_upload_files: success, {} file(s) uploaded", local_paths.len());
     Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_scp_upload(
+    app: &AppHandle,
+    app_state: &Arc<AppState>,
+    upload_id: &str,
+    ssh_command: &str,
+    local_paths: &[String],
+    remote_dir: &str,
+    cancel_flag: &Arc<std::sync::atomic::AtomicBool>,
+) -> Result<(), String> {
+    use std::sync::atomic::Ordering;
+    let event_name = format!("scp-progress-{}", upload_id);
+
+    // Always drop the cancel flag from the registry when we leave, however we leave.
+    struct RegistryGuard<'a> {
+        state: &'a Arc<AppState>,
+        id: &'a str,
+    }
+    impl Drop for RegistryGuard<'_> {
+        fn drop(&mut self) {
+            self.state.scp_uploads.write().remove(self.id);
+        }
+    }
+    let _registry_guard = RegistryGuard { state: app_state, id: upload_id };
+
+    let remote_dir = remote_dir.trim().to_string();
+    let user_host = extract_user_host(ssh_command)?;
+    let remote_dir = expand_remote_tilde(&user_host, &remote_dir);
+    log::info!(
+        "scp_upload_files[{}]: user_host={:?}, remote_dir={:?}, paths={:?}",
+        upload_id, user_host, remote_dir, local_paths
+    );
+
+    let total_bytes: u64 = local_paths.iter().map(|p| local_path_size(Path::new(p))).sum();
+    let files_total = local_paths.len();
+    let needs_recursive = local_paths
+        .iter()
+        .any(|p| std::fs::metadata(p).map(|m| m.is_dir()).unwrap_or(false));
+
+    // The remote destination paths scp will create (remote_dir/<basename>), used
+    // for bounded size polling and for partial-file cleanup on cancel.
+    let remote_base = remote_dir.trim_end_matches('/').to_string();
+    let targets: Vec<String> = local_paths
+        .iter()
+        .filter_map(|p| Path::new(p).file_name().map(|n| n.to_string_lossy().to_string()))
+        .map(|n| format!("{}/{}", remote_base, n))
+        .collect();
+
+    // --- ControlMaster: one authenticated connection reused by mkdir/scp/polls. ---
+    let sanitized: String = upload_id
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .take(12)
+        .collect();
+    let control_sock = format!("/tmp/aiterm-scp-{}.sock", sanitized);
+    let master_ok = match std::process::Command::new("ssh")
+        .arg("-o").arg("BatchMode=yes")
+        .arg("-o").arg("ConnectTimeout=15")
+        .arg("-o").arg("ControlMaster=yes")
+        .arg("-o").arg(format!("ControlPath={}", control_sock))
+        .arg("-o").arg("ControlPersist=120")
+        .arg("-N").arg("-f")
+        .arg(&user_host)
+        .status()
+    {
+        Ok(s) if s.success() => {
+            log::info!("scp_upload_files[{}]: control master up at {}", upload_id, control_sock);
+            true
+        }
+        other => {
+            log::warn!(
+                "scp_upload_files[{}]: control master unavailable ({:?}); using per-command connections",
+                upload_id, other
+            );
+            false
+        }
+    };
+    let control_path: Option<&str> = if master_ok { Some(control_sock.as_str()) } else { None };
+
+    // Tear the master down on the way out.
+    struct MasterGuard<'a> {
+        user_host: &'a str,
+        sock: &'a str,
+        active: bool,
+    }
+    impl Drop for MasterGuard<'_> {
+        fn drop(&mut self) {
+            if self.active {
+                let _ = std::process::Command::new("ssh")
+                    .arg("-o").arg(format!("ControlPath={}", self.sock))
+                    .arg("-O").arg("exit")
+                    .arg(self.user_host)
+                    .output();
+            }
+        }
+    }
+    let _master_guard = MasterGuard { user_host: &user_host, sock: &control_sock, active: master_ok };
+
+    let push_conn = |cmd: &mut std::process::Command| {
+        cmd.arg("-o").arg("BatchMode=yes");
+        if let Some(sock) = control_path {
+            cmd.arg("-o").arg(format!("ControlPath={}", sock));
+        }
+    };
+
+    // Ensure remote directory exists.
+    {
+        let mut cmd = std::process::Command::new("ssh");
+        push_conn(&mut cmd);
+        cmd.arg("-o").arg("ConnectTimeout=15");
+        cmd.arg(&user_host).arg(format!("mkdir -p {}", shell_quote(&remote_dir)));
+        if let Ok(out) = cmd.output() {
+            if !out.status.success() {
+                log::warn!(
+                    "scp_upload_files[{}]: mkdir failed (may already exist): {}",
+                    upload_id, String::from_utf8_lossy(&out.stderr).trim()
+                );
+            }
+        }
+    }
+
+    // Probe whether we can poll remote sizes (GNU `du`). We measure only the
+    // destination paths, so this is bounded regardless of how large remote_dir is.
+    let size_poll_ok =
+        total_bytes > 0 && remote_targets_size(&user_host, control_path, &targets).is_some();
+
+    let emit = |bytes: u64, rate_bps: f64, done: bool| {
+        let percent = if total_bytes > 0 {
+            (bytes as f64 / total_bytes as f64 * 100.0).min(100.0)
+        } else if done {
+            100.0
+        } else {
+            0.0
+        };
+        let _ = app.emit(
+            &event_name,
+            ScpProgress {
+                upload_id: upload_id.to_string(),
+                bytes_sent: bytes,
+                total_bytes,
+                percent,
+                rate_bps,
+                files_total,
+                done,
+                indeterminate: !size_poll_ok && !done,
+            },
+        );
+    };
+    emit(0, 0.0, false);
+
+    // --- Spawn scp as a tracked child. ---
+    let mut scp = std::process::Command::new("scp");
+    if needs_recursive {
+        scp.arg("-r");
+    }
+    push_conn(&mut scp);
+    scp.arg("-o").arg("ConnectTimeout=30");
+    for path in local_paths {
+        scp.arg(path);
+    }
+    // Don't shell_quote the remote dir — scp parses the user@host:path format itself.
+    let dest = format!("{}:{}/", user_host, remote_dir);
+    log::info!(
+        "scp_upload_files[{}]: dest={:?}, recursive={}, total_bytes={}, size_poll={}",
+        upload_id, dest, needs_recursive, total_bytes, size_poll_ok
+    );
+    scp.arg(&dest);
+    scp.stdin(std::process::Stdio::null());
+    scp.stdout(std::process::Stdio::null());
+    scp.stderr(std::process::Stdio::piped());
+
+    let mut child = scp.spawn().map_err(|e| format!("Failed to run scp: {}", e))?;
+
+    let start = std::time::Instant::now();
+    let mut last_bytes = 0u64;
+    let mut last_t = start;
+    let poll = std::time::Duration::from_millis(400);
+
+    let exit_status = loop {
+        // Cancelled?
+        if cancel_flag.load(Ordering::SeqCst) {
+            let _ = child.kill();
+            let _ = child.wait();
+            log::info!("scp_upload_files[{}]: cancelled by user", upload_id);
+            // Best-effort cleanup of partial destination files (non-recursive case).
+            if !needs_recursive && !targets.is_empty() {
+                let quoted: Vec<String> = targets.iter().map(|t| shell_quote(t)).collect();
+                let mut cmd = std::process::Command::new("ssh");
+                push_conn(&mut cmd);
+                cmd.arg(&user_host).arg(format!("rm -f -- {}", quoted.join(" ")));
+                let _ = cmd.output();
+            }
+            emit(last_bytes, 0.0, true);
+            return Err("SCP upload cancelled".to_string());
+        }
+
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => {}
+            Err(e) => return Err(format!("scp wait failed: {}", e)),
+        }
+
+        if size_poll_ok {
+            if let Some(cur) = remote_targets_size(&user_host, control_path, &targets) {
+                let sent = cur.min(total_bytes);
+                let now = std::time::Instant::now();
+                let dt = now.duration_since(last_t).as_secs_f64();
+                let rate = if dt > 0.0 {
+                    sent.saturating_sub(last_bytes) as f64 / dt
+                } else {
+                    0.0
+                };
+                last_bytes = sent;
+                last_t = now;
+                emit(sent, rate.max(0.0), false);
+            }
+        }
+
+        std::thread::sleep(poll);
+    };
+
+    if exit_status.success() {
+        emit(total_bytes, 0.0, true);
+        log::info!("scp_upload_files[{}]: success, {} file(s) uploaded", upload_id, files_total);
+        Ok(())
+    } else {
+        let mut stderr = String::new();
+        if let Some(mut e) = child.stderr.take() {
+            use std::io::Read;
+            let _ = e.read_to_string(&mut stderr);
+        }
+        emit(last_bytes, 0.0, true);
+        log::error!("scp_upload_files[{}] failed: {}", upload_id, stderr.trim());
+        Err(format!("SCP upload failed: {}", stderr.trim()))
+    }
 }
 
 #[command]

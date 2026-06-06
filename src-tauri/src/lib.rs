@@ -481,6 +481,7 @@ pub fn run() {
             commands::editor::scp_write_file,
             commands::editor::save_clipboard_image,
             commands::editor::scp_upload_files,
+            commands::editor::cancel_scp_upload,
             commands::editor::create_editor_tab,
             commands::editor::watch_file,
             commands::editor::unwatch_file,

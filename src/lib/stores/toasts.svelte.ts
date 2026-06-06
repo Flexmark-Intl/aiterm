@@ -14,6 +14,14 @@ export interface Toast {
   source?: ToastSource;
   /** Optional callback invoked when the toast is clicked. */
   action?: () => void;
+  /** Progress toasts don't auto-dismiss; they show a determinate/indeterminate bar. */
+  sticky?: boolean;
+  /** 0–100 fill for the progress bar (null when not a progress toast). */
+  progress?: number | null;
+  /** Show an indeterminate (marquee) bar instead of a percentage. */
+  indeterminate?: boolean;
+  /** Optional callback for a Cancel button (replaces the close × on progress toasts). */
+  onCancel?: () => void;
 }
 
 const MAX_VISIBLE = 3;
@@ -141,6 +149,43 @@ function createToastStore() {
     }
   }
 
+  /** Add a sticky progress toast (no auto-dismiss). Returns its id for updateToast/removeToast. */
+  function addProgressToast(opts: { title: string; body: string; onCancel?: () => void }): string {
+    const id = crypto.randomUUID();
+    const toast: Toast = {
+      id,
+      title: opts.title,
+      body: opts.body,
+      type: 'info',
+      createdAt: Date.now(),
+      duration: 0,
+      sticky: true,
+      progress: 0,
+      indeterminate: false,
+      onCancel: opts.onCancel,
+    };
+    toasts = [...toasts, toast];
+    // Sticky toasts get no timer — they persist until updated/removed.
+    while (toasts.length > MAX_VISIBLE) {
+      removeToast(toasts[0].id);
+    }
+    return id;
+  }
+
+  /** Patch an existing toast in place (used to stream progress updates). */
+  function updateToast(
+    id: string,
+    patch: Partial<Pick<Toast, 'title' | 'body' | 'type' | 'progress' | 'indeterminate'>>,
+  ) {
+    const t = toasts.find((x) => x.id === id);
+    if (!t) return;
+    if (patch.title !== undefined) t.title = patch.title;
+    if (patch.body !== undefined) t.body = patch.body;
+    if (patch.type !== undefined) t.type = patch.type;
+    if (patch.progress !== undefined) t.progress = patch.progress;
+    if (patch.indeterminate !== undefined) t.indeterminate = patch.indeterminate;
+  }
+
   function setWindowFocused(focused: boolean) {
     windowFocused = focused;
     const active = activeId();
@@ -179,6 +224,8 @@ function createToastStore() {
   return {
     get toasts() { return toasts; },
     addToast,
+    addProgressToast,
+    updateToast,
     removeToast,
     pauseToast,
     resumeToast,
