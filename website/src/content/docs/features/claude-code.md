@@ -76,6 +76,15 @@ When you're SSH'd into a remote server, maiTerm can bridge the MCP connection so
 | `createBackup` | Create a state backup on demand |
 | `sendNotification` | Send a toast or OS notification from Claude Code |
 
+### Agent Bridge
+
+| Tool | Description |
+|------|-------------|
+| `sendToBridgedAgent` | Send a message to the peer agent this tab is bridged with — async, the reply arrives as a new prompt turn |
+| `getBridgedAgent` | Report whether this tab is bridged and, if so, the partner's label and working directory |
+
+See [Agent Bridge](/features/agent-bridge/) for the full feature.
+
 ### Tab Context Discovery
 
 The `getTabContext` tool lets Claude Code peek at what's happening in your tabs — recent terminal output or editor file content. If you have fewer than 10 tabs, it automatically returns context for all of them, making it easy for Claude to find the right tab without you having to specify. For larger workspaces, you can pass specific tab IDs.
@@ -88,7 +97,7 @@ maiTerm integrates with Claude Code's hook system for real-time session awarenes
 - **Active tool overlay** — see what Claude is doing right now (editing files, running bash, etc.) in the terminal corner
 - **Agent state indicators** — per-tab, per-workspace, and a global footer dot show whether each agent is working, waiting for permission, or done — see [Agent State Indicators](#agent-state-indicators) below
 - **Auto-resume** — automatically captures session IDs and reconnects on tab restore
-- **Multi-agent awareness** — `getClaudeSessions` tool lets any Claude session discover all other active sessions across tabs for coordination
+- **Multi-agent awareness** — `getClaudeSessions` tool lets any Claude session discover all other active sessions across tabs for coordination, and [Agent Bridge](/features/agent-bridge/) lets two sessions talk to each other directly
 - **Compaction notifications** — alerts during and after context compaction
 
 ## Agent State Indicators
@@ -102,6 +111,12 @@ maiTerm surfaces what every Claude agent is doing at three levels, all driven by
 ### Read vs. unread
 
 A finished agent shows a **filled** green dot (unread); once you view its tab it relaxes to a **hollow** green ring (seen). This rolls up too — a workspace dot stays filled until every finished agent inside it has been seen, then goes hollow — so you can tell at a glance which completed agents still need a look.
+
+## Agent Bridge
+
+Bridge two running Claude Code sessions so they can collaborate directly — one local and one over SSH, or two related projects. Press `Cmd+Shift+L` to pick a peer session; maiTerm forks it into a split pane beside you (or links an existing tab), and the two agents talk through `sendToBridgedAgent`. Every message is stamped with the sender's real identity so the recipient knows it's a peer, not you — and the agents stay deferring to you for decisions. Bridges persist across restarts.
+
+See the dedicated [Agent Bridge](/features/agent-bridge/) page for the full walkthrough.
 
 ## File Drop & Image Paste
 

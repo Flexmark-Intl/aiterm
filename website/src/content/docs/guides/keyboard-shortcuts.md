@@ -43,6 +43,7 @@ description: Complete list of maiTerm keyboard shortcuts.
 |----------|--------|
 | `Cmd+O` | Open file |
 | `Cmd+P` | Quick Open file search (or double-press `Opt`) |
+| `Cmd+Shift+L` | Connect this agent to another ([Agent Bridge](/features/agent-bridge/)) |
 | `Cmd+E` | Toggle notes panel |
 | `Cmd+B` | Toggle sidebar |
 | `Cmd+F` | Find in terminal |

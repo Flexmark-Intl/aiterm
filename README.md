@@ -11,6 +11,7 @@ Our initial focus is on **Claude Code** integrations:
 - **Auto-resume** — automatically reconnects to your last Claude session when you open a tab, using hooks-captured session IDs
 - **Tab state awareness** — know at a glance which tabs have Claude thinking (pulsing dot), waiting for input (green dot), or needing permission (lock icon)
 - **Workspace organization** — group related Claude sessions by project; split panes to run multiple agents side by side
+- **Agent Bridge** — bridge two running Claude sessions (local + remote, or two related projects) so they collaborate directly while you stay the one making the calls
 - **Scrollback persistence** — full terminal state in SQLite survives restarts, so you never lose Claude's output
 - **SSH session cloning** — split into a second shell at the same remote CWD while Claude works in the first
 - **IDE integration** — MCP server with 25+ tools for file operations, diff review, editor control, notes, and multi-agent coordination
@@ -30,9 +31,13 @@ Group your terminals by project. Each workspace has its own pane layout, tabs, a
 
 ![Workspaces and tabs](screenshots/workspaces-tabs.png)
 
+### Bridge two Claude agents together
+
+Run two Claude Code sessions — say one local and one SSH'd into a related service — and bridge them so they collaborate directly. One agent asks the other questions, requests research, or shares context; replies arrive as new turns in each session. maiTerm forks the peer into a split pane so you see both sides, stamps every message with the sender's real identity (so neither agent can pose as you), and keeps the agents deferring to you for the decisions. Bridges persist across restarts.
+
 ### Notes on every tab
 
-Each tab has its own markdown notes panel. Track TODOs, paste connection strings, jot down what you're debugging — right next to the terminal doing the work. Workspace-level notes too.
+Each tab has its own markdown notes panel. Track TODOs, paste connection strings, jot down what you're debugging — right next to the terminal doing the work. Workspace-level notes too. Your Claude Code agent shares the same panel — ask it to write down what it just did, keep a running TODO, or tidy your notes, and it edits them directly via MCP.
 
 ![Per-tab notes panel](screenshots/notes-panel.png)
 
@@ -69,7 +74,7 @@ Triggers watch your terminal output for patterns — Claude asking a question, a
 ## Features
 
 ### Terminal
-- **alacritty_terminal + xterm.js** — Rust-based VTE parser and buffer management with xterm.js as thin WebGL renderer (~60fps ANSI frames)
+- **alacritty_terminal + xterm.js** — Rust-based VTE parsing, buffering, and scrollback in the backend; xterm.js is a thin DOM renderer for the visible viewport (~60fps ANSI frames). Scrollback lives in the backend, so the frontend only ever paints one screen — no GPU rendering needed
 - **Split panes** — horizontal and vertical splits, drag to resize, fully recursive
 - **Multiple workspaces** — named workspaces with independent pane layouts, reorderable via drag and drop
 - **Workspace suspend/resume** — suspend idle workspaces to free resources, auto-suspend after configurable timeout
@@ -109,6 +114,7 @@ Triggers watch your terminal output for patterns — Claude asking a question, a
 - **Diff review** — Claude proposes file changes; you accept or reject in a side-by-side diff tab
 - **Notes & workspace tools** — per-tab notes, workspace notes, note search, notes panel control via MCP
 - **Multi-agent coordination** — `getClaudeSessions` exposes all active Claude sessions (state, tool, model, cwd) across tabs
+- **Agent Bridge** — bridge two running Claude sessions so they talk to each other directly (`sendToBridgedAgent` / `getBridgedAgent`); fork-into-split or link existing tabs, async messaging with maiTerm-stamped identities, persists across restarts
 - **SSH MCP bridge** — reverse SSH tunnel (`-R 0:localhost:port`) exposes local IDE tools to remote Claude Code; ControlMaster mux support, bridge status indicator
 - **Auto-discovery** — writes lock file to `~/.claude/ide/` and registers in `~/.claude.json` for automatic connection
 - **Dev/prod isolation** — dev builds register as `aiterm-dev` with display name "maiTermDev"
@@ -132,6 +138,7 @@ Triggers watch your terminal output for patterns — Claude asking a question, a
 ### Notes
 - **Per-tab notes** — markdown or plain text notes panel per terminal/editor tab
 - **Workspace notes** — notes scoped to the whole workspace
+- **Claude-maintained** — ask your Claude Code agent to read, write, update, organize, merge, and clean up notes via MCP tools
 - **Interactive checkboxes** — rendered in preview mode
 - **Modes** — edit and preview; state persisted per tab
 
@@ -306,7 +313,7 @@ src-tauri/src/                # Backend (Rust)
 |-------|-----------|
 | Frontend | Svelte 5 (runes), SvelteKit, TypeScript |
 | Backend | Rust, Tauri 2 |
-| Terminal | alacritty_terminal (Rust VTE parser + buffer) with xterm.js as thin WebGL renderer |
+| Terminal | alacritty_terminal (Rust VTE parser + buffer) with xterm.js as thin DOM renderer |
 | Editor | CodeMirror 6 (+ MergeView for diffs) |
 | PTY | portable-pty |
 | Scrollback | SQLite (WAL mode) via rusqlite |
