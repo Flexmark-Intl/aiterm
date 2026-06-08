@@ -272,6 +272,11 @@ pub struct Tab {
     /// Timestamp when the tab was archived (ISO 8601).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub archived_at: Option<String>,
+    /// Timestamp when the tab was last suspended (ISO 8601). Set when the PTY is
+    /// killed via suspend, cleared when it goes live again. Surfaced as the
+    /// "age" of a suspended tab in the hidden-tabs menu.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suspended_at: Option<String>,
     #[serde(default)]
     pub tab_type: TabType,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -908,6 +913,7 @@ impl Tab {
             trigger_variables: HashMap::new(),
             archived_name: None,
             archived_at: None,
+            suspended_at: None,
             tab_type: TabType::default(),
             editor_file: None,
             last_cwd: None,
@@ -940,6 +946,7 @@ impl Tab {
             trigger_variables: HashMap::new(),
             archived_name: None,
             archived_at: None,
+            suspended_at: None,
             tab_type: TabType::Editor,
             editor_file: Some(file_info),
             last_cwd: None,
@@ -972,6 +979,7 @@ impl Tab {
             trigger_variables: HashMap::new(),
             archived_name: None,
             archived_at: None,
+            suspended_at: None,
             tab_type: TabType::Diff,
             editor_file: None,
             last_cwd: None,

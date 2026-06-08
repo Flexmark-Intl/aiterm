@@ -48,6 +48,8 @@ export interface Tab {
   last_cwd: string | null;
   archived_name: string | null;
   archived_at: string | null;
+  /** ISO 8601 timestamp of when the tab was last suspended; null/absent while live. */
+  suspended_at?: string | null;
   tab_type: TabType;
   editor_file: EditorFileInfo | null;
   diff_context: DiffContext | null;

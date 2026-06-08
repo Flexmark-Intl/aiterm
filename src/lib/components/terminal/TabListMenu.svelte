@@ -19,23 +19,52 @@
     onActivate: (tab: Tab) => void;
     /** Trailing action buttons rendered per row. */
     actions: Snippet<[Tab]>;
+    /** Show a search box that filters rows by name. */
+    searchable?: boolean;
   }
 
-  let { items, position, onActivate, actions }: Props = $props();
+  let { items, position, onActivate, actions, searchable = false }: Props = $props();
+
+  let query = $state('');
+  const filtered = $derived(
+    query.trim()
+      ? items.filter(i => i.label.toLowerCase().includes(query.trim().toLowerCase()))
+      : items
+  );
 
   // Group terminals and viewers (editors/diffs) into sections, matching the tab bar.
-  const shellItems = $derived(items.filter(i => i.tab.tab_type === 'terminal' || !i.tab.tab_type));
-  const viewerItems = $derived(items.filter(i => i.tab.tab_type === 'editor' || i.tab.tab_type === 'diff'));
+  const shellItems = $derived(filtered.filter(i => i.tab.tab_type === 'terminal' || !i.tab.tab_type));
+  const viewerItems = $derived(filtered.filter(i => i.tab.tab_type === 'editor' || i.tab.tab_type === 'diff'));
   const showHeaders = $derived(shellItems.length > 0 && viewerItems.length > 0);
 
   const posStyle = $derived(
     `top:${position.top}px;` +
       (position.right != null ? `right:${position.right}px;` : `left:${position.left ?? 0}px;`)
   );
+
+  function autofocus(node: HTMLInputElement) {
+    node.focus();
+  }
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="tab-menu" style={posStyle} onwheel={(e) => e.stopPropagation()}>
+  {#if searchable}
+    <div class="tab-menu-search">
+      <Icon name="search" size={12} />
+      <input
+        type="text"
+        placeholder="Search tabs…"
+        bind:value={query}
+        use:autofocus
+        spellcheck="false"
+        autocomplete="off"
+      />
+    </div>
+  {/if}
+  {#if filtered.length === 0}
+    <div class="tab-menu-empty">No matching tabs</div>
+  {/if}
   {#if showHeaders && shellItems.length > 0}
     <div class="tab-menu-header">Shells</div>
   {/if}
@@ -79,15 +108,55 @@
   .tab-menu {
     position: fixed;
     z-index: 1000;
-    min-width: 200px;
-    max-width: 320px;
-    max-height: 300px;
+    min-width: 260px;
+    max-width: 420px;
+    max-height: 360px;
     overflow-y: auto;
     background: var(--bg-medium);
     border: 1px solid var(--bg-light);
     border-radius: 6px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
     padding: 4px;
+  }
+
+  .tab-menu-search {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 6px 6px;
+    color: var(--fg-dim);
+    position: sticky;
+    top: -4px;
+    background: var(--bg-medium);
+    z-index: 1;
+  }
+
+  .tab-menu-search :global(svg) {
+    flex-shrink: 0;
+    opacity: 0.7;
+  }
+
+  .tab-menu-search input {
+    flex: 1;
+    min-width: 0;
+    background: var(--bg-dark);
+    border: 1px solid var(--bg-light);
+    border-radius: 4px;
+    color: var(--fg);
+    font-size: 0.846rem;
+    padding: 4px 8px;
+    outline: none;
+  }
+
+  .tab-menu-search input:focus {
+    border-color: var(--accent);
+  }
+
+  .tab-menu-empty {
+    font-size: 0.846rem;
+    color: var(--fg-dim);
+    padding: 8px 6px;
+    text-align: center;
   }
 
   .tab-menu-item {
@@ -123,11 +192,12 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    max-width: 180px;
+    max-width: 260px;
   }
 
   .tab-menu-meta {
     flex-shrink: 0;
+    margin-left: auto;
     font-size: 0.769rem;
     color: var(--fg-dim);
     white-space: nowrap;

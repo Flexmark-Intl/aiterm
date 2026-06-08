@@ -1048,6 +1048,7 @@ function createWorkspacesStore() {
       tab.restore_cwd = cwd;
       tab.restore_ssh_command = sshCommand;
       tab.restore_remote_cwd = remoteCwd;
+      tab.suspended_at = new Date().toISOString();
 
       // Show resume prompt in the pane, and destroy the TerminalPane component
       // so it re-mounts (and re-spawns the PTY) when the user clicks Resume.
@@ -1272,7 +1273,10 @@ function createWorkspacesStore() {
     async setTabPtyId(workspaceId: string, paneId: string, tabId: string, ptyId: string) {
       await commands.setTabPtyId(workspaceId, paneId, tabId, ptyId);
       const { tab } = findTab(workspaceId, paneId, tabId);
-      if (tab) tab.pty_id = ptyId;
+      if (tab) {
+        tab.pty_id = ptyId;
+        tab.suspended_at = null; // live again — clear suspended-age
+      }
     },
 
     async setTabAutoResumeContext(workspaceId: string, paneId: string, tabId: string, cwd: string | null, sshCommand: string | null, remoteCwd: string | null, command: string | null = null, pinned?: boolean) {

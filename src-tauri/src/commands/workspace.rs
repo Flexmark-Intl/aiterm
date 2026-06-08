@@ -530,6 +530,8 @@ pub fn set_tab_pty_id(
         if let Some(pane) = workspace.panes.iter_mut().find(|p| p.id == pane_id) {
             if let Some(tab) = pane.tabs.iter_mut().find(|t| t.id == tab_id) {
                 tab.pty_id = Some(pty_id);
+                // Tab is live again — drop its suspended-age timestamp.
+                tab.suspended_at = None;
             }
         }
     }
@@ -564,6 +566,7 @@ pub fn suspend_tab(
     tab.restore_cwd = cwd;
     tab.restore_ssh_command = ssh_command;
     tab.restore_remote_cwd = remote_cwd;
+    tab.suspended_at = Some(iso_now());
 
     let data_clone = app_data.clone();
     drop(app_data);

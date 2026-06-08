@@ -126,7 +126,14 @@
 
   // Tabs scrolled out of view (not fully visible) in the bar, in display order.
   const overflowTabs = $derived(displayTabs.filter(t => overflowTabIds.has(t.id)));
-  const overflowItems = $derived(overflowTabs.map(t => ({ tab: t, label: displayName(t) })));
+  const overflowItems = $derived(overflowTabs.map(t => {
+    // Only suspended terminals carry an "age" — how long since they were
+    // suspended. Live (active) tabs and viewers have none.
+    const isTerm = t.tab_type === 'terminal' || !t.tab_type;
+    const isLive = !!(terminalsStore.get(t.id) || terminalsStore.isSpawning(t.id));
+    const meta = isTerm && !isLive && t.suspended_at ? relativeTime(t.suspended_at) : null;
+    return { tab: t, label: displayName(t), meta };
+  }));
 
   // When grouping first turns on, auto-switch away from a suspended tab to the first active one.
   // Only fires on the groupActiveTabs toggle, not on every active tab change.
@@ -916,6 +923,7 @@
       <TabListMenu
         items={overflowItems}
         position={overflowDropdownPos}
+        searchable
         onActivate={(t) => handleOverflowActivate(t.id)}
       >
         {#snippet actions(t)}
