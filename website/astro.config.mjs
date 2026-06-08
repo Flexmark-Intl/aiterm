@@ -5,7 +5,7 @@ export default defineConfig({
   site: 'https://maiterm.dev',
   integrations: [
     starlight({
-      title: 'aiTerm',
+      title: 'maiTerm',
       logo: {
         src: './src/assets/icon.png',
       },

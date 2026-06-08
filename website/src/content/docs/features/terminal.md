@@ -3,7 +3,7 @@ title: Terminal
 description: Full-featured terminal emulator with xterm.js, scrollback persistence, and shell integration.
 ---
 
-aiTerm's terminal does its heavy lifting in Rust: alacritty_terminal handles VTE parsing, the screen buffer, and the scrollback, while xterm.js is a thin renderer for just the visible viewport. Scrollback is persisted to SQLite for crash-safe storage — the state file stays tiny (~32KB) regardless of how much scrollback you have.
+maiTerm's terminal does its heavy lifting in Rust: alacritty_terminal handles VTE parsing, the screen buffer, and the scrollback, while xterm.js is a thin renderer for just the visible viewport. Scrollback is persisted to SQLite for crash-safe storage — the state file stays tiny (~32KB) regardless of how much scrollback you have.
 
 ## Core Features
 
@@ -19,11 +19,11 @@ aiTerm's terminal does its heavy lifting in Rust: alacritty_terminal handles VTE
 
 ## Rendering
 
-Because the screen buffer and scrollback live in the Rust backend, the frontend never holds more than a single screen of content — xterm.js runs with zero scrollback and simply paints the viewport the backend hands it. With nothing to scroll through on the frontend, GPU acceleration buys nothing, so aiTerm defaults to xterm.js's lightweight DOM renderer. That also sidesteps the glyph-ghosting artifacts the GPU renderers showed under aiTerm's full-frame streaming. A Canvas renderer is still available under **Terminal → Rendering** if you want to compare.
+Because the screen buffer and scrollback live in the Rust backend, the frontend never holds more than a single screen of content — xterm.js runs with zero scrollback and simply paints the viewport the backend hands it. With nothing to scroll through on the frontend, GPU acceleration buys nothing, so maiTerm defaults to xterm.js's lightweight DOM renderer. That also sidesteps the glyph-ghosting artifacts the GPU renderers showed under maiTerm's full-frame streaming. A Canvas renderer is still available under **Terminal → Rendering** if you want to compare.
 
 ## Shell Integration
 
-aiTerm supports the FinalTerm protocol (OSC 133) for command start/finish detection:
+maiTerm supports the FinalTerm protocol (OSC 133) for command start/finish detection:
 
 - **Tab indicators** — completed (checkmark/cross), at-prompt (›), and activity dot
 - **OSC 7** — directory tracking, including remote CWD awareness through SSH
@@ -44,7 +44,7 @@ Done with a session but not ready to lose it? Archive the tab. It disappears fro
 
 ## Suspend a Tab
 
-Park a single session without closing it. Suspending a tab kills its PTY to free memory and CPU, but keeps the tab — and its scrollback — visible in the tab bar. Click a suspended tab and aiTerm prompts you to resume, spinning the shell back up. Handy for an idle SSH session or a finished build you want to keep around without it holding resources.
+Park a single session without closing it. Suspending a tab kills its PTY to free memory and CPU, but keeps the tab — and its scrollback — visible in the tab bar. Click a suspended tab and maiTerm prompts you to resume, spinning the shell back up. Handy for an idle SSH session or a finished build you want to keep around without it holding resources.
 
 ## Workspace Suspend & Resume
 
@@ -52,7 +52,7 @@ Suspend inactive workspaces to free resources — PTYs are killed and memory is 
 
 ## State Backup & Import
 
-Export your entire aiTerm state — workspaces, tabs, scrollback, notes, preferences, triggers — to a backup file. Import it on a new machine or restore after a reset.
+Export your entire maiTerm state — workspaces, tabs, scrollback, notes, preferences, triggers — to a backup file. Import it on a new machine or restore after a reset.
 
 - **Manual export/import** from Preferences or the File menu
 - **Scheduled backups** — hourly, daily, weekly, or monthly with a directory of your choice
@@ -63,4 +63,4 @@ Export your entire aiTerm state — workspaces, tabs, scrollback, notes, prefere
 
 ## Auto-Resume
 
-Pin auto-resume settings so they survive across restarts. Configure SSH reconnection, remote CWD, and the resume command — aiTerm handles the rest. Edit settings anytime via context menu or replay with `Cmd+Opt+R`.
+Pin auto-resume settings so they survive across restarts. Configure SSH reconnection, remote CWD, and the resume command — maiTerm handles the rest. Edit settings anytime via context menu or replay with `Cmd+Opt+R`.

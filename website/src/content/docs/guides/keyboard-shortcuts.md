@@ -1,6 +1,6 @@
 ---
 title: Keyboard Shortcuts
-description: Complete list of aiTerm keyboard shortcuts.
+description: Complete list of maiTerm keyboard shortcuts.
 ---
 
 ## Tabs

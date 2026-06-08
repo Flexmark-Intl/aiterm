@@ -126,7 +126,7 @@ function buildSetupScript(remotePort: number, authToken: string, tabId: string):
     transport: 'ws',
     authToken,
     serverPort: remotePort,
-    ideName: 'aiTerm',
+    ideName: 'maiTerm',
     ideVersion: '1.0',
     workspaceFolders: [],
   });
@@ -243,15 +243,16 @@ function buildSetupScript(remotePort: number, authToken: string, tabId: string):
     'fi',
     // Write tab ID + port to ~/.aiterm so tmux/new shells can source it
     `printf 'export AITERM_TAB_ID=${tabId}\\nexport AITERM_PORT=${remotePort}\\n' > ~/.aiterm`,
-    // Install /aiterm skill on the remote
-    'mkdir -p ~/.claude/skills/aiterm',
-    "cat > ~/.claude/skills/aiterm/SKILL.md << 'SKILLEOF'\n" +
+    // Install /maiterm skill on the remote (drop any legacy /aiterm one)
+    'rm -rf ~/.claude/skills/aiterm',
+    'mkdir -p ~/.claude/skills/maiterm',
+    "cat > ~/.claude/skills/maiterm/SKILL.md << 'SKILLEOF'\n" +
     '---\n' +
-    'name: aiterm\n' +
-    'description: Quick aiTerm terminal operations — /aiterm notes, /aiterm diag, /aiterm tabs, etc.\n' +
+    'name: maiterm\n' +
+    'description: Quick maiTerm terminal operations — /maiterm notes, /maiterm diag, /maiterm tabs, etc.\n' +
     '---\n' +
     '\n' +
-    'Execute the aiTerm MCP tool for the requested operation. Use the aiterm MCP server. If you have not initialized yet, call initSession first.\n' +
+    'Execute the maiTerm MCP tool for the requested operation. Use the aiterm MCP server. If you have not initialized yet, call initSession first.\n' +
     '\n' +
     '## Command reference\n' +
     '\n' +

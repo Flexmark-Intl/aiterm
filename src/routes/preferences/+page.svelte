@@ -137,7 +137,7 @@
     try {
       const path = await dialogOpen({
         multiple: false,
-        filters: [{ name: 'aiTerm Backup', extensions: ['json', 'gz'] }],
+        filters: [{ name: 'maiTerm Backup', extensions: ['json', 'gz'] }],
       });
       if (typeof path === 'string') {
         const preview = await previewImport(path);
@@ -1617,7 +1617,7 @@
       {:else if activeSection === 'claude_code'}
         <h3 class="section-heading">Claude Code IDE Integration</h3>
         <p class="section-desc">
-          When enabled, aiTerm starts a WebSocket server that allows Claude CLI to open files,
+          When enabled, maiTerm starts a WebSocket server that allows Claude CLI to open files,
           show diffs, and access editor state. Requires restart to take effect.
         </p>
 
@@ -1625,7 +1625,7 @@
           <div>
             <label for="claude-code-ide">Enable IDE Integration</label>
             <p class="setting-hint">
-              Starts a local WebSocket server for Claude Code to communicate with aiTerm.
+              Starts a local WebSocket server for Claude Code to communicate with maiTerm.
             </p>
           </div>
           <button
@@ -1645,7 +1645,7 @@
             <div>
               <label for="claude-code-hooks">Enable Hooks Integration</label>
               <p class="setting-hint">
-                Registers lifecycle hooks so Claude Code reports session state to aiTerm
+                Registers lifecycle hooks so Claude Code reports session state to maiTerm
                 (active/idle/permission tab indicators). Requires restart.
               </p>
             </div>
@@ -1666,7 +1666,7 @@
               <div>
                 <label for="claude-code-auto-resume">Enable Auto-Resume via Hooks</label>
                 <p class="setting-hint">
-                  Automatically captures session IDs and configures auto-resume when Claude initializes its aiTerm session.
+                  Automatically captures session IDs and configures auto-resume when Claude initializes its maiTerm session.
                   No screen-scraping triggers needed.
                 </p>
               </div>
@@ -1688,7 +1688,7 @@
               <label for="claude-code-ide-ssh">Enable IDE Integration over SSH</label>
               <p class="setting-hint">
                 Automatically creates a secure reverse SSH tunnel when you connect to a remote server,
-                so Claude Code running remotely can access your local aiTerm MCP tools (workspace navigation,
+                so Claude Code running remotely can access your local maiTerm MCP tools (workspace navigation,
                 notes, tab context, auto-resume, etc.).
               </p>
               <p class="setting-hint" style="margin-top: 6px; opacity: 0.7;">
@@ -1734,7 +1734,7 @@
 
         <h3 class="section-heading">Manual Export / Import</h3>
         <p class="section-desc">
-          Export your entire aiTerm configuration — all workspaces, tabs, preferences, triggers,
+          Export your entire maiTerm configuration — all workspaces, tabs, preferences, triggers,
           and notes — to a JSON file. Import to restore from a backup.
         </p>
 
@@ -1837,7 +1837,7 @@
         <div class="setting" style="align-items: flex-start;">
           <div>
             <label for="auto-check-updates">Check on Startup</label>
-            <p class="setting-hint">Automatically check for updates when aiTerm launches. You will be notified via toast if an update is available.</p>
+            <p class="setting-hint">Automatically check for updates when maiTerm launches. You will be notified via toast if an update is available.</p>
           </div>
           <button
             id="auto-check-updates"
@@ -1880,7 +1880,7 @@
         <div class="setting" style="align-items: flex-start;">
           <div>
             <p class="setting-hint">
-              As a terminal emulator, aiTerm and its child processes (shells, CLI tools, Claude Code) need to read and write files across your system.
+              As a terminal emulator, maiTerm and its child processes (shells, CLI tools, Claude Code) need to read and write files across your system.
               Without Full Disk Access, macOS will repeatedly prompt you to allow access to individual folders.
             </p>
           </div>
@@ -1891,9 +1891,9 @@
             <p><strong>To enable:</strong></p>
             <ol>
               <li>Click "Open System Settings" above</li>
-              <li>Click the <strong>+</strong> button or toggle next to <strong>aiTerm</strong></li>
-              <li>If aiTerm isn't listed, click <strong>+</strong> and select it from Applications</li>
-              <li>Restart aiTerm for the change to take full effect</li>
+              <li>Click the <strong>+</strong> button or toggle next to <strong>maiTerm</strong></li>
+              <li>If maiTerm isn't listed, click <strong>+</strong> and select it from Applications</li>
+              <li>Restart maiTerm for the change to take full effect</li>
             </ol>
           </div>
         {/if}

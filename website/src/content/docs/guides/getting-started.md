@@ -1,11 +1,11 @@
 ---
 title: Getting Started
-description: Install aiTerm and get up and running on macOS, Windows, or Linux.
+description: Install maiTerm and get up and running on macOS, Windows, or Linux.
 ---
 
 ## Download
 
-Download the latest release from the [GitHub Releases page](https://github.com/Flexmark-Intl/aiterm/releases). After installing, aiTerm checks for updates automatically and notifies you when a new version is available — update with a single click.
+Download the latest release from the [GitHub Releases page](https://github.com/Flexmark-Intl/aiterm/releases). After installing, maiTerm checks for updates automatically and notifies you when a new version is available — update with a single click.
 
 | Platform | Format |
 |----------|--------|
@@ -15,7 +15,7 @@ Download the latest release from the [GitHub Releases page](https://github.com/F
 
 ## Prerequisites (Building from Source)
 
-If you want to build aiTerm from source, you'll need:
+If you want to build maiTerm from source, you'll need:
 
 **All platforms:**
 - [Node.js](https://nodejs.org/) 18+
@@ -36,7 +36,7 @@ If you want to build aiTerm from source, you'll need:
 
 ## First Launch
 
-1. Open aiTerm
+1. Open maiTerm
 2. You'll start with a default workspace and a single terminal tab
 3. The terminal spawns your default shell automatically
 
@@ -50,7 +50,7 @@ If you want to build aiTerm from source, you'll need:
 
 ## Setting Up Claude Code Integration
 
-Claude Code integration is enabled by default. When you run `claude` in a terminal tab, aiTerm automatically:
+Claude Code integration is enabled by default. When you run `claude` in a terminal tab, maiTerm automatically:
 
 1. Exposes MCP tools to Claude Code CLI
 2. Captures session IDs via built-in triggers

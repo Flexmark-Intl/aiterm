@@ -1666,7 +1666,7 @@
         { label: '', separator: true, action: () => {} },
         ...(hasBridge(tabId) ? [
           {
-            label: 'Inject aiTerm Env Vars',
+            label: 'Inject maiTerm Env Vars',
             action: async () => {
               const bridge = getBridgeInfo(tabId);
               if (bridge?.remotePort) {

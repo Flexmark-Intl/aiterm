@@ -363,7 +363,7 @@ fn build_window_sync(app: &tauri::AppHandle, label: &str) -> Result<(), String> 
         tauri::WebviewUrl::App("index.html".into())
     };
 
-    let title = if cfg!(debug_assertions) { "aiTerm (Dev)" } else { "aiTerm" };
+    let title = if cfg!(debug_assertions) { "maiTerm (Dev)" } else { "maiTerm" };
 
     // Read saved geometry for current monitor count
     let monitor_count = app.primary_monitor()

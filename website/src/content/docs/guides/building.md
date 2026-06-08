@@ -1,6 +1,6 @@
 ---
 title: Building from Source
-description: How to build aiTerm for development and production.
+description: How to build maiTerm for development and production.
 ---
 
 ## Development
@@ -68,4 +68,4 @@ Dev and production builds use separate data directories so they can run simultan
 - **Dev**: `~/Library/Application Support/com.aiterm.dev/`
 - **Production**: `~/Library/Application Support/com.aiterm.app/`
 
-The window title shows "aiTerm (Dev)" in debug builds, and the sidebar displays a DEV badge.
+The window title shows "maiTerm (Dev)" in debug builds, and the sidebar displays a DEV badge.

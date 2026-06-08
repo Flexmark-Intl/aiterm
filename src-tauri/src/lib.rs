@@ -4,7 +4,7 @@ mod pty;
 mod state;
 mod terminal;
 
-pub const APP_DISPLAY_NAME: &str = if cfg!(debug_assertions) { "aiTermDev" } else { "aiTerm" };
+pub const APP_DISPLAY_NAME: &str = if cfg!(debug_assertions) { "maiTermDev" } else { "maiTerm" };
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 use state::{load_state, save_state, AppState, WindowData, Workspace};
@@ -155,7 +155,7 @@ pub fn run() {
                     tauri::WebviewUrl::App("index.html".into())
                 };
                 // Title is set dynamically from the frontend (workspace name)
-                let title = if cfg!(debug_assertions) { "aiTerm (Dev)" } else { "aiTerm" };
+                let title = if cfg!(debug_assertions) { "maiTerm (Dev)" } else { "maiTerm" };
 
                 let geometry = {
                     let data = app_state.app_data.read();
@@ -200,7 +200,7 @@ pub fn run() {
             }
 
             // Custom app menu
-            let quit_item = MenuItem::with_id(app, "quit", "Quit aiTerm", true, Some("CmdOrCtrl+Q"))?;
+            let quit_item = MenuItem::with_id(app, "quit", "Quit maiTerm", true, Some("CmdOrCtrl+Q"))?;
             let preferences_item = MenuItem::with_id(app, "preferences", "Preferences…", true, Some("CmdOrCtrl+,"))?;
             let reload_all_item = MenuItem::with_id(app, "reload_all", "Reload All Windows", true, None::<&str>)?;
             let new_window_item = MenuItem::with_id(app, "new_window", "New Window", true, Some("CmdOrCtrl+N"))?;
@@ -214,14 +214,14 @@ pub fn run() {
             let feature_request_item = MenuItem::with_id(app, "feature_request", "Submit Feature Request…", true, None::<&str>)?;
 
             let about = AboutMetadata {
-                name: Some("aiTerm".into()),
+                name: Some("maiTerm".into()),
                 version: Some(APP_VERSION.into()),
                 copyright: Some("© 2025 Flexmark International".into()),
                 credits: Some("A modern terminal emulator with workspace organization, split panes, and Claude Code integration.\n\nhttps://flexmark-intl.github.io/aiterm/".into()),
                 ..Default::default()
             };
 
-            let app_menu = SubmenuBuilder::new(app, "aiTerm")
+            let app_menu = SubmenuBuilder::new(app, "maiTerm")
                 .about(Some(about))
                 .separator()
                 .item(&check_updates_item)

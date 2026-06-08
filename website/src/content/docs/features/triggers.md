@@ -67,7 +67,7 @@ Triggers can be scoped to specific tabs for per-tab pattern matching. This lets 
 
 ## Notifications
 
-Triggers can fire notifications through aiTerm's three-mode notification system:
+Triggers can fire notifications through maiTerm's three-mode notification system:
 
 - **Auto** (default) — in-app toasts when window is focused, OS notifications when not
 - **In-app** — always show in-app toasts

@@ -162,9 +162,9 @@ Hooks registered in `~/.claude/settings.json` on MCP server startup, cleaned up 
 - MCP tool guard in `server.rs` rejects `tabId` that doesn't exist in this instance
 - MCP instructions specify server name (`aiterm` vs `aiterm-dev`)
 
-**`/aiterm` skill (auto-installed):**
-- Written to `~/.claude/skills/aiterm/SKILL.md` on startup, removed on exit
-- Provides fast slash-command access: `/aiterm notes`, `/aiterm diag`, `/aiterm tabs`, etc.
+**`/maiterm` skill (auto-installed):**
+- Written to `~/.claude/skills/maiterm/SKILL.md` on startup, removed on exit
+- Provides fast slash-command access: `/maiterm notes`, `/maiterm diag`, `/maiterm tabs`, etc.
 - Reduces LLM inference by giving explicit tool→parameter mappings
 - Uses `mcp_server_key()` to reference correct MCP server (aiterm vs aiterm-dev)
 
@@ -193,7 +193,7 @@ Remote Claude Code → discovers ~/.claude/ide/{port}.lock → connects through 
 
 **Auto-enable:** SSH sessions detected reactively via terminal title changes — when a title change fires, `getPtyInfo()` checks for a foreground SSH command and enables/disables the bridge accordingly. For restore/clone SSH: polls `getPtyInfo()` every 500ms until SSH is detected (max 15s). `enableBridge` sets a `'pending'` state immediately to prevent race conditions from concurrent title-change calls.
 
-**Remote setup:** Lockfile, `~/.claude.json`, hooks (`~/.claude/settings.json`), skill (`~/.claude/skills/aiterm/SKILL.md`), and `~/.aiterm` env file are written via a separate background SSH connection (`ssh_run_setup`), **not** through the user's interactive PTY. This prevents command injection into running programs (e.g. Claude Code). The setup script uses shell variables for JSON data to avoid nested quoting issues, and pipes JSON to python3/jq via stdin. After setup, `AITERM_TAB_ID` and `AITERM_PORT` env vars are injected into the remote shell via PTY write (leading space suppresses shell history).
+**Remote setup:** Lockfile, `~/.claude.json`, hooks (`~/.claude/settings.json`), skill (`~/.claude/skills/maiterm/SKILL.md`), and `~/.aiterm` env file are written via a separate background SSH connection (`ssh_run_setup`), **not** through the user's interactive PTY. This prevents command injection into running programs (e.g. Claude Code). The setup script uses shell variables for JSON data to avoid nested quoting issues, and pipes JSON to python3/jq via stdin. After setup, `AITERM_TAB_ID` and `AITERM_PORT` env vars are injected into the remote shell via PTY write (leading space suppresses shell history).
 
 **`~/.aiterm` env file:** Written during bridge setup with `export AITERM_TAB_ID=... AITERM_PORT=...`. Sourced as a fallback by the SessionStart hook when `$AITERM_TAB_ID` is empty (e.g. inside tmux where env vars weren't inherited). Users can manually `source ~/.aiterm` in any shell. Overwritten on each bridge connect — self-correcting for stale values.
 

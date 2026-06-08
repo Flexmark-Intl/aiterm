@@ -193,7 +193,7 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="titlebar" onmousedown={handleTitlebarMouseDown}>
     <span class="titlebar-text">
-      aiTerm{#if workspacesStore.activeWorkspace} | {workspacesStore.activeWorkspace.name}{/if}
+      maiTerm{#if workspacesStore.activeWorkspace} | {workspacesStore.activeWorkspace.name}{/if}
     </span>
   </div>
   <div class="app-body">

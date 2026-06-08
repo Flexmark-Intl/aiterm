@@ -1,9 +1,9 @@
 <table><tr>
-<td><a href="https://flexmark-intl.github.io/aiterm/"><img src="src-tauri/icons/icon.png" alt="aiTerm" width="128" /></a></td>
-<td><h1><a href="https://flexmark-intl.github.io/aiterm/">aiTerm</a></h1>A terminal built for AI workflows — not AI built into a terminal.<br><a href="https://flexmark-intl.github.io/aiterm/">Documentation & Screenshots</a></td>
+<td><a href="https://flexmark-intl.github.io/aiterm/"><img src="src-tauri/icons/icon.png" alt="maiTerm" width="128" /></a></td>
+<td><h1><a href="https://flexmark-intl.github.io/aiterm/">maiTerm</a></h1>A terminal built for AI workflows — not AI built into a terminal.<br><a href="https://flexmark-intl.github.io/aiterm/">Documentation & Screenshots</a></td>
 </tr></table>
 
-A terminal emulator built with Tauri 2 + Svelte 5, designed to make terminal-based AI workflows better and more organized. aiTerm is not "AI in a terminal" — there is no built-in LLM, no chat sidebar, no magic autocomplete. Instead, it's a proper terminal that understands what AI coding agents are doing and gives you the tools to manage them.
+A terminal emulator built with Tauri 2 + Svelte 5, designed to make terminal-based AI workflows better and more organized. maiTerm is not "AI in a terminal" — there is no built-in LLM, no chat sidebar, no magic autocomplete. Instead, it's a proper terminal that understands what AI coding agents are doing and gives you the tools to manage them.
 
 Our initial focus is on **Claude Code** integrations:
 
@@ -16,13 +16,13 @@ Our initial focus is on **Claude Code** integrations:
 - **IDE integration** — MCP server with 25+ tools for file operations, diff review, editor control, notes, and multi-agent coordination
 - **SSH MCP bridge** — reverse SSH tunnel exposes local IDE tools to Claude Code running on remote servers
 
-aiTerm is fully written by AI (Claude), with human engineering direction and architectural rails.
+maiTerm is fully written by AI (Claude), with human engineering direction and architectural rails.
 
 Runs on macOS, Windows, and Linux.
 
-## Why aiTerm?
+## Why maiTerm?
 
-Other terminals give you tabs and splits. aiTerm gives you a system for managing the chaos of real AI-assisted development — where you're juggling multiple Claude sessions across projects, SSHing into servers, and trying to remember what you were doing three hours ago.
+Other terminals give you tabs and splits. maiTerm gives you a system for managing the chaos of real AI-assisted development — where you're juggling multiple Claude sessions across projects, SSHing into servers, and trying to remember what you were doing three hours ago.
 
 ### Organize by workspace, not just tabs
 
@@ -56,7 +56,7 @@ Every tab maintains its own shell history. Clone a tab and its history comes wit
 
 ### Auto-resume: never lose a session
 
-Reboot your machine, restart aiTerm — everything comes back. Terminal scrollback, tab layout, workspace state. Claude Code sessions auto-resume using hooks-captured session IDs — no manual setup needed. SSH sessions reconnect to the right remote CWD. Pick up exactly where you left off.
+Reboot your machine, restart maiTerm — everything comes back. Terminal scrollback, tab layout, workspace state. Claude Code sessions auto-resume using hooks-captured session IDs — no manual setup needed. SSH sessions reconnect to the right remote CWD. Pick up exactly where you left off.
 
 ### Archive and restore tabs
 
@@ -111,7 +111,7 @@ Triggers watch your terminal output for patterns — Claude asking a question, a
 - **Multi-agent coordination** — `getClaudeSessions` exposes all active Claude sessions (state, tool, model, cwd) across tabs
 - **SSH MCP bridge** — reverse SSH tunnel (`-R 0:localhost:port`) exposes local IDE tools to remote Claude Code; ControlMaster mux support, bridge status indicator
 - **Auto-discovery** — writes lock file to `~/.claude/ide/` and registers in `~/.claude.json` for automatic connection
-- **Dev/prod isolation** — dev builds register as `aiterm-dev` with display name "aiTermDev"
+- **Dev/prod isolation** — dev builds register as `aiterm-dev` with display name "maiTermDev"
 
 ### Trigger System
 - **Regex triggers** — watch terminal output for patterns, fire actions
@@ -368,9 +368,9 @@ Default: Tokyo Night. 10 built-in themes + custom theme support.
 
 ## Privacy
 
-aiTerm checks for updates on launch and hourly while running. Those checks pass
+maiTerm checks for updates on launch and hourly while running. Those checks pass
 through `updates.maiterm.dev`, which counts them so we can estimate how many
-people use aiTerm.
+people use maiTerm.
 
 What's counted is deliberately minimal and anonymous:
 

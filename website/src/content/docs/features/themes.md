@@ -3,7 +3,7 @@ title: Themes
 description: 10 built-in themes plus custom theme support with separate UI and terminal colors.
 ---
 
-aiTerm ships with 10 built-in themes and supports fully custom themes.
+maiTerm ships with 10 built-in themes and supports fully custom themes.
 
 ## Built-in Themes
 

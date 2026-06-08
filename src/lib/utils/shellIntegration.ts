@@ -293,12 +293,12 @@ export function buildInstallSnippet(): string {
   const install = [
     "if [ -n \"$ZSH_VERSION\" ]; then __f=~/.zshrc;",
     "elif [ -n \"$BASH_VERSION\" ]; then __f=~/.bashrc;",
-    "else printf '\\n\\033[1;31m%s\\033[0m\\n\\n' 'aiTerm: unsupported shell'; false; fi",
+    "else printf '\\n\\033[1;31m%s\\033[0m\\n\\n' 'maiTerm: unsupported shell'; false; fi",
     "&& if ! grep -q '# aiterm-shell-integration' \"$__f\" 2>/dev/null; then",
     "{ if [ -n \"$ZSH_VERSION\" ]; then " + zshPrintf + ";",
     "else " + bashPrintf + "; fi; } >> \"$__f\"",
-    "&& . \"$__f\" && printf '\\n\\033[1;32m%s\\033[0m\\n\\n' \"aiTerm: installed in $__f\";",
-    "else printf '\\n\\033[1;33m%s\\033[0m\\n\\n' \"aiTerm: already installed in $__f\"; fi",
+    "&& . \"$__f\" && printf '\\n\\033[1;32m%s\\033[0m\\n\\n' \"maiTerm: installed in $__f\";",
+    "else printf '\\n\\033[1;33m%s\\033[0m\\n\\n' \"maiTerm: already installed in $__f\"; fi",
   ].join(' ');
 
   // stty -echo hides the long printf commands from the terminal

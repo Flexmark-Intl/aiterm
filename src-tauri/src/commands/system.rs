@@ -23,11 +23,11 @@ pub struct CrashReportSummary {
 }
 
 /// Scan ~/Library/Logs/DiagnosticReports/ (and Retired/) for crash reports
-/// relevant to aiTerm. Returns at most `max_results` newest reports, looking
+/// relevant to maiTerm. Returns at most `max_results` newest reports, looking
 /// back at most `max_age_days` days. Designed to surface the immediate
 /// post-mortem signal without overwhelming the diagnostics payload.
 ///
-/// Filters: filename must start with "aiTerm", "aiterm", or
+/// Filters: filename must start with "maiTerm", "maiterm", "aiTerm", "aiterm", or
 /// "com.apple.WebKit.WebContent" (WebKit renderer crashes — could be ours,
 /// could be another Tauri app on this machine, so caller should treat them
 /// as candidates not certainties).
@@ -53,7 +53,8 @@ pub fn scan_crash_reports(max_results: usize, max_age_days: u64) -> Vec<CrashRep
         let Ok(entries) = std::fs::read_dir(dir) else { continue };
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().to_string();
-            let category = if name.starts_with("aiTerm") || name.starts_with("aiterm") {
+            let category = if name.starts_with("maiTerm") || name.starts_with("maiterm")
+                || name.starts_with("aiTerm") || name.starts_with("aiterm") {
                 "host"
             } else if name.starts_with("com.apple.WebKit.WebContent") {
                 "webcontent"

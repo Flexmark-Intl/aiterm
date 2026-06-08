@@ -86,7 +86,7 @@
     const ws = workspacesStore.activeWorkspace;
     if (!ws) return;
     const suffix = import.meta.env.DEV ? ' (Dev)' : '';
-    getCurrentWindow().setTitle(`aiTerm | ${ws.name}${suffix}`);
+    getCurrentWindow().setTitle(`maiTerm | ${ws.name}${suffix}`);
   });
 
   // Scheduled backup timer lives in Rust now (commands/scheduler.rs) so it
@@ -289,7 +289,7 @@
       try {
         const path = await dialogOpen({
           multiple: false,
-          filters: [{ name: 'aiTerm Backup', extensions: ['json', 'gz'] }],
+          filters: [{ name: 'maiTerm Backup', extensions: ['json', 'gz'] }],
         });
         if (typeof path === 'string') {
           const preview = await commands.previewImport(path);

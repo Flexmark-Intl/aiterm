@@ -68,7 +68,7 @@ pub fn write_lockfile(port: u16, auth: &str, workspace_folders: Vec<String>, hoo
         }
     }
 
-    // Install /aiterm skill for fast slash-command access
+    // Install /maiterm skill for fast slash-command access
     if let Err(e) = write_aiterm_skill() {
         log::warn!("Failed to write aiterm skill: {}", e);
     }
@@ -569,24 +569,45 @@ fn entry_contains_auth(entry: &serde_json::Value, auth: &str) -> bool {
     false
 }
 
-/// Directory for the /aiterm skill: ~/.claude/skills/aiterm/
-fn aiterm_skill_dir() -> Option<PathBuf> {
+/// Directory for the /maiterm skill: ~/.claude/skills/maiterm/
+fn maiterm_skill_dir() -> Option<PathBuf> {
+    dirs::home_dir().map(|h| h.join(".claude").join("skills").join("maiterm"))
+}
+
+/// Legacy pre-rebrand skill dir (~/.claude/skills/aiterm/). Removed on
+/// startup and exit so users don't keep a stale duplicate /aiterm command.
+fn legacy_aiterm_skill_dir() -> Option<PathBuf> {
     dirs::home_dir().map(|h| h.join(".claude").join("skills").join("aiterm"))
 }
 
-/// Install the /aiterm slash command skill globally.
-/// This gives all Claude Code sessions fast access to aiTerm operations
+/// Remove the legacy /aiterm skill dir if present (rebrand migration).
+fn remove_legacy_aiterm_skill() {
+    if let Some(dir) = legacy_aiterm_skill_dir() {
+        if dir.exists() {
+            if let Err(e) = fs::remove_dir_all(&dir) {
+                log::warn!("Failed to remove legacy aiterm skill dir: {}", e);
+            } else {
+                log::info!("Removed legacy /aiterm skill");
+            }
+        }
+    }
+}
+
+/// Install the /maiterm slash command skill globally.
+/// This gives all Claude Code sessions fast access to maiTerm operations
 /// without LLM reasoning about which tool to use.
 fn write_aiterm_skill() -> Result<(), String> {
-    let dir = aiterm_skill_dir().ok_or("Could not determine home directory")?;
+    // Rebrand migration: drop the old /aiterm skill so it doesn't shadow /maiterm.
+    remove_legacy_aiterm_skill();
+    let dir = maiterm_skill_dir().ok_or("Could not determine home directory")?;
     fs::create_dir_all(&dir).map_err(|e| format!("Failed to create skill dir: {}", e))?;
 
     let skill = r#"---
-name: aiterm
-description: Quick aiTerm terminal operations — /aiterm notes, /aiterm diag, /aiterm tabs, etc.
+name: maiterm
+description: Quick maiTerm terminal operations — /maiterm notes, /maiterm diag, /maiterm tabs, etc.
 ---
 
-Execute the aiTerm MCP tool for the requested operation. Use whichever aiterm MCP server you already called initSession on (aiterm or aiterm-dev). If you haven't initialized yet, call initSession first.
+Execute the maiTerm MCP tool for the requested operation. Use whichever aiterm MCP server you already called initSession on (aiterm or aiterm-dev). If you haven't initialized yet, call initSession first.
 
 ## Command reference
 
@@ -627,18 +648,19 @@ $ARGUMENTS
 
     let path = dir.join("SKILL.md");
     fs::write(&path, skill).map_err(|e| format!("Failed to write skill: {}", e))?;
-    log::info!("Wrote /aiterm skill at {:?}", path);
+    log::info!("Wrote /maiterm skill at {:?}", path);
     Ok(())
 }
 
-/// Remove the /aiterm skill directory.
+/// Remove the /maiterm skill directory (and any legacy /aiterm one).
 fn remove_aiterm_skill() {
-    if let Some(dir) = aiterm_skill_dir() {
+    remove_legacy_aiterm_skill();
+    if let Some(dir) = maiterm_skill_dir() {
         if dir.exists() {
             if let Err(e) = fs::remove_dir_all(&dir) {
-                log::warn!("Failed to remove aiterm skill dir: {}", e);
+                log::warn!("Failed to remove maiterm skill dir: {}", e);
             } else {
-                log::info!("Removed /aiterm skill");
+                log::info!("Removed /maiterm skill");
             }
         }
     }

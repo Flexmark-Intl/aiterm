@@ -276,7 +276,7 @@ function createAgentLinkStore() {
   function buildLinkFailedNote(forkTabId: string): string {
     return (
       `⟦AGENT-LINK⟧ The link to "${label(forkTabId)}" could not be completed — the forked agent did not initialize on this aiTerm instance ` +
-      `(it may have connected to a different one). You can run /aiterm init in the new pane and retry, or unlink and link again.`
+      `(it may have connected to a different one). You can run /maiterm init in the new pane and retry, or unlink and link again.`
     );
   }
 

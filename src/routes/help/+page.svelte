@@ -203,10 +203,10 @@
         {#if openAccordions['c-hooks']}
           <div class="accordion-body" transition:slide={{ duration: 150 }}>
             <p class="description">
-              aiTerm integrates with Claude Code's hook system for real-time session awareness. Hooks fire on lifecycle events and report state back to aiTerm automatically.
+              maiTerm integrates with Claude Code's hook system for real-time session awareness. Hooks fire on lifecycle events and report state back to maiTerm automatically.
             </p>
             <div class="tip-box">
-              <strong>Note:</strong> Integration activates automatically — the SessionStart hook tells Claude to call <code>initSession</code> on every new, resumed, forked, or compacted session. If Claude ever misses it, run <code>/aiterm init</code> manually to re-register the tab.
+              <strong>Note:</strong> Integration activates automatically — the SessionStart hook tells Claude to call <code>initSession</code> on every new, resumed, forked, or compacted session. If Claude ever misses it, run <code>/maiterm init</code> manually to re-register the tab.
             </div>
             <div class="trigger-list">
               <div class="trigger-item">
@@ -243,8 +243,8 @@
             </p>
             <h4>How it works</h4>
             <ol class="steps">
-              <li>When Claude Code starts, aiTerm's SessionStart hook captures the session ID automatically and configures auto-resume.</li>
-              <li>If the tab is reloaded or the terminal restarts, aiTerm runs the resume command to reconnect.</li>
+              <li>When Claude Code starts, maiTerm's SessionStart hook captures the session ID automatically and configures auto-resume.</li>
+              <li>If the tab is reloaded or the terminal restarts, maiTerm runs the resume command to reconnect.</li>
               <li>Toggle auto-resume on or off with <kbd>{modLabel}</kbd> + <kbd>R</kbd>. Right-click a tab for "Edit Auto-resume..." to modify settings.</li>
             </ol>
             <h4>Pinned settings</h4>
@@ -264,7 +264,7 @@
         {#if openAccordions['c-ide']}
           <div class="accordion-body" transition:slide={{ duration: 150 }}>
             <p class="description">
-              aiTerm runs a built-in MCP server that Claude Code discovers automatically. This gives Claude 30+ tools for working with your editor, workspaces, notes, and more. Enable or disable in <strong>Preferences &rsaquo; Claude Code</strong>.
+              maiTerm runs a built-in MCP server that Claude Code discovers automatically. This gives Claude 30+ tools for working with your editor, workspaces, notes, and more. Enable or disable in <strong>Preferences &rsaquo; Claude Code</strong>.
             </p>
             <h4>Editor tools</h4>
             <div class="tool-list">
@@ -289,8 +289,8 @@
             </div>
             <h4>Preferences & diagnostics</h4>
             <div class="tool-list">
-              <div class="tool"><code>getPreferences</code> <span>Read aiTerm preferences</span></div>
-              <div class="tool"><code>setPreference</code> <span>Update an aiTerm preference</span></div>
+              <div class="tool"><code>getPreferences</code> <span>Read maiTerm preferences</span></div>
+              <div class="tool"><code>setPreference</code> <span>Update an maiTerm preference</span></div>
               <div class="tool"><code>getDiagnostics</code> <span>App diagnostics &mdash; version, PTY stats, memory, renderer state</span></div>
               <div class="tool"><code>readLogs</code> <span>Tail the log file with level filter and search</span></div>
               <div class="tool"><code>createBackup</code> <span>Create a state backup on demand</span></div>
@@ -305,11 +305,11 @@
         {#if openAccordions['c-ssh']}
           <div class="accordion-body" transition:slide={{ duration: 150 }}>
             <p class="description">
-              When you're SSH'd into a remote server, aiTerm can bridge the MCP connection so Claude Code running remotely still has access to all IDE tools.
+              When you're SSH'd into a remote server, maiTerm can bridge the MCP connection so Claude Code running remotely still has access to all IDE tools.
             </p>
             <h4>How it works</h4>
             <ol class="steps">
-              <li>aiTerm detects an SSH session and sets up a reverse tunnel automatically in the background.</li>
+              <li>maiTerm detects an SSH session and sets up a reverse tunnel automatically in the background.</li>
               <li>Hooks and environment variables are injected into the remote shell so Claude Code can connect back.</li>
               <li>A bolt icon appears in the tab bar &mdash; green when connected, dim when disconnected.</li>
             </ol>
