@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.13.0
+
+- **aiTerm is now maiTerm.** New name, new look: a refreshed app icon and wordmark, theme-aware light/dark logos throughout the app, and a cleaner title bar that shows just the active workspace name with the maiTerm mark on the right. Your data carries over untouched — the app's underlying identifier is unchanged, so every workspace, tab, note, preference, and scrollback buffer is exactly where you left it, and the existing settings/state directories are reused as-is. No re-setup, no migration step
+- The Claude Code slash command is now `/maiterm` instead of `/aiterm` (e.g. `/maiterm notes`, `/maiterm diag`, `/maiterm init`). The old `/aiterm` skill is removed automatically on first launch so you won't be left with a stale duplicate, and the underlying MCP server keeps its name — so Claude Code's IDE integration continues working without any reconnect or reconfiguration
+- **Add Agent Bridge** — connect two running Claude agents in different panes so they can talk to each other directly. Link the active tab to another Claude session (Cmd+Shift+L, or the terminal context menu → "Link to Agent…"), and the agents exchange messages as real prompt turns in each other's panes, so you see the whole conversation and can interrupt with Esc at any time. Two modes: fork a session into a new split pane (an isolated peer that inherits the original's full context), or link two tabs that are already open. Each message is stamped with the sender's identity so an agent never mistakes a peer for you, links persist across an app restart, and a broken link self-heals after auto-resume
+- Detect unexpected SSH disconnects: when a remote session drops, the tab keeps its title and shows a one-click reconnect instead of silently falling back to a local shell with no indication anything happened
+- Add live upload progress with a cancel button when sending files to a remote host over SCP, replacing the previous silent wait with no feedback
+- Add an overflow menu for tabs that scroll out of view, placed between the new-tab and notes buttons, so older tabs in a busy pane stay one click away
+- Add an anonymous update-check counter (no personal data collected) so we can gauge how many installs are active
+- Fix a file-descriptor leak on macOS where the editor's file watcher could gradually exhaust the process's available file descriptors over a long session, eventually causing failures opening files or spawning new shells
+- Fix local editor tabs not refreshing when the underlying file was changed on disk by something outside the app
+
 ## v1.12.8
 
 - Fix a new terminal tab almost always opening in the wrong directory in workspaces that have accumulated many suspended tabs. A new tab inherits the most common working directory (and SSH setup) among its sibling tabs, but the tally counted *suspended* tabs too — and a suspended tab carries the stale directory it was last in. In a long-lived workspace where most suspended tabs sat in the same place, that majority always won, so every new tab opened there regardless of which tab you were actually on. The tally now counts only live tabs, so a new tab follows the tab you opened it from. Live SSH tabs also now contribute their real remote directory (from the shell prompt) instead of a stale or local-only path
