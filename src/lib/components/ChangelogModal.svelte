@@ -1,6 +1,12 @@
 <script lang="ts">
   import changelogRaw from '../../../CHANGELOG.md?raw';
+  import { marked } from 'marked';
   import IconButton from '$lib/components/ui/IconButton.svelte';
+
+  /** Render a single changelog item as inline markdown (bold, italic, code, links). */
+  function renderItem(text: string): string {
+    return marked.parseInline(text, { gfm: true }) as string;
+  }
 
   interface Props {
     open: boolean;
@@ -57,8 +63,8 @@
       }
       const itemMatch = line.match(/^- (.+)/);
       if (itemMatch && current) {
-        // Strip markdown backticks for display
-        current.items.push(itemMatch[1].replace(/`([^`]+)`/g, '$1'));
+        // Keep raw markdown — rendered inline at display time via renderItem()
+        current.items.push(itemMatch[1]);
       }
     }
     return entries;
@@ -88,7 +94,7 @@
             <h3 class:current={entry.version === version}>v{entry.version}{entry.version === version ? ' (current)' : ''}</h3>
             <ul>
               {#each entry.items as item}
-                <li>{item}</li>
+                <li>{@html renderItem(item)}</li>
               {/each}
             </ul>
           </section>
@@ -192,6 +198,33 @@
 
   li:last-child {
     margin-bottom: 0;
+  }
+
+  li :global(strong) {
+    font-weight: 600;
+    color: var(--fg);
+  }
+
+  li :global(em) {
+    font-style: italic;
+  }
+
+  li :global(code) {
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 0.85em;
+    background: var(--bg-dark);
+    border: 1px solid var(--bg-light);
+    border-radius: 3px;
+    padding: 0.5px 4px;
+  }
+
+  li :global(a) {
+    color: var(--accent);
+    text-decoration: none;
+  }
+
+  li :global(a:hover) {
+    text-decoration: underline;
   }
 
   .footer {
