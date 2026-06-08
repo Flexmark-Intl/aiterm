@@ -7,7 +7,8 @@ export default defineConfig({
     starlight({
       title: 'maiTerm',
       logo: {
-        src: './src/assets/icon.png',
+        light: './src/assets/icon-light.png',
+        dark: './src/assets/icon-dark.png',
       },
       favicon: '/favicon.png',
       social: {

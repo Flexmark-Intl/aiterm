@@ -73,22 +73,35 @@ else
   echo "WARN: actool not found; kept existing $ICONS/Assets.car" >&2
 fi
 
-# --- render website logo + favicon from the .icon (Default = periwinkle glass) ---
-if [ -x "$ICTOOL" ]; then
-  "$ICTOOL" "$ICON" --export-image --output-file "$WEB/src/assets/icon.png" \
-    --platform macOS --rendition Default --width 1024 --height 1024 --scale 1
-  "$ICTOOL" "$ICON" --export-image --output-file /tmp/_favicon.png \
-    --platform macOS --rendition Default --width 256 --height 256 --scale 1
-  magick /tmp/_favicon.png -resize 256x256 "$WEB/public/favicon.png"; rm -f /tmp/_favicon.png
-  echo "rendered website/src/assets/icon.png + website/public/favicon.png"
-  # optional appearance preview sheet for iteration
-  if [ "${PREVIEW:-0}" = "1" ]; then
-    for r in Default Dark TintedLight TintedDark ClearDark Mono; do
-      "$ICTOOL" "$ICON" --export-image --output-file "/tmp/lg_$r.png" \
-        --platform macOS --rendition "$r" --width 512 --height 512 --scale 1 2>/dev/null || true
-    done
-    echo "previews: /tmp/lg_<rendition>.png"
-  fi
+# --- website logo + favicon: FLAT dark/light icons (not glass) ---
+# Starlight swaps these by theme: light theme -> cream tile (black m), dark theme
+# -> the navy master. Flat tiles read better than the glass render on flat headers.
+NAVY="$ICONS/icon-source-1024.png"
+if command -v magick >/dev/null 2>&1 && [ -f "$NAVY" ]; then
+  FW="$(mktemp -d)"
+  magick -size 1024x1024 xc:black -fill white -draw 'roundrectangle 88,72 935,919 165,165' "$FW/mask.png"
+  magick "$NAVY" -alpha extract "$FW/na.png"
+  magick -size 1024x1024 xc:black -colorspace sRGB "$FW/na.png" -alpha off \
+    -compose CopyOpacity -composite -colorspace sRGB -type TrueColorAlpha "$FW/shadow.png"
+  magick "$STATIC/logo-mark-dark.png" -fuzz 22% -fill '#5965D6' -opaque '#7880BE' "$FW/mk.png"
+  magick -size 1024x1024 canvas:none -sparse-color barycentric '0,0 #FFFDF7 1023,1023 #F2E9D6' "$FW/g.png"
+  magick "$FW/g.png" "$FW/mask.png" -alpha off -compose CopyOpacity -composite "$FW/t.png"
+  magick "$FW/shadow.png" -colorspace sRGB -type TrueColorAlpha "$FW/t.png" -compose over -composite "$FW/ts.png"
+  magick "$FW/ts.png" \( "$FW/mk.png" -resize 82.6% \) -gravity NorthWest -geometry +242+297 \
+    -compose over -composite -type TrueColorAlpha "$WEB/src/assets/icon-light.png"
+  cp "$NAVY" "$WEB/src/assets/icon-dark.png"
+  magick "$NAVY" -resize 256x256 "$WEB/public/favicon.png"
+  rm -rf "$FW"
+  echo "wrote website icon-light.png (cream) + icon-dark.png (navy) + favicon.png (navy)"
 else
-  echo "WARN: ictool not found ($ICTOOL); skipped website/favicon render" >&2
+  echo "WARN: magick or navy master missing; skipped website assets" >&2
+fi
+
+# --- optional Liquid Glass appearance preview sheet for iteration ---
+if [ "${PREVIEW:-0}" = "1" ] && [ -x "$ICTOOL" ]; then
+  for r in Default Dark TintedLight TintedDark ClearDark Mono; do
+    "$ICTOOL" "$ICON" --export-image --output-file "/tmp/lg_$r.png" \
+      --platform macOS --rendition "$r" --width 512 --height 512 --scale 1 2>/dev/null || true
+  done
+  echo "previews: /tmp/lg_<rendition>.png"
 fi
