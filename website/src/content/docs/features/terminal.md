@@ -9,12 +9,13 @@ maiTerm's terminal does its heavy lifting in Rust: alacritty_terminal handles VT
 
 - **alacritty_terminal + xterm.js** — Rust-native VTE parsing, buffering, and scrollback in the backend; xterm.js renders just the visible viewport
 - **Split panes** — horizontal and vertical splits, drag to resize, fully recursive binary tree layout
-- **Multiple tabs** — per-pane tabs with activity indicators and completion detection
+- **Multiple tabs** — per-pane tabs with activity indicators and completion detection; tabs scrolled out of view collapse into an overflow menu so you can jump to any of them
 - **Scrollback persistence** — saves and restores terminal state across restarts
 - **SSH session cloning** — split an SSH session to get a second shell at the same remote CWD
+- **SSH drop recovery** — when a connection drops unexpectedly, the tab keeps its title and offers a one-click reconnect
 - **Multi-window** — open additional windows, duplicate windows with full tab context
 - **Per-tab command history** — each tab maintains its own shell history, cloned tabs inherit it
-- **File drop** — drag files onto a terminal to paste paths; over SSH, files are SCP'd to the remote CWD automatically
+- **File drop** — drag files onto a terminal to paste paths; over SSH, files are SCP'd to the remote CWD automatically, with live upload progress you can cancel
 - **Image paste** — paste clipboard images (Cmd+V) into Claude Code sessions as temp file paths
 
 ## Rendering
@@ -60,6 +61,10 @@ Export your entire maiTerm state — workspaces, tabs, scrollback, notes, prefer
 - **Auto-trim** old backups by configurable age
 - **Selective import** — preview what's in a backup, pick which workspaces to import, choose overwrite or merge mode
 - **Exclude scrollback** option to keep exports lightweight
+
+## Reconnect a Dropped SSH Session
+
+When an SSH session drops because of a network blip — not a clean `exit` — maiTerm notices the difference. Instead of resetting the tab to a bare local shell, it preserves the remote title and shows a **disconnected** badge in the tab bar. Click it to reconnect: maiTerm replays the same connection and drops you back into the directory you were in, so a flaky network doesn't cost you your place. A clean logout you did on purpose is left alone.
 
 ## Auto-Resume
 

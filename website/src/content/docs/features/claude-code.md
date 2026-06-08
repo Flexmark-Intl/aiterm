@@ -124,6 +124,12 @@ Drag files onto a terminal running Claude Code over SSH — maiTerm SCP uploads 
 
 You can also paste images from your clipboard (Cmd+V) into a Claude Code session. maiTerm saves the image to a temp file and pastes the path, so Claude can view it directly — useful for sharing screenshots, diagrams, or error messages without leaving the terminal.
 
+## The `/maiterm` Skill
+
+maiTerm installs a Claude Code skill that gives your agent fast slash-command access to the most common tools — `/maiterm notes`, `/maiterm tabs`, `/maiterm diag`, and more — without making it hunt through every MCP tool. It's written on launch and removed on exit, and it works the same way over SSH on bridged remote hosts.
+
+It also ships a recommended **status line** for Claude Code. Run `/maiterm statusline` and your agent installs a compact status line showing host · cwd · git branch · model · reasoning effort · context usage. The installer renders a live colored preview first, only writes to `~/.claude/statusline-command.sh` and your settings (it's idempotent — safe to re-run), and tells you if `jq` is missing instead of leaving a broken line. It works on local sessions and on SSH-bridged hosts.
+
 ## Dev/Production Isolation
 
 Dev builds register as `aiterm-dev` with display name "maiTermDev", so development and production instances don't interfere with each other.
