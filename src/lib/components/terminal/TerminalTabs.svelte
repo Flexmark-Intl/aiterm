@@ -178,6 +178,11 @@
   // deferred until then via this guard so we scroll to the final slot, not the
   // tab's old suspended-group position. Set in handleTabClick, consumed here.
   let pendingPromoteScrollId: string | null = null;
+  // Tabs the user explicitly unsuspended by clicking. The `everLive` gate skips
+  // a tab's first live transition (so the passive lazy-spawn on app load isn't
+  // reordered), but a deliberate click IS a resume and must promote even the
+  // first time — otherwise re-suspending it drops it back to its old slot.
+  const userResumedIds = new Set<string>();
   $effect(() => {
     void terminalsStore.instanceVersion;
     const grouping = preferencesStore.groupActiveTabs;
@@ -197,7 +202,10 @@
         // suspend→resume cycle of the same tab. A restored tab keeps the
         // placement restoreArchivedTab gave it — don't promote it.
         const justRestored = terminalsStore.consumeRestoredFromArchive(t.id);
-        if (liveSeeded && grouping && everLive.has(t.id) && !justRestored) {
+        // Promote on a real resume: either the tab was live before this session
+        // (everLive), or the user just clicked it to unsuspend (userResumed).
+        const userResumed = userResumedIds.delete(t.id);
+        if (liveSeeded && grouping && (everLive.has(t.id) || userResumed) && !justRestored) {
           resumed.push(t.id);
         }
       }
@@ -466,6 +474,7 @@
     const isLive = !!(terminalsStore.get(tabId) || terminalsStore.isSpawning(tabId));
     if (isTerm && !isLive && preferencesStore.groupActiveTabs) {
       pendingPromoteScrollId = tabId;
+      userResumedIds.add(tabId); // a deliberate unsuspend must promote even on its first live
     } else {
       scrollTabIntoView(tabId);
     }
