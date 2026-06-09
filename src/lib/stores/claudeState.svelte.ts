@@ -33,6 +33,9 @@ export interface ClaudeTabSession {
   /** Only meaningful while idle: false once Claude finishes (unread), true after
    *  the user has viewed the tab. Reset on each fresh transition into idle. */
   read?: boolean;
+  /** Wall-clock ms of the last state change for this tab — drives recency sorting
+   *  (e.g. the Agent Bridge picker lists most-recently-active agents first). */
+  updatedAt: number;
 }
 
 /** Workspace-level rollup of Claude state across a set of tabs. `idle` is split
@@ -93,7 +96,7 @@ function createClaudeStateStore() {
     // Entering idle fresh = unread; staying idle preserves whatever read flag we had.
     const read = state === 'idle' ? (current?.state === 'idle' ? current.read : false) : undefined;
     sessions = new Map(sessions);
-    sessions.set(tabId, { sessionId, state, toolName, toolDetail, read });
+    sessions.set(tabId, { sessionId, state, toolName, toolDetail, read, updatedAt: Date.now() });
 
     // Propagate permission state to activityStore tab state so workspace sidebar shows alert.
     // Clear alert when leaving permission state (but only if we set it).

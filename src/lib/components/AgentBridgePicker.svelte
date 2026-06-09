@@ -22,11 +22,16 @@
     workspaceName: string;
     cwd: string | null;
     state: 'active' | 'idle' | 'permission';
+    /** Last Claude state change (ms) — for recency sorting. */
+    lastActivity: number;
   }
 
   let selectedIndex = $state(0);
   let busy = $state(false);
   let errorMsg = $state<string | null>(null);
+  // Free-text filter over tab name / workspace / cwd (for big agent fleets).
+  let filter = $state('');
+  let filterInput = $state<HTMLInputElement | null>(null);
   // 'fork' = fork the chosen session into a new split (default). 'existing' = bridge
   // directly to the chosen running tab, no new pane (for when the split already exists).
   let mode = $state<'fork' | 'existing'>('fork');
@@ -61,11 +66,25 @@
             workspaceName: ws.name,
             cwd: osc?.cwd ?? osc?.promptCwd ?? null,
             state: cs.state,
+            lastActivity: cs.updatedAt,
           });
         }
       }
     }
     return out;
+  });
+
+  // What the list actually renders: most-recently-active first, narrowed by the filter.
+  const visibleCandidates = $derived.by((): Candidate[] => {
+    const q = filter.trim().toLowerCase();
+    const list = q
+      ? candidates.filter((c) =>
+          c.tabName.toLowerCase().includes(q) ||
+          c.workspaceName.toLowerCase().includes(q) ||
+          (c.cwd?.toLowerCase().includes(q) ?? false))
+      : candidates.slice();
+    list.sort((a, b) => b.lastActivity - a.lastActivity);
+    return list;
   });
 
   const callerName = $derived.by(() => {
@@ -86,11 +105,18 @@
       busy = false;
       mode = 'fork';
       purpose = '';
+      filter = '';
     }
   });
 
   $effect(() => {
-    if (selectedIndex >= candidates.length) selectedIndex = Math.max(0, candidates.length - 1);
+    if (selectedIndex >= visibleCandidates.length) selectedIndex = Math.max(0, visibleCandidates.length - 1);
+  });
+
+  // Auto-focus the filter so power users can type-to-narrow immediately. Arrow/Enter
+  // still bubble to the dialog handler for navigation.
+  $effect(() => {
+    if (open && filterInput) filterInput.focus();
   });
 
   async function choose(c: Candidate) {
@@ -154,24 +180,24 @@
     if ((e.target as HTMLElement)?.tagName === 'TEXTAREA') {
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
-        const c = candidates[selectedIndex];
+        const c = visibleCandidates[selectedIndex];
         if (c) void choose(c);
       }
       return;
     }
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      if (candidates.length) selectedIndex = (selectedIndex + 1) % candidates.length;
+      if (visibleCandidates.length) selectedIndex = (selectedIndex + 1) % visibleCandidates.length;
       return;
     }
     if (e.key === 'ArrowUp') {
       e.preventDefault();
-      if (candidates.length) selectedIndex = (selectedIndex - 1 + candidates.length) % candidates.length;
+      if (visibleCandidates.length) selectedIndex = (selectedIndex - 1 + visibleCandidates.length) % visibleCandidates.length;
       return;
     }
     if (e.key === 'Enter') {
       e.preventDefault();
-      const c = candidates[selectedIndex];
+      const c = visibleCandidates[selectedIndex];
       if (c) void choose(c);
       return;
     }
@@ -242,15 +268,33 @@
         <div class="error-banner">{errorMsg}</div>
       {/if}
 
+      {#if callerTabId && candidates.length > 0}
+        <div class="search-field">
+          <input
+            bind:this={filterInput}
+            bind:value={filter}
+            type="text"
+            disabled={busy}
+            placeholder="Filter agents by name, workspace, or path…"
+            oninput={() => { selectedIndex = 0; }}
+          />
+        </div>
+      {/if}
+
       <div class="results">
         {#if !callerTabId}
           <div class="status">Open this from a terminal tab running Claude.</div>
         {:else if candidates.length === 0}
           <div class="status">
-            No other Claude sessions found. Start Claude in another tab, then try again.
+            No other registered Claude agents found. An agent appears here once it has
+            registered with maiTerm — i.e. it has made at least one tool call (or you ran
+            <code>/maiterm init</code> in its tab). Start Claude in another tab, let it take
+            one turn, then reopen this.
           </div>
+        {:else if visibleCandidates.length === 0}
+          <div class="status">No agents match “{filter}”.</div>
         {:else}
-          {#each candidates as c, i (c.tabId)}
+          {#each visibleCandidates as c, i (c.tabId)}
             <button
               class="result-item"
               class:selected={i === selectedIndex}
@@ -273,7 +317,11 @@
 
       <div class="footer">
         <span class="hint">↑↓ navigate · ↵ connect · esc close</span>
-        {#if busy}<span class="hint">{mode === 'fork' ? 'forking session…' : 'connecting…'}</span>{/if}
+        {#if busy}
+          <span class="hint">{mode === 'fork' ? 'forking session…' : 'connecting…'}</span>
+        {:else if candidates.length > 0}
+          <span class="hint">{visibleCandidates.length} of {candidates.length}</span>
+        {/if}
       </div>
     </div>
   </div>
@@ -387,6 +435,38 @@
 
   .purpose-field textarea::placeholder {
     color: var(--fg-dim);
+  }
+
+  .search-field {
+    padding: 8px 12px 4px;
+  }
+
+  .search-field input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px 9px;
+    font-family: inherit;
+    font-size: 0.82rem;
+    color: var(--fg);
+    background: var(--bg-dark);
+    border: 1px solid var(--bg-light);
+    border-radius: 4px;
+  }
+
+  .search-field input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  .search-field input::placeholder {
+    color: var(--fg-dim);
+  }
+
+  .status code {
+    background: var(--bg-dark);
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 0.85em;
   }
 
   .error-banner {

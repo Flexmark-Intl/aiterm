@@ -1620,12 +1620,12 @@
       { label: '', separator: true, action: () => {} },
       ...(agentBridgeStore.isBridged(tabId) ? [
         {
-          label: 'Disconnect Agent',
+          label: 'Disconnect Agent Bridge',
           action: () => agentBridgeStore.disconnect(tabId),
         },
       ] : [
         {
-          label: 'Connect to Agent\u2026',
+          label: 'Create Agent Bridge\u2026',
           action: () => window.dispatchEvent(new CustomEvent('open-agent-bridge-picker', { detail: { tabId } })),
         },
       ]),
