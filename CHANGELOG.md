@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.13.3
+
+- **Search and per-tab age in the hidden-tabs menu.** The overflow menu for tabs that scroll out of view now has a search box to filter by name and shows how long each suspended terminal has been idle, matching the archive list. The popup is wider and taller so longer names fit
+- **Clicking into a terminal, editor, or diff now focuses its pane.** Pane-targeted actions like Cmd+T (new tab) and Cmd+D (split) operate on the pane you last clicked into — not just the last pane whose header you clicked — so they go where you're actually working
+- Fix Agent Bridge reporting a dropped bridge and misrouting messages when two or more agents are active at once. With multiple live agents, an unbound connection could be matched to the wrong agent's tab, making a bridged agent see its own tab as its partner. Tab resolution now only auto-recovers when it's unambiguous, and a bridge can never point at itself
+- Fix a restored archived tab briefly landing next to the active tab and then jumping to the end of the active group a second later when "group active tabs" is on — the restored tab now keeps the position it was given
+- Claude agents running in maiTerm now consistently refer to the app as "maiTerm"; the remaining "aiTerm" strings in the MCP tool descriptions and agent-facing messages have been updated. Your data, settings, and integrations are unaffected
+
 ## v1.13.2
 
 - **New macOS 26 "Liquid Glass" app icon.** On macOS Tahoe (26), the dock and Finder icon now use Apple's adaptive Liquid Glass treatment — a periwinkle glass tile with the maiTerm "m" that the system renders for the light, dark, tinted, and clear appearances automatically. On earlier macOS, Windows, and Linux the existing icon is unchanged. The documentation site's logo and favicon now match the new icon as well
