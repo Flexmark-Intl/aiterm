@@ -154,7 +154,21 @@ Hooks registered in `~/.claude/settings.json` on MCP server startup, cleaned up 
 - Prevents wrong-tab targeting when user switches tabs while Claude is working
 - Connection affinity cleaned up on disconnect (WS close, SSE drop)
 
-**SSE reconnect recovery:** SSE connections over SSH tunnels flap frequently (disconnect/reconnect every few seconds). Each reconnect creates a new SSE session ID, clearing the old `connection_tabs` entry. Without recovery, every tool call after a reconnect fails with "Session not initialized." Fix: when a tool call arrives with no connection affinity, `claude_sessions` is checked for active sessions. If exactly one active session exists, its tab_id is used to auto-restore affinity for the new connection. This avoids requiring Claude to re-call `initSession` after every SSE reconnect.
+**Streamable-HTTP connection identity (the load-bearing part for local agents):** local
+Claude connects over `type: http` (`POST /mcp`), which has no persistent socket — so
+`connection_id` rides entirely on the `Mcp-Session-Id` header. The server **assigns** a
+fresh uuid on the `initialize` handshake and returns it in the response header
+(`derive_streamable_connection_id` in `server.rs`); the client echoes it on every later
+request, giving each agent a unique `mcp-<uuid>` key. **This is critical for Agent
+Bridge:** the old code never assigned an id and fell back to one shared constant
+`"streamable-http"` for ALL sessionless requests, so two local agents collapsed onto a
+single affinity key. Since `initSession` is the only writer of that key, the last agent
+to init silently owned it and the other agent's tool calls resolved to the WRONG tab —
+the "bridge dropped" report, "fixed" only by re-running `/maiterm init` (which re-claimed
+the shared slot until the peer re-claimed it). Never reintroduce a shared sessionless
+key; mint a per-request id instead so distinct agents can't merge.
+
+**SSE reconnect recovery:** SSE connections over SSH tunnels flap frequently (disconnect/reconnect every few seconds). Each reconnect creates a new SSE session ID, clearing the old `connection_tabs` entry. Without recovery, every tool call after a reconnect fails with "Session not initialized." Fix: when a tool call arrives with no connection affinity, `claude_sessions` is checked for active sessions. Recovery only binds when unambiguous — exactly one active session, or (with multiple bridged agents) exactly one of them currently lacks a live connection. With 2+ ambiguous candidates it declines and requires an explicit `initSession`, because guessing could bind one agent's call to another agent's tab (the same class of cross-agent corruption as the shared-key bug above).
 
 **Dev/prod isolation:**
 - PTY env vars: `AITERM_TAB_ID` (tab ID), `AITERM_PORT` (server port) — set at spawn in `pty/manager.rs`

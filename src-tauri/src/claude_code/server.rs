@@ -655,12 +655,16 @@ async fn streamable_http_handler(
         return StatusCode::UNAUTHORIZED.into_response();
     }
 
-    // Use Mcp-Session-Id header for connection affinity (streamable HTTP sessions)
-    let connection_id = headers
-        .get("mcp-session-id")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| format!("mcp-{}", s))
-        .unwrap_or_else(|| "streamable-http".to_string());
+    // Connection affinity for streamable HTTP. The client echoes the Mcp-Session-Id we
+    // assign on `initialize`; once it does, every request from that agent maps to the
+    // same unique `mcp-<id>` key. See derive_streamable_connection_id for why the old
+    // shared-constant fallback was the root of the Agent Bridge "bridge dropped" bug.
+    let incoming_sid = headers.get("mcp-session-id").and_then(|v| v.to_str().ok());
+    let is_initialize = serde_json::from_str::<serde_json::Value>(&body)
+        .ok()
+        .and_then(|v| v.get("method").and_then(|m| m.as_str()).map(|m| m == "initialize"))
+        .unwrap_or(false);
+    let (connection_id, assigned_sid) = derive_streamable_connection_id(incoming_sid, is_initialize);
 
     // Process the JSON-RPC message and get the response
     let response_json = process_message(&body, &srv.app_handle, &srv.state, &srv.connection_tabs, &connection_id).await;
@@ -669,17 +673,47 @@ async fn streamable_http_handler(
         Some(json) => {
             // Return as SSE event stream (single event then close)
             let sse_body = format!("event: message\ndata: {}\n\n", json);
-            Response::builder()
+            let mut builder = Response::builder()
                 .status(200)
                 .header(header::CONTENT_TYPE, "text/event-stream")
-                .header(header::CACHE_CONTROL, "no-cache")
-                .body(Body::from(sse_body))
-                .unwrap()
+                .header(header::CACHE_CONTROL, "no-cache");
+            // Hand the client the session id we minted on `initialize` so it scopes the
+            // rest of the session to a unique connection key (no cross-agent clobber).
+            if let Some(sid) = assigned_sid {
+                builder = builder.header("mcp-session-id", sid);
+            }
+            builder.body(Body::from(sse_body)).unwrap()
         }
         None => {
             // Notification — no response needed
             StatusCode::ACCEPTED.into_response()
         }
+    }
+}
+
+/// Derive a stable, UNIQUE connection id for a streamable-HTTP request.
+///
+/// Streamable HTTP has no persistent socket, so connection identity rides on the
+/// `Mcp-Session-Id` header. The server assigns it on `initialize`; the client then
+/// echoes it on every later request. The OLD code never assigned one and fell back to a
+/// single shared constant `"streamable-http"` for ALL sessionless requests — so every
+/// local agent collapsed onto one affinity key. Since `initSession` is the only writer
+/// of that key, the last agent to init silently owned it and every other agent's tool
+/// calls resolved to the WRONG tab — the Agent Bridge "bridge dropped" report, fixed
+/// only by re-running `/maiterm init` (which re-claimed the shared slot).
+///
+/// Rules: reuse a provided id; mint+return one on `initialize`; for a sessionless
+/// non-initialize request (client not echoing) mint a per-request id so distinct agents
+/// are never merged onto one key (affinity recovery re-binds it). Returns
+/// `(connection_id, session_id_to_return_in_response)`.
+fn derive_streamable_connection_id(incoming_sid: Option<&str>, is_initialize: bool) -> (String, Option<String>) {
+    match incoming_sid {
+        Some(sid) if !sid.is_empty() => (format!("mcp-{}", sid), None),
+        _ if is_initialize => {
+            let sid = uuid::Uuid::new_v4().to_string();
+            (format!("mcp-{}", sid), Some(sid))
+        }
+        _ => (format!("mcp-{}", uuid::Uuid::new_v4()), None),
     }
 }
 
@@ -1496,5 +1530,42 @@ async fn handle_message(
 ) {
     if let Some(json) = process_message(text, app_handle, state, connection_tabs, connection_id).await {
         let _ = response_tx.send(json);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::derive_streamable_connection_id;
+
+    // Regression for the Agent Bridge "bridge dropped" bug: sessionless streamable-HTTP
+    // requests used to collapse onto one shared "streamable-http" key, so two local
+    // agents clobbered each other's tab affinity. Each initialize must mint its OWN id.
+    #[test]
+    fn initialize_mints_unique_session_ids() {
+        let (c1, a1) = derive_streamable_connection_id(None, true);
+        let (c2, a2) = derive_streamable_connection_id(None, true);
+        assert!(a1.is_some() && a2.is_some(), "initialize must assign a session id");
+        assert_ne!(c1, c2, "two agents must NOT share one connection key");
+        assert_ne!(c1, "streamable-http", "must not fall back to the shared constant");
+        assert_eq!(c1, format!("mcp-{}", a1.unwrap()), "returned id must match the connection key");
+    }
+
+    #[test]
+    fn provided_session_id_is_reused_verbatim() {
+        let (c, a) = derive_streamable_connection_id(Some("abc-123"), false);
+        assert_eq!(c, "mcp-abc-123");
+        assert!(a.is_none(), "no new id assigned when the client already has one");
+    }
+
+    #[test]
+    fn sessionless_requests_never_merge() {
+        // Even if the client never echoes our id, distinct calls must not share a key.
+        let (c1, _) = derive_streamable_connection_id(None, false);
+        let (c2, _) = derive_streamable_connection_id(None, false);
+        assert_ne!(c1, c2);
+        assert_ne!(c1, "streamable-http");
+        // An empty header is treated as absent, not as the literal key "mcp-".
+        let (c3, _) = derive_streamable_connection_id(Some(""), false);
+        assert_ne!(c3, "mcp-");
     }
 }
