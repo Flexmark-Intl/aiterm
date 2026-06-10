@@ -7,6 +7,8 @@
   import NotesPanel from '$lib/components/terminal/NotesPanel.svelte';
   import ComposerDock from '$lib/components/terminal/ComposerDock.svelte';
   import { pendingResumePanes, resumePane } from '$lib/stores/resumeGate.svelte';
+  import { preferencesStore } from '$lib/stores/preferences.svelte';
+  import { getSavedScrollbackText } from '$lib/tauri/commands';
   import { modLabel } from '$lib/utils/platform';
 
   interface Props {
@@ -21,6 +23,23 @@
   let editingName = $state(false);
   let nameValue = $state('');
   let editInput = $state<HTMLInputElement | null>(null);
+  let suspendedPreview = $state<string | null>(null);
+
+  // Load the suspended tab's saved scrollback so the resume overlay can show
+  // what was happening in the tab before it was suspended.
+  $effect(() => {
+    const pending = pendingResumePanes.has(pane.id);
+    const tabId = pane.active_tab_id;
+    if (!pending || !tabId) {
+      suspendedPreview = null;
+      return;
+    }
+    let cancelled = false;
+    getSavedScrollbackText(tabId, 200)
+      .then((text) => { if (!cancelled) suspendedPreview = text; })
+      .catch(() => { if (!cancelled) suspendedPreview = null; });
+    return () => { cancelled = true; };
+  });
 
   // Notify portaled TerminalPanes that their slots are ready
   onMount(() => {
@@ -126,11 +145,20 @@
           {#if pendingResumePanes.has(pane.id)}
             {@const activeTab = pane.tabs.find(t => t.id === pane.active_tab_id)}
             <div class="resume-overlay">
-              <p>This tab is suspended</p>
-              <button class="resume-btn" onclick={() => resumePane(pane.id)}>
-                Resume{activeTab ? ` "${activeTab.custom_name ? activeTab.name : 'terminal'}"` : ''}
-              </button>
-              <p class="resume-hint">or click any tab to resume it</p>
+              {#if suspendedPreview}
+                <pre
+                  class="suspended-preview"
+                  style="font-family: {preferencesStore.fontFamily}; font-size: {preferencesStore.fontSize}px;"
+                >{suspendedPreview}</pre>
+                <div class="preview-glass"></div>
+              {/if}
+              <div class="resume-controls" class:on-glass={suspendedPreview !== null}>
+                <p>This tab is suspended</p>
+                <button class="resume-btn" onclick={() => resumePane(pane.id)}>
+                  Resume{activeTab ? ` "${activeTab.custom_name ? activeTab.name : 'terminal'}"` : ''}
+                </button>
+                <p class="resume-hint">or click any tab to resume it</p>
+              </div>
             </div>
           {/if}
         </div>
@@ -335,10 +363,53 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 12px;
     background: var(--bg-dark);
     z-index: 5;
     color: var(--fg-dim);
+    overflow: hidden;
+  }
+
+  .suspended-preview {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    max-height: 100%;
+    margin: 0;
+    padding: 8px;
+    overflow: hidden;
+    white-space: pre;
+    line-height: 1.3;
+    color: var(--fg);
+    opacity: 0.75;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  .preview-glass {
+    position: absolute;
+    inset: 0;
+    backdrop-filter: blur(1.5px) saturate(0.7);
+    -webkit-backdrop-filter: blur(1.5px) saturate(0.7);
+    background: color-mix(in srgb, var(--bg-dark) 45%, transparent);
+    pointer-events: none;
+  }
+
+  .resume-controls {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .resume-controls.on-glass {
+    padding: 20px 32px;
+    border-radius: 10px;
+    border: 1px solid color-mix(in srgb, var(--bg-light) 60%, transparent);
+    background: color-mix(in srgb, var(--bg-dark) 80%, transparent);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
   }
 
   .resume-overlay .resume-btn {
