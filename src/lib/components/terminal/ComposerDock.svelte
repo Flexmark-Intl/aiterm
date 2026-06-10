@@ -1,12 +1,13 @@
 <script lang="ts">
   import { tick, onDestroy } from 'svelte';
-  import { slide } from 'svelte/transition';
   import { workspacesStore } from '$lib/stores/workspaces.svelte';
   import { terminalsStore } from '$lib/stores/terminals.svelte';
   import { preferencesStore } from '$lib/stores/preferences.svelte';
   import { writeTerminal, terminalBracketedPaste } from '$lib/tauri/commands';
   import { isModKey, modLabel } from '$lib/utils/platform';
   import { error as logError } from '@tauri-apps/plugin-log';
+  import Tooltip from '$lib/components/Tooltip.svelte';
+  import IconButton from '$lib/components/ui/IconButton.svelte';
 
   interface Props {
     tabId: string;
@@ -46,17 +47,73 @@
     textareaEl.style.height = `${textareaEl.scrollHeight}px`;
   }
 
-  async function toggle() {
+  function toggle() {
     workspacesStore.toggleComposer(tabId);
-    await tick();
-    if (workspacesStore.isComposerOpen(tabId)) {
-      terminalsStore.get(tabId)?.terminal?.blur();
-      textareaEl?.focus();
-      autogrow();
+  }
+
+  let shellEl = $state<HTMLDivElement | null>(null);
+
+  // Explicit height animation: WebKit doesn't collapse a 0fr grid row below its
+  // content min-content, and a transition:slide outro left orphaned DOM — so the
+  // shell stays mounted and we animate its measured height by hand. While open
+  // the height is 'auto' so the textarea's autogrow resizes the dock naturally.
+  //
+  // Deliberately rAF-free: WKWebView pauses requestAnimationFrame in occluded
+  // windows, so any rAF-dependent step would leave the dock in a wrong visual
+  // state if toggled while the window is in the background. Synchronous reflow
+  // (offsetHeight) commits start values instead; only the cosmetic release to
+  // 'auto' uses transitionend with a timed fallback.
+  let animSeq = 0;
+  function setShellHeight(isOpen: boolean, animate: boolean) {
+    const el = shellEl;
+    if (!el) return;
+    const seq = ++animSeq;
+    if (!animate) {
+      el.style.transitionProperty = 'none';
+      el.style.height = isOpen ? 'auto' : '0px';
+      void el.offsetHeight; // flush so the height change doesn't animate
+      el.style.transitionProperty = '';
+      return;
+    }
+    if (isOpen) {
+      // Inline height is 0px (or mid-close px) — animate to content height,
+      // then release to auto so autogrow can resize the open dock.
+      const target = el.scrollHeight;
+      el.style.height = `${target}px`;
+      const release = () => {
+        el.removeEventListener('transitionend', release);
+        clearTimeout(timer);
+        if (seq === animSeq) el.style.height = 'auto';
+      };
+      const timer = setTimeout(release, 250);
+      el.addEventListener('transitionend', release);
     } else {
-      terminalsStore.get(tabId)?.terminal?.focus();
+      el.style.height = `${el.scrollHeight}px`;
+      void el.offsetHeight; // commit the explicit height before collapsing
+      el.style.height = '0px';
     }
   }
+
+  // Height + focus handoff on open/close transitions (button or Cmd+Shift+C
+  // alike). The initial run snaps without animation so a tab switch (keyed
+  // remount) doesn't replay the slide or steal focus from the terminal.
+  let prevOpen: boolean | undefined;
+  $effect(() => {
+    const isOpen = open;
+    if (prevOpen === undefined) {
+      setShellHeight(isOpen, false);
+    } else if (isOpen !== prevOpen) {
+      setShellHeight(isOpen, true);
+      if (isOpen) {
+        terminalsStore.get(tabId)?.terminal?.blur();
+        textareaEl?.focus();
+        autogrow();
+      } else {
+        terminalsStore.get(tabId)?.terminal?.focus();
+      }
+    }
+    prevOpen = isOpen;
+  });
 
   function focusTerminal() {
     terminalsStore.get(tabId)?.terminal?.focus();
@@ -109,8 +166,10 @@
   });
 </script>
 
-{#if open}
-  <div class="composer-dock" transition:slide={{ duration: 160 }}>
+<!-- Always mounted; see setShellHeight for why the open/close animation is
+     hand-rolled. inert blocks focus/input while collapsed. -->
+<div class="composer-shell" class:open inert={!open} bind:this={shellEl}>
+  <div class="composer-dock">
     <textarea
       bind:this={textareaEl}
       bind:value
@@ -124,34 +183,40 @@
       onkeydown={onKeydown}
     ></textarea>
     <div class="composer-actions">
-      <button class="composer-btn" onclick={toggle} title="Collapse composer" aria-label="Collapse composer">
+      <IconButton tooltip="Collapse composer ({modLabel}+Shift+C)" size={26} onclick={toggle} aria-label="Collapse composer">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
           <path d="M4 6.5 8 10.5 12 6.5"/>
         </svg>
-      </button>
-      <button class="composer-btn" onclick={send} title="Send ({modLabel}+Enter)" aria-label="Send">
+      </IconButton>
+      <IconButton tooltip="Send ({modLabel}+Enter)" size={26} onclick={send} aria-label="Send">
         <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
           <path d="M1.7 8 1 2.4c-.1-.6.5-1 1-.8l12.6 5.7c.5.2.5 1 0 1.2L2 14.4c-.5.2-1.1-.2-1-.8L1.7 8Zm0 0h6.6"
             fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round"/>
         </svg>
-      </button>
+      </IconButton>
     </div>
   </div>
-{:else}
-  <button
-    class="composer-handle"
-    onclick={toggle}
-    title="Open composer"
-    aria-label="Open composer"
-  >
-    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
-      <rect x="1.5" y="3.5" width="13" height="9" rx="1.5"/>
-      <path d="M4.5 9.5h7"/>
-    </svg>
-  </button>
+</div>
+{#if !open}
+  <div class="composer-handle-pos">
+    <Tooltip text="Open composer ({modLabel}+Shift+C)">
+      <button class="composer-handle" onclick={toggle} aria-label="Open composer">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="1.5" y="3.5" width="13" height="9" rx="1.5"/>
+          <path d="M4.5 9.5h7"/>
+        </svg>
+      </button>
+    </Tooltip>
+  </div>
 {/if}
 
 <style>
+  .composer-shell {
+    height: 0;
+    overflow: hidden;
+    transition: height 160ms ease;
+  }
+
   .composer-dock {
     display: flex;
     align-items: flex-end;
@@ -193,28 +258,14 @@
     margin-bottom: 3px;
   }
 
-  .composer-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 26px;
-    height: 26px;
-    padding: 0;
-    color: var(--fg-dim);
-    border-radius: 4px;
-    transition: background 0.1s, color 0.1s;
-  }
-
-  .composer-btn:hover {
-    background: var(--bg-light);
-    color: var(--fg);
-  }
-
-  .composer-handle {
+  .composer-handle-pos {
     position: absolute;
     right: 14px;
     bottom: 8px;
     z-index: 5;
+  }
+
+  .composer-handle {
     display: flex;
     align-items: center;
     justify-content: center;

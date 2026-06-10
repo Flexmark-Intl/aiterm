@@ -211,6 +211,7 @@ Controlled by `cfg!(debug_assertions)` in `state/persistence.rs` → `app_data_s
 | Cmd+S | Save file (editor tabs only) |
 | Cmd+F | Find/replace (editor tabs) / terminal search |
 | Cmd+Shift+N | Toggle notes panel |
+| Cmd+Shift+C | Toggle composer dock |
 | Cmd+, | Preferences |
 | Cmd+/ | Help |
 

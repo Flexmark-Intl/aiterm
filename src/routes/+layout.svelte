@@ -773,6 +773,17 @@
         return;
       }
 
+      // Cmd+Shift+C - Toggle composer dock
+      if (isMeta && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'c') {
+        e.preventDefault();
+        e.stopPropagation();
+        const tab = workspacesStore.activeTab;
+        if (tab && tab.tab_type === 'terminal') {
+          workspacesStore.toggleComposer(tab.id);
+        }
+        return;
+      }
+
       // Cmd+B - Toggle sidebar
       if (isMeta && !e.shiftKey && e.key.toLowerCase() === 'b') {
         e.preventDefault();

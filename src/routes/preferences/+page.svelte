@@ -488,6 +488,26 @@
           </button>
         </div>
 
+        <div class="setting" style="align-items: flex-start;">
+          <div>
+            <label for="composer-default-open">Open Composer by Default</label>
+            <p class="setting-hint">
+              Shows the multi-line input dock at the bottom of terminal tabs.
+              Tabs where you've toggled the composer keep their own state.
+            </p>
+          </div>
+          <button
+            id="composer-default-open"
+            class="toggle"
+            class:active={preferencesStore.composerDefaultOpen}
+            onclick={() => preferencesStore.setComposerDefaultOpen(!preferencesStore.composerDefaultOpen)}
+            aria-pressed={preferencesStore.composerDefaultOpen}
+            aria-label="Toggle composer open by default"
+          >
+            <span class="toggle-knob"></span>
+          </button>
+        </div>
+
         <h3 class="section-heading" style="margin-top: 20px;">Rendering</h3>
 
         <div class="setting" style="align-items: flex-start;">
@@ -669,29 +689,7 @@
           </select>
         </div>
       {:else if activeSection === 'tabs'}
-        <h3 class="section-heading">Composer</h3>
-
-        <div class="setting" style="align-items: flex-start;">
-          <div>
-            <label for="composer-default-open">Open Composer by Default</label>
-            <p class="setting-hint">
-              Shows the multi-line input dock at the bottom of terminal tabs.
-              Tabs where you've toggled the composer keep their own state.
-            </p>
-          </div>
-          <button
-            id="composer-default-open"
-            class="toggle"
-            class:active={preferencesStore.composerDefaultOpen}
-            onclick={() => preferencesStore.setComposerDefaultOpen(!preferencesStore.composerDefaultOpen)}
-            aria-pressed={preferencesStore.composerDefaultOpen}
-            aria-label="Toggle composer open by default"
-          >
-            <span class="toggle-knob"></span>
-          </button>
-        </div>
-
-        <h3 class="section-heading" style="margin-top: 20px;">Duplication</h3>
+        <h3 class="section-heading">Duplication</h3>
         <p class="section-desc">
           What to clone when splitting a pane (<kbd>{modLabel}+D</kbd>).
         </p>
