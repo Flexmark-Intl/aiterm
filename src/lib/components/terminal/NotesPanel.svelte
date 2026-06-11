@@ -1,9 +1,10 @@
 <script lang="ts">
   import { workspacesStore } from '$lib/stores/workspaces.svelte';
   import { preferencesStore } from '$lib/stores/preferences.svelte';
-  import { untrack } from 'svelte';
-  import { marked } from 'marked';
+  import { tick, untrack } from 'svelte';
+  import { Marked, Renderer, type Tokens } from 'marked';
   import { open as shellOpen } from '@tauri-apps/plugin-shell';
+  import { scanTables, displayCellText, encodeCellText, type TableSpan } from '$lib/utils/markdownTable';
   import Icon from '$lib/components/Icon.svelte';
   import IconButton from '$lib/components/ui/IconButton.svelte';
   import type { WorkspaceNote } from '$lib/tauri/types';
@@ -44,19 +45,45 @@
     `font-family: '${preferencesStore.notesFontFamily}', monospace; font-size: ${preferencesStore.notesFontSize}px; word-wrap: ${preferencesStore.notesWordWrap ? 'break-word' : 'normal'};`
   );
 
-  // Configure marked for safe rendering with interactive checkboxes
-  const renderer = new marked.Renderer();
+  // Notes-local marked instance — the custom renderer must not leak into
+  // other marked consumers (changelog modal, editor markdown preview)
+  const md = new Marked();
+  const renderer = new Renderer();
   let checkboxIndex = 0;
   renderer.checkbox = function({ checked }) {
     const i = checkboxIndex++;
     return `<input type="checkbox" data-index="${i}"${checked ? ' checked=""' : ''}>`;
   };
-  marked.setOptions({ breaks: true, gfm: true, renderer });
+  // Tag table cells with table/row/col indices so they can be edited in place
+  // (mapped back to source byte ranges by scanTables). Row 0 is the header.
+  let tableIndex = 0;
+  renderer.table = function(token: Tokens.Table) {
+    const t = tableIndex++;
+    const cellHtml = (cell: Tokens.TableCell, r: number, c: number) => {
+      const content = this.parser.parseInline(cell.tokens);
+      const type = cell.header ? 'th' : 'td';
+      const align = cell.align ? ` align="${cell.align}"` : '';
+      return `<${type}${align} data-mdt="${t}" data-mdr="${r}" data-mdc="${c}">${content}</${type}>\n`;
+    };
+    let header = '<tr>\n';
+    token.header.forEach((cell, c) => { header += cellHtml(cell, 0, c); });
+    header += '</tr>\n';
+    let body = '';
+    token.rows.forEach((row, r) => {
+      body += '<tr>\n';
+      row.forEach((cell, c) => { body += cellHtml(cell, r + 1, c); });
+      body += '</tr>\n';
+    });
+    if (body) body = `<tbody>${body}</tbody>`;
+    return `<table>\n<thead>\n${header}</thead>\n${body}</table>\n`;
+  };
+  md.setOptions({ breaks: true, gfm: true, renderer });
 
   const renderedHtml = $derived.by(() => {
     checkboxIndex = 0;
+    tableIndex = 0;
     const src = scope === 'tab' ? value : wsValue;
-    return marked.parse(src) as string;
+    return md.parse(src) as string;
   });
 
   // Sync external changes to notes mode (e.g. from MCP tools)
@@ -228,7 +255,157 @@
     if (anchor?.href) {
       e.preventDefault();
       shellOpen(anchor.href);
+      return;
     }
+
+    const cell = target.closest<HTMLElement>('td[data-mdt], th[data-mdt]');
+    if (cell) void clickCell(cell);
+  }
+
+  // ---- In-place table cell editing (render mode) ----
+  // Cells edit the markdown source surgically: only the bytes of the edited
+  // cell's content change, so MCP edits (editTabNotes) stay byte-exact.
+  let renderEl = $state<HTMLElement | null>(null);
+  // Plain (non-reactive) — the DOM is managed manually while a cell is edited
+  let editingCell: { t: number; r: number; c: number; raw: string; el: HTMLElement; prevHtml: string } | null = null;
+
+  function currentSrc(): string {
+    return scope === 'tab' ? value : wsValue;
+  }
+
+  function commitSrc(next: string) {
+    if (scope === 'tab') {
+      value = next;
+      save();
+    } else {
+      wsValue = next;
+      saveWorkspaceNote();
+    }
+  }
+
+  async function clickCell(cellEl: HTMLElement) {
+    if (editingCell?.el === cellEl) return;
+    const { mdt, mdr, mdc } = cellEl.dataset;
+    if (editingCell) void commitCellEdit();
+    // A pending commit (from focusout or above) may re-render the table —
+    // re-resolve the clicked cell in the fresh DOM before editing it
+    await tick();
+    const el = renderEl?.querySelector<HTMLElement>(
+      `td[data-mdt="${mdt}"][data-mdr="${mdr}"][data-mdc="${mdc}"], th[data-mdt="${mdt}"][data-mdr="${mdr}"][data-mdc="${mdc}"]`
+    );
+    if (el) startCellEdit(el);
+  }
+
+  function startCellEdit(el: HTMLElement) {
+    if (editingCell) return;
+    const t = Number(el.dataset.mdt);
+    const r = Number(el.dataset.mdr);
+    const c = Number(el.dataset.mdc);
+    if (!Number.isInteger(t) || !Number.isInteger(r) || !Number.isInteger(c)) return;
+    const table = scanTables(currentSrc())[t];
+    const span = table?.rows[r]?.[c];
+    if (!span) return;
+    // Structural check: the rendered table must match the scanned one — tables
+    // marked finds in nested contexts (blockquotes, lists) shift the indices,
+    // in which case editing is silently disabled rather than risking the
+    // wrong cell being rewritten.
+    const tableDom = el.closest('table');
+    if (!tableDom) return;
+    if (
+      tableDom.querySelectorAll('thead th').length !== table.rows[0].length ||
+      tableDom.querySelectorAll('tbody tr').length !== table.rows.length - 1
+    ) return;
+
+    const prevHtml = el.innerHTML;
+    el.classList.add('cell-editing');
+    try {
+      el.contentEditable = 'plaintext-only';
+    } catch {
+      el.contentEditable = 'true';
+    }
+    el.textContent = displayCellText(span.raw);
+    editingCell = { t, r, c, raw: span.raw, el, prevHtml };
+    el.focus();
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+  }
+
+  function restoreCell(ec: NonNullable<typeof editingCell>) {
+    ec.el.removeAttribute('contenteditable');
+    ec.el.classList.remove('cell-editing');
+    ec.el.innerHTML = ec.prevHtml;
+  }
+
+  function cancelCellEdit() {
+    const ec = editingCell;
+    if (!ec) return;
+    editingCell = null;
+    restoreCell(ec);
+  }
+
+  async function commitCellEdit(move?: 'next' | 'prev') {
+    const ec = editingCell;
+    if (!ec) return;
+    editingCell = null;
+    const newRaw = encodeCellText(ec.el.textContent ?? '');
+    const src = currentSrc();
+    const tables = scanTables(src);
+    const span = tables[ec.t]?.rows[ec.r]?.[ec.c];
+    if (!span || span.raw !== ec.raw || newRaw === ec.raw) {
+      // Unchanged, or the source shifted under us (e.g. an MCP edit) — discard
+      restoreCell(ec);
+    } else {
+      commitSrc(src.slice(0, span.start) + newRaw + src.slice(span.end));
+    }
+    if (!move) return;
+    const target = adjacentCell(tables[ec.t], ec.r, ec.c, move);
+    if (!target) return;
+    await tick();
+    const el = renderEl?.querySelector<HTMLElement>(
+      `[data-mdt="${ec.t}"][data-mdr="${target.r}"][data-mdc="${target.c}"]`
+    );
+    if (el) startCellEdit(el);
+  }
+
+  function adjacentCell(table: TableSpan | undefined, r: number, c: number, dir: 'next' | 'prev') {
+    if (!table) return null;
+    const rows = table.rows;
+    if (dir === 'next') {
+      if (c + 1 < rows[r].length) return { r, c: c + 1 };
+      for (let nr = r + 1; nr < rows.length; nr++) {
+        if (rows[nr].length) return { r: nr, c: 0 };
+      }
+    } else {
+      if (c > 0) return { r, c: c - 1 };
+      for (let nr = r - 1; nr >= 0; nr--) {
+        if (rows[nr].length) return { r: nr, c: rows[nr].length - 1 };
+      }
+    }
+    return null;
+  }
+
+  function handleRenderKeydown(e: KeyboardEvent) {
+    if (!editingCell) return;
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation();
+      void commitCellEdit();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      cancelCellEdit();
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      e.stopPropagation();
+      void commitCellEdit(e.shiftKey ? 'prev' : 'next');
+    }
+  }
+
+  function handleRenderFocusOut(e: FocusEvent) {
+    if (editingCell && e.target === editingCell.el) void commitCellEdit();
   }
 
   function clearTabNotes() {
@@ -430,7 +607,10 @@
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
         class="notes-render"
+        bind:this={renderEl}
         onclick={handleRenderClick}
+        onkeydown={handleRenderKeydown}
+        onfocusout={handleRenderFocusOut}
         style={renderStyle}
       >{@html renderedHtml}</div>
     {/if}
@@ -472,7 +652,10 @@
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
         class="notes-render"
+        bind:this={renderEl}
         onclick={handleRenderClick}
+        onkeydown={handleRenderKeydown}
+        onfocusout={handleRenderFocusOut}
         style={renderStyle}
       >{@html renderedHtml}</div>
     {/if}
@@ -702,6 +885,17 @@
     border: 1px solid var(--bg-light);
     padding: 4px 8px;
     text-align: left;
+  }
+
+  .notes-render :global(th[data-mdt]),
+  .notes-render :global(td[data-mdt]) {
+    cursor: text;
+  }
+
+  .notes-render :global(.cell-editing) {
+    outline: 1px solid var(--accent);
+    outline-offset: -1px;
+    background: var(--bg-dark);
   }
 
   .notes-render :global(th) {
