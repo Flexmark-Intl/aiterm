@@ -1542,6 +1542,89 @@ function createWorkspacesStore() {
       }
     },
 
+    /**
+     * Move a tab to another pane in the same workspace, PTY intact (no clone,
+     * no respawn). The backend removes the source pane if this empties it.
+     * `insertBeforeTabId` positions the tab within the target pane (appended
+     * when omitted).
+     */
+    async moveTabToPane(workspaceId: string, sourcePaneId: string, tabId: string, targetPaneId: string, insertBeforeTabId?: string | null) {
+      if (sourcePaneId === targetPaneId) return;
+      const ws = workspaces.find(w => w.id === workspaceId);
+      const sourcePane = ws?.panes.find(p => p.id === sourcePaneId);
+      if (!ws || !sourcePane) return;
+
+      const movedTabWasActive = sourcePane.active_tab_id === tabId;
+      const movedTabIndex = sourcePane.tabs.findIndex(t => t.id === tabId);
+
+      // The tab's component moves between per-pane keyed each blocks in
+      // +page.svelte, so Svelte destroys and recreates it — preserve the PTY
+      // across the gap, same as moveTabToWorkspace.
+      const termInstance = terminalsStore.get(tabId);
+      if (termInstance) {
+        terminalsStore.preservePty(termInstance.ptyId);
+      }
+
+      await commands.moveTabToPaneCmd(workspaceId, sourcePaneId, tabId, targetPaneId, insertBeforeTabId);
+
+      const data = await commands.getWindowData();
+
+      // Backend's active-tab fallback for the source pane ignores
+      // groupActiveTabs — redo the pick with grouping awareness.
+      const updatedWs = data.workspaces.find(w => w.id === workspaceId);
+      const updatedSourcePane = updatedWs?.panes.find(p => p.id === sourcePaneId);
+      if (movedTabWasActive && updatedSourcePane && updatedSourcePane.tabs.length > 0 && movedTabIndex >= 0) {
+        const preferred = pickNextActiveTab(updatedSourcePane.tabs, movedTabIndex);
+        if (preferred && preferred !== updatedSourcePane.active_tab_id) {
+          updatedSourcePane.active_tab_id = preferred;
+          await commands.setActiveTab(workspaceId, sourcePaneId, preferred);
+        }
+      }
+
+      workspaces = data.workspaces;
+      terminalsStore.updateTabLocation(tabId, workspaceId, targetPaneId);
+    },
+
+    /**
+     * Move a tab into a brand-new split pane — unlike splitPaneWithContext
+     * this moves the existing tab (PTY intact) instead of cloning it. The
+     * split is created on `targetPaneId` (which may differ from the source
+     * pane, e.g. dropping on another pane's edge); `before` puts the new pane
+     * on the left/top side.
+     */
+    async moveTabToSplit(workspaceId: string, sourcePaneId: string, tabId: string, targetPaneId: string, direction: SplitDirection, before = false) {
+      const ws = workspaces.find(w => w.id === workspaceId);
+      const sourcePane = ws?.panes.find(p => p.id === sourcePaneId);
+      if (!ws || !sourcePane) return;
+      // Splitting a pane off with its only tab just churns pane IDs
+      if (sourcePaneId === targetPaneId && sourcePane.tabs.length === 1) return;
+
+      const movedTabWasActive = sourcePane.active_tab_id === tabId;
+      const movedTabIndex = sourcePane.tabs.findIndex(t => t.id === tabId);
+
+      const termInstance = terminalsStore.get(tabId);
+      if (termInstance) {
+        terminalsStore.preservePty(termInstance.ptyId);
+      }
+
+      const newPane = await commands.moveTabToSplitCmd(workspaceId, sourcePaneId, tabId, targetPaneId, direction, before);
+
+      const data = await commands.getWindowData();
+
+      const updatedWs = data.workspaces.find(w => w.id === workspaceId);
+      const updatedSourcePane = updatedWs?.panes.find(p => p.id === sourcePaneId);
+      if (movedTabWasActive && updatedSourcePane && updatedSourcePane.tabs.length > 0 && movedTabIndex >= 0) {
+        const preferred = pickNextActiveTab(updatedSourcePane.tabs, movedTabIndex);
+        if (preferred && preferred !== updatedSourcePane.active_tab_id) {
+          updatedSourcePane.active_tab_id = preferred;
+          await commands.setActiveTab(workspaceId, sourcePaneId, preferred);
+        }
+      }
+
+      workspaces = data.workspaces;
+      terminalsStore.updateTabLocation(tabId, workspaceId, newPane.id);
+    },
+
     async reorderWorkspaces(workspaceIds: string[]) {
       const reordered = workspaceIds
         .map(id => workspaces.find(w => w.id === id))

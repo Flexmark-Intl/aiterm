@@ -54,26 +54,30 @@ impl SplitNode {
         }
     }
 
+    /// `before` places the new pane on the left/top side of the target
+    /// instead of the right/bottom.
     pub fn split_pane(
         &self,
         target_pane_id: &str,
         new_pane_id: &str,
         direction: SplitDirection,
+        before: bool,
     ) -> SplitNode {
         match self {
-            SplitNode::Leaf { pane_id } if pane_id == target_pane_id => SplitNode::Split {
-                id: uuid::Uuid::new_v4().to_string(),
-                direction,
-                ratio: 0.5,
-                children: Box::new((
-                    SplitNode::Leaf {
-                        pane_id: target_pane_id.to_string(),
-                    },
-                    SplitNode::Leaf {
-                        pane_id: new_pane_id.to_string(),
-                    },
-                )),
-            },
+            SplitNode::Leaf { pane_id } if pane_id == target_pane_id => {
+                let target = SplitNode::Leaf {
+                    pane_id: target_pane_id.to_string(),
+                };
+                let new = SplitNode::Leaf {
+                    pane_id: new_pane_id.to_string(),
+                };
+                SplitNode::Split {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    direction,
+                    ratio: 0.5,
+                    children: Box::new(if before { (new, target) } else { (target, new) }),
+                }
+            }
             SplitNode::Leaf { .. } => self.clone(),
             SplitNode::Split {
                 id,
@@ -85,8 +89,8 @@ impl SplitNode {
                 direction: dir.clone(),
                 ratio: *ratio,
                 children: Box::new((
-                    children.0.split_pane(target_pane_id, new_pane_id, direction.clone()),
-                    children.1.split_pane(target_pane_id, new_pane_id, direction),
+                    children.0.split_pane(target_pane_id, new_pane_id, direction.clone(), before),
+                    children.1.split_pane(target_pane_id, new_pane_id, direction, before),
                 )),
             },
         }

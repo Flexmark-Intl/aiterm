@@ -79,7 +79,15 @@ Dragging a terminal tab to another workspace preserves the running PTY instead o
 
 **Reattach sizing**: the new xterm instance is synced to the live alacritty grid size (`getTerminalScrollbackInfo().viewport_cols/rows`) before the refit, so the running TUI never sees an 80×24 transient. The post-layout `resizeTerminal` is a no-op in Rust when the fitted size matches the grid — an unchanged layout sends no SIGWINCH at all.
 
-## xterm.js Notes
+## Tab Move Between Panes (Same Workspace)
+
+Same PTY-preservation machinery as workspace moves (the `+page.svelte` keyed each is **per-pane**, so a pane move also destroys/recreates the component). Three entry points, all in `TerminalTabs.svelte`:
+
+- **Drag onto another pane's tab bar** — inserts at the hovered position; `move_tab_to_pane` takes `insert_before_tab_id` (an ID, not an index, so `groupActiveTabs` display order can't skew it)
+- **Drag onto a pane's body** — edge zones (outer 30%) create a new split on that side via `move_tab_to_split` (the tab *moves* — unlike Cmd+D's `splitPaneWithContext` clone); center zone moves the tab into that pane. Preview overlay is a body-appended `.split-drop-overlay`.
+- **Tab right-click menu** — "Move to New Split Right/Down" + per-pane move items (uses `ContextMenu.svelte`)
+
+Both backend commands remove the source pane and collapse the split tree when the move empties it. `SplitNode::split_pane` takes a `before` flag (left/top edge drops put the new pane first). Guards: dropping a pane's only tab on its own edge, or any tab on its own pane center, is a no-op.
 
 - Terminal created with `new Terminal({ scrollback: 0, ... })` — Rust manages all scrollback
 - Required addons: FitAddon (resize), WebLinksAddon (clickable links), CanvasAddon (renderer)

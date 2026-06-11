@@ -243,6 +243,14 @@ export async function moveTabToWorkspaceCmd(sourceWorkspaceId: string, sourcePan
   return invoke('move_tab_to_workspace', { sourceWorkspaceId, sourcePaneId, tabId, targetWorkspaceId });
 }
 
+export async function moveTabToPaneCmd(workspaceId: string, sourcePaneId: string, tabId: string, targetPaneId: string, insertBeforeTabId?: string | null): Promise<void> {
+  return invoke('move_tab_to_pane', { workspaceId, sourcePaneId, tabId, targetPaneId, insertBeforeTabId: insertBeforeTabId ?? null });
+}
+
+export async function moveTabToSplitCmd(workspaceId: string, sourcePaneId: string, tabId: string, targetPaneId: string, direction: SplitDirection, before?: boolean): Promise<Pane> {
+  return invoke('move_tab_to_split', { workspaceId, sourcePaneId, tabId, targetPaneId, direction, before: before ?? false });
+}
+
 export async function renameTab(workspaceId: string, paneId: string, tabId: string, name: string, customName?: boolean): Promise<void> {
   return invoke('rename_tab', { workspaceId, paneId, tabId, name, customName: customName ?? null });
 }

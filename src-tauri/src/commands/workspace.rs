@@ -7,7 +7,7 @@ use tauri::{Emitter, State};
 use crate::state::{save_state, AppState, Pane, Preferences, Tab, Workspace};
 use crate::state::workspace::WorkspaceNote;
 use crate::state::persistence::{app_data_slug, parse_state};
-use crate::state::workspace::{EditorFileInfo, SplitDirection};
+use crate::state::workspace::{EditorFileInfo, SplitDirection, TabType};
 use crate::state::ScrollbackDb;
 use crate::commands::window::{TabContext, clone_workspace_with_id_mapping};
 
@@ -189,7 +189,7 @@ pub fn split_pane(
         if let Some(workspace) = win.workspaces.iter_mut().find(|w| w.id == workspace_id) {
             if let Some(ref root) = workspace.split_root {
                 workspace.split_root =
-                    Some(root.split_pane(&target_pane_id, &new_pane.id, direction));
+                    Some(root.split_pane(&target_pane_id, &new_pane.id, direction, false));
             }
             workspace.panes.push(new_pane.clone());
             workspace.active_pane_id = Some(new_pane.id.clone());
@@ -378,6 +378,152 @@ pub fn move_tab_to_workspace(
         app_data.clone()
     };
     save_state(&data_clone)
+}
+
+/// Move a tab between panes within the same workspace. The tab (and its PTY)
+/// moves as-is — nothing is cloned or respawned. If the source pane is left
+/// empty it is removed and the split tree collapses around it.
+#[tauri::command]
+pub fn move_tab_to_pane(
+    window: tauri::Window,
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+    source_pane_id: String,
+    tab_id: String,
+    target_pane_id: String,
+    insert_before_tab_id: Option<String>,
+) -> Result<(), String> {
+    if source_pane_id == target_pane_id {
+        return Err("Source and target pane are the same".to_string());
+    }
+    let label = window.label().to_string();
+    let data_clone = {
+        let mut app_data = state.app_data.write();
+        let win = app_data.window_mut(&label).ok_or("Window not found")?;
+        let workspace = win.workspaces.iter_mut().find(|w| w.id == workspace_id)
+            .ok_or("Workspace not found")?;
+        // Validate the target before mutating — extracting the tab first
+        // would lose it if the target lookup failed.
+        if !workspace.panes.iter().any(|p| p.id == target_pane_id) {
+            return Err("Target pane not found".to_string());
+        }
+
+        // Extract the tab from the source pane
+        let source_pane = workspace.panes.iter_mut().find(|p| p.id == source_pane_id)
+            .ok_or("Source pane not found")?;
+        let tab_pos = source_pane.tabs.iter().position(|t| t.id == tab_id)
+            .ok_or("Tab not found")?;
+        let tab = source_pane.tabs.remove(tab_pos);
+        if source_pane.active_tab_id.as_ref() == Some(&tab_id) {
+            source_pane.active_tab_id = if source_pane.tabs.is_empty() {
+                None
+            } else {
+                let new_index = if tab_pos > 0 { tab_pos - 1 } else { 0 };
+                Some(source_pane.tabs[new_index].id.clone())
+            };
+        }
+        let source_now_empty = source_pane.tabs.is_empty();
+
+        // Insert into the target pane and focus it
+        let target_pane = workspace.panes.iter_mut().find(|p| p.id == target_pane_id)
+            .ok_or("Target pane not found")?;
+        let insert_pos = insert_before_tab_id
+            .as_ref()
+            .and_then(|id| target_pane.tabs.iter().position(|t| &t.id == id))
+            .unwrap_or(target_pane.tabs.len());
+        target_pane.tabs.insert(insert_pos, tab);
+        target_pane.active_tab_id = Some(tab_id.clone());
+
+        if source_now_empty {
+            if let Some(ref root) = workspace.split_root {
+                workspace.split_root = root.remove_pane(&source_pane_id);
+            }
+            workspace.panes.retain(|p| p.id != source_pane_id);
+        }
+        workspace.active_pane_id = Some(target_pane_id.clone());
+
+        app_data.clone()
+    };
+    save_state(&data_clone)
+}
+
+/// Move a tab into a brand-new split pane (no clone — the tab itself moves,
+/// PTY intact). The new pane is created by splitting `target_pane_id` in
+/// `direction`; `before` places it on the left/top side. An emptied source
+/// pane is removed and the split tree collapses around it.
+#[tauri::command]
+pub fn move_tab_to_split(
+    window: tauri::Window,
+    state: State<'_, Arc<AppState>>,
+    workspace_id: String,
+    source_pane_id: String,
+    tab_id: String,
+    target_pane_id: String,
+    direction: SplitDirection,
+    before: Option<bool>,
+) -> Result<Pane, String> {
+    let label = window.label().to_string();
+    let (data_clone, new_pane) = {
+        let mut app_data = state.app_data.write();
+        let win = app_data.window_mut(&label).ok_or("Window not found")?;
+        let workspace = win.workspaces.iter_mut().find(|w| w.id == workspace_id)
+            .ok_or("Workspace not found")?;
+        if !workspace.panes.iter().any(|p| p.id == target_pane_id) {
+            return Err("Target pane not found".to_string());
+        }
+
+        let source_pane = workspace.panes.iter_mut().find(|p| p.id == source_pane_id)
+            .ok_or("Source pane not found")?;
+        // Splitting a pane off with its only tab would just churn pane IDs —
+        // the layout ends up identical.
+        if source_pane_id == target_pane_id && source_pane.tabs.len() == 1 {
+            return Err("Cannot split a pane using its only tab".to_string());
+        }
+        let tab_pos = source_pane.tabs.iter().position(|t| t.id == tab_id)
+            .ok_or("Tab not found")?;
+        let tab = source_pane.tabs.remove(tab_pos);
+        if source_pane.active_tab_id.as_ref() == Some(&tab_id) {
+            source_pane.active_tab_id = if source_pane.tabs.is_empty() {
+                None
+            } else {
+                let new_index = if tab_pos > 0 { tab_pos - 1 } else { 0 };
+                Some(source_pane.tabs[new_index].id.clone())
+            };
+        }
+        let source_now_empty = source_pane.tabs.is_empty();
+
+        let pane_name = match tab.tab_type {
+            TabType::Terminal => "Terminal".to_string(),
+            _ => tab.name.clone(),
+        };
+        let new_pane = Pane {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: pane_name,
+            tabs: vec![tab],
+            active_tab_id: Some(tab_id.clone()),
+        };
+        if let Some(ref root) = workspace.split_root {
+            workspace.split_root = Some(root.split_pane(
+                &target_pane_id,
+                &new_pane.id,
+                direction,
+                before.unwrap_or(false),
+            ));
+        }
+        workspace.panes.push(new_pane.clone());
+
+        if source_now_empty {
+            if let Some(ref root) = workspace.split_root {
+                workspace.split_root = root.remove_pane(&source_pane_id);
+            }
+            workspace.panes.retain(|p| p.id != source_pane_id);
+        }
+        workspace.active_pane_id = Some(new_pane.id.clone());
+
+        (app_data.clone(), new_pane)
+    };
+    save_state(&data_clone)?;
+    Ok(new_pane)
 }
 
 #[tauri::command]

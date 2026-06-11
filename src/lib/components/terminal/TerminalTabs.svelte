@@ -20,6 +20,7 @@
   import IconButton from '$lib/components/ui/IconButton.svelte';
   import Tooltip from '$lib/components/Tooltip.svelte';
   import TabListMenu from './TabListMenu.svelte';
+  import ContextMenu from '$lib/components/ContextMenu.svelte';
 
   interface Props {
     workspaceId: string;
@@ -514,6 +515,17 @@
   let dropTargetIndex = $state<number | null>(null);
   let dropSide = $state<'before' | 'after'>('before');
   let dropWorkspaceId: string | null = null;
+  // Drop target: another pane's tab bar (move tab into that pane).
+  // beforeTabId null = append at end.
+  let dropPane: { paneId: string; beforeTabId: string | null } | null = null;
+  let foreignDropEl: HTMLElement | null = null;    // foreign tab carrying drop-before/after
+  let foreignDropBarEl: HTMLElement | null = null; // foreign bar carrying drop-target-bar
+  // Drop target: a pane's body — edges create a new split, center moves into the pane.
+  type DropEdge = 'left' | 'right' | 'top' | 'bottom' | 'center';
+  let dropSplit: { paneId: string; edge: DropEdge } | null = null;
+  let splitOverlay: HTMLElement | null = null;
+  // Tab right-click menu (move to split / other panes)
+  let tabContextMenu = $state<{ x: number; y: number; tabId: string } | null>(null);
 
   const DRAG_THRESHOLD = 5;
   let dragStartX = 0;
@@ -642,9 +654,116 @@
       dropWorkspaceId = foundWsId;
     }
 
+    // Hit-test other panes' tab bars and pane bodies (same-workspace moves)
+    updatePaneDropTargets(e, foundTabTarget, !!foundWsId);
+
     lastPointerX = e.clientX;
     lastPointerY = e.clientY;
     updateCursorBadge(e.altKey);
+  }
+
+  function updatePaneDropTargets(e: PointerEvent, overOwnTab: boolean, overSidebar: boolean) {
+    let nextPane: { paneId: string; beforeTabId: string | null } | null = null;
+    let nextForeignEl: HTMLElement | null = null;
+    let nextForeignSide: 'before' | 'after' = 'before';
+    let nextForeignBarEl: HTMLElement | null = null;
+    let nextSplit: { paneId: string; edge: DropEdge } | null = null;
+
+    if (!overOwnTab && !overSidebar) {
+      // Foreign tab bars — move the tab into that pane at the hovered position
+      let overAnyBar = false;
+      for (const barEl of document.querySelectorAll<HTMLElement>('.tabs-bar[data-pane-id]')) {
+        const rect = barEl.getBoundingClientRect();
+        if (rect.width === 0 || e.clientX < rect.left || e.clientX > rect.right ||
+            e.clientY < rect.top || e.clientY > rect.bottom) continue;
+        overAnyBar = true;
+        const barPaneId = barEl.getAttribute('data-pane-id');
+        if (!barPaneId || barPaneId === pane.id) break; // own bar: reorder logic owns it
+        const tabEls = Array.from(barEl.querySelectorAll<HTMLElement>('.tab[data-tab-id]'));
+        let beforeTabId: string | null = null;
+        for (let i = 0; i < tabEls.length; i++) {
+          const r = tabEls[i].getBoundingClientRect();
+          if (e.clientX >= r.left && e.clientX <= r.right) {
+            const after = e.clientX >= r.left + r.width / 2;
+            nextForeignEl = tabEls[i];
+            nextForeignSide = after ? 'after' : 'before';
+            beforeTabId = after
+              ? tabEls[i + 1]?.getAttribute('data-tab-id') ?? null
+              : tabEls[i].getAttribute('data-tab-id');
+            break;
+          }
+        }
+        if (!nextForeignEl) nextForeignBarEl = barEl; // empty bar area → append
+        nextPane = { paneId: barPaneId, beforeTabId };
+        break;
+      }
+
+      // Pane bodies — edge zones create a new split, center moves into the pane
+      if (!overAnyBar && !nextPane) {
+        for (const paneEl of document.querySelectorAll<HTMLElement>('.split-pane[data-pane-id]')) {
+          const rect = paneEl.getBoundingClientRect();
+          if (rect.width === 0 || e.clientX < rect.left || e.clientX > rect.right ||
+              e.clientY < rect.top || e.clientY > rect.bottom) continue;
+          const paneId = paneEl.getAttribute('data-pane-id');
+          if (!paneId) break;
+          const rx = (e.clientX - rect.left) / rect.width;
+          const ry = (e.clientY - rect.top) / rect.height;
+          const edges: Array<[DropEdge, number]> = [['left', rx], ['right', 1 - rx], ['top', ry], ['bottom', 1 - ry]];
+          edges.sort((a, b) => a[1] - b[1]);
+          const edge: DropEdge = edges[0][1] < 0.3 ? edges[0][0] : 'center';
+          const isOwnPane = paneId === pane.id;
+          // Dropping a tab in its own pane's center is a no-op; splitting a
+          // pane off with its only tab just churns pane IDs.
+          if (isOwnPane && (edge === 'center' || pane.tabs.length === 1)) break;
+          nextSplit = { paneId, edge };
+          break;
+        }
+      }
+    }
+
+    if (foreignDropEl && foreignDropEl !== nextForeignEl) {
+      foreignDropEl.classList.remove('drop-before', 'drop-after');
+    }
+    foreignDropEl = nextForeignEl;
+    if (foreignDropEl) {
+      foreignDropEl.classList.toggle('drop-before', nextForeignSide === 'before');
+      foreignDropEl.classList.toggle('drop-after', nextForeignSide === 'after');
+    }
+
+    if (foreignDropBarEl && foreignDropBarEl !== nextForeignBarEl) {
+      foreignDropBarEl.classList.remove('drop-target-bar');
+    }
+    foreignDropBarEl = nextForeignBarEl;
+    foreignDropBarEl?.classList.add('drop-target-bar');
+
+    dropPane = nextPane;
+    dropSplit = nextSplit;
+    updateSplitOverlay();
+  }
+
+  function updateSplitOverlay() {
+    if (!dropSplit) {
+      splitOverlay?.remove();
+      splitOverlay = null;
+      return;
+    }
+    const paneEl = document.querySelector<HTMLElement>(`.split-pane[data-pane-id="${dropSplit.paneId}"]`);
+    if (!paneEl) return;
+    const r = paneEl.getBoundingClientRect();
+    let left = r.left, top = r.top, width = r.width, height = r.height;
+    if (dropSplit.edge === 'left') width = r.width / 2;
+    else if (dropSplit.edge === 'right') { left += r.width / 2; width = r.width / 2; }
+    else if (dropSplit.edge === 'top') height = r.height / 2;
+    else if (dropSplit.edge === 'bottom') { top += r.height / 2; height = r.height / 2; }
+    if (!splitOverlay) {
+      splitOverlay = document.createElement('div');
+      splitOverlay.className = 'split-drop-overlay';
+      document.body.appendChild(splitOverlay);
+    }
+    splitOverlay.style.left = `${left}px`;
+    splitOverlay.style.top = `${top}px`;
+    splitOverlay.style.width = `${width}px`;
+    splitOverlay.style.height = `${height}px`;
   }
 
   function updateCursorBadge(altKey: boolean) {
@@ -685,6 +804,30 @@
         workspacesStore.copyTabToWorkspace(workspaceId, pane.id, tabId, targetWsId);
       } else {
         workspacesStore.moveTabToWorkspace(workspaceId, pane.id, tabId, targetWsId);
+      }
+      return;
+    }
+
+    if (dragTabId && dropPane) {
+      // Drop onto another pane's tab bar — move the tab there, PTY intact
+      const tabId = dragTabId;
+      const { paneId: targetPaneId, beforeTabId } = dropPane;
+      clearDragState();
+      workspacesStore.moveTabToPane(workspaceId, pane.id, tabId, targetPaneId, beforeTabId);
+      return;
+    }
+
+    if (dragTabId && dropSplit) {
+      // Drop onto a pane body — edge creates a new split, center moves into it
+      const tabId = dragTabId;
+      const { paneId: targetPaneId, edge } = dropSplit;
+      clearDragState();
+      if (edge === 'center') {
+        workspacesStore.moveTabToPane(workspaceId, pane.id, tabId, targetPaneId);
+      } else {
+        const direction = edge === 'left' || edge === 'right' ? 'horizontal' : 'vertical';
+        const before = edge === 'left' || edge === 'top';
+        workspacesStore.moveTabToSplit(workspaceId, pane.id, tabId, targetPaneId, direction, before);
       }
       return;
     }
@@ -755,6 +898,20 @@
       el?.classList.remove('drop-target');
       dropWorkspaceId = null;
     }
+    dropPane = null;
+    dropSplit = null;
+    if (foreignDropEl) {
+      foreignDropEl.classList.remove('drop-before', 'drop-after');
+      foreignDropEl = null;
+    }
+    if (foreignDropBarEl) {
+      foreignDropBarEl.classList.remove('drop-target-bar');
+      foreignDropBarEl = null;
+    }
+    if (splitOverlay) {
+      splitOverlay.remove();
+      splitOverlay = null;
+    }
     if (ghost) {
       ghost.remove();
       ghost = null;
@@ -764,9 +921,39 @@
       cursorBadge = null;
     }
   }
+
+  function tabMenuItems(tabId: string) {
+    const onlyTab = pane.tabs.length === 1;
+    const ws = workspacesStore.workspaces.find(w => w.id === workspaceId);
+    const otherPanes = (ws?.panes ?? []).filter(p => p.id !== pane.id);
+    const items: Array<{ label: string; action: () => void; disabled?: boolean; separator?: boolean }> = [
+      {
+        label: 'Move to New Split Right',
+        disabled: onlyTab,
+        action: () => workspacesStore.moveTabToSplit(workspaceId, pane.id, tabId, pane.id, 'horizontal'),
+      },
+      {
+        label: 'Move to New Split Down',
+        disabled: onlyTab,
+        action: () => workspacesStore.moveTabToSplit(workspaceId, pane.id, tabId, pane.id, 'vertical'),
+      },
+    ];
+    if (otherPanes.length > 0) {
+      items.push({ label: '', separator: true, action: () => {} });
+      for (const p of otherPanes) {
+        const activeTab = p.tabs.find(t => t.id === p.active_tab_id) ?? p.tabs[0];
+        const hint = activeTab ? ` (${activeTab.name})` : '';
+        items.push({
+          label: `Move to ${p.name}${hint}`,
+          action: () => workspacesStore.moveTabToPane(workspaceId, pane.id, tabId, p.id),
+        });
+      }
+    }
+    return items;
+  }
 </script>
 
-<div class="tabs-bar" data-tauri-drag-region>
+<div class="tabs-bar" data-tauri-drag-region data-pane-id={pane.id}>
     <div class="tabbar-menu-wrapper" bind:this={archiveDropdownEl}>
       <Tooltip text={archivedTabs.length > 0 ? `Archived tabs (${archivedTabs.length})` : 'No archived tabs'}>
         <button
@@ -836,6 +1023,12 @@
       data-tab-id={tab.id}
       onclick={() => { if (!dragTabId && !justDragged) handleTabClick(tab.id); }}
       ondblclick={(e) => startEditing(tab, e)}
+      oncontextmenu={(e) => {
+        if (editingId === tab.id) return; // native menu for the rename input
+        e.preventDefault();
+        e.stopPropagation();
+        tabContextMenu = { x: e.clientX, y: e.clientY, tabId: tab.id };
+      }}
       onpointerdown={(e) => handlePointerDown(e, tab.id)}
       onpointermove={handlePointerMove}
       onpointerup={handlePointerUp}
@@ -993,6 +1186,15 @@
   {/if}
 </div>
 
+{#if tabContextMenu}
+  <ContextMenu
+    items={tabMenuItems(tabContextMenu.tabId)}
+    x={tabContextMenu.x}
+    y={tabContextMenu.y}
+    onclose={() => tabContextMenu = null}
+  />
+{/if}
+
 <style>
   .tabs-bar {
     display: flex;
@@ -1124,6 +1326,25 @@
 
   .tab.drop-after {
     box-shadow: inset -2px 0 0 var(--accent);
+  }
+
+  /* Foreign tab bar highlighted as a drop target (append to that pane).
+     The class is added via classList from the dragging instance, so the
+     compiler can't see it — :global() keeps it from being pruned. */
+  .tabs-bar:global(.drop-target-bar) {
+    box-shadow: inset 0 0 0 2px var(--accent);
+  }
+
+  /* Pane-body drop preview (body-appended, like .drag-ghost) — covers the
+     half that the new split would occupy, or the whole pane for a move */
+  :global(.split-drop-overlay) {
+    position: fixed;
+    z-index: 999;
+    pointer-events: none;
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    border: 2px solid var(--accent);
+    border-radius: 4px;
+    transition: left 0.08s ease, top 0.08s ease, width 0.08s ease, height 0.08s ease;
   }
 
   :global(.drag-ghost) {

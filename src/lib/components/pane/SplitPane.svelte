@@ -90,7 +90,7 @@
   }
 </script>
 
-<div class="split-pane" class:active={isActive}>
+<div class="split-pane" class:active={isActive} data-pane-id={pane.id}>
   {#if showHeader}
     <div
       class="pane-header"
